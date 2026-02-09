@@ -15,6 +15,8 @@ export class Capability {
   static readonly VoiceWake: string = 'voiceWake';
   static readonly Location: string = 'location';
   static readonly Notification: string = 'notification';
+  static readonly Microphone: string = 'microphone';
+  static readonly Speaker: string = 'speaker';
 }
 
 export class Command {
@@ -32,6 +34,7 @@ export class Command {
   static readonly CAMERA_SNAP: string = 'camera.snap';
   static readonly CAMERA_CLIP: string = 'camera.clip';
   // Screen
+  static readonly SCREEN_CAPTURE: string = 'screen.capture';
   static readonly SCREEN_RECORD: string = 'screen.record';
   // SMS
   static readonly SMS_SEND: string = 'sms.send';
@@ -40,4 +43,10 @@ export class Command {
   // Notification
   static readonly NOTIFICATION_SHOW: string = 'notification.show';
   static readonly SYSTEM_NOTIFY: string = 'system.notify';
+  // Microphone
+  static readonly MIC_RECORD: string = 'mic.record';
+  // Speaker / TTS
+  static readonly SPEAKER_SPEAK: string = 'speaker.speak';
+  static readonly SPEAKER_PLAY: string = 'speaker.play';
+  static readonly SPEAKER_STOP: string = 'speaker.stop';
 }

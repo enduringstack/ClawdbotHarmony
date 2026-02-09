@@ -10,17 +10,20 @@ import { NodeRuntime } from '../service/gateway/NodeRuntime';
 import { GatewayEndpoint } from '../service/gateway/GatewayModels';
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { window, display } from '@kit.ArkUI';
 
 @Entry
 @Component
 struct Index {
   @State currentTab: number = 0;
   @State @Watch('onLangChange') lang: string = 'zh';
+  @State topSafeHeight: number = 0;
   private controller: TabsController = new TabsController();
   private langListener: (() => void) | undefined = undefined;
 
   aboutToAppear(): void {
     LogService.getInstance().info('App', 'ClawdBot started');
+    this.calculateTopSafeHeight();
     this.loadLang();
     this.autoConnectGateway();
     this.langListener = () => {
@@ -62,10 +65,12 @@ struct Index {
       let capCanvas = (await store.get('capCanvas', true)) as boolean;
       let capScreen = (await store.get('capScreen', true)) as boolean;
       let capNotification = (await store.get('capNotification', true)) as boolean;
+      let capMicrophone = (await store.get('capMicrophone', true)) as boolean;
+      let capSpeaker = (await store.get('capSpeaker', true)) as boolean;
 
       let endpoint: GatewayEndpoint = { host: host, port: port, useTls: useTls };
       let runtime = NodeRuntime.getInstance();
-      runtime.updateCapabilities(capLocation, capCamera, capCanvas, capScreen, capNotification);
+      runtime.updateCapabilities(capLocation, capCamera, capCanvas, capScreen, capNotification, undefined, capMicrophone, capSpeaker);
       runtime.connect(ctx, endpoint,
         token.length > 0 ? token : undefined,
         password.length > 0 ? password : undefined);
@@ -92,37 +97,66 @@ struct Index {
   }
 
   build() {
-    Tabs({ barPosition: BarPosition.End, controller: this.controller }) {
-      TabContent() {
-        ChatPage()
-      }
-      .tabBar(this.TabItem(0, '\uD83D\uDCAC', I18n.t('tab.chat')))
+    Column() {
+      // Status bar spacer — reserves space so content never overlaps with system status bar
+      Row()
+        .width('100%')
+        .height(this.topSafeHeight)
+        .backgroundColor(Color.White)
 
-      TabContent() {
-        SkillsPage()
-      }
-      .tabBar(this.TabItem(1, '\uD83D\uDD27', I18n.t('tab.skills')))
+      Tabs({ barPosition: BarPosition.End, controller: this.controller }) {
+        TabContent() {
+          ChatPage()
+        }
+        .tabBar(this.TabItem(0, '\uD83D\uDCAC', I18n.t('tab.chat')))
 
-      TabContent() {
-        MemoryPage()
-      }
-      .tabBar(this.TabItem(2, '\uD83E\uDDE0', I18n.t('tab.memory')))
+        TabContent() {
+          SkillsPage()
+        }
+        .tabBar(this.TabItem(1, '\uD83D\uDD27', I18n.t('tab.skills')))
 
-      TabContent() {
-        SettingsPage()
-      }
-      .tabBar(this.TabItem(3, '\u2699\uFE0F', I18n.t('tab.settings')))
+        TabContent() {
+          MemoryPage()
+        }
+        .tabBar(this.TabItem(2, '\uD83E\uDDE0', I18n.t('tab.memory')))
 
-      TabContent() {
-        LogPage()
+        TabContent() {
+          SettingsPage()
+        }
+        .tabBar(this.TabItem(3, '\u2699\uFE0F', I18n.t('tab.settings')))
+
+        TabContent() {
+          LogPage()
+        }
+        .tabBar(this.TabItem(4, '\uD83D\uDCDD', I18n.t('tab.logs')))
       }
-      .tabBar(this.TabItem(4, '\uD83D\uDCDD', I18n.t('tab.logs')))
+      .layoutWeight(1)
+      .scrollable(false)
+      .barHeight(56)
+      .barBackgroundColor(Color.White)
+      .animationDuration(200)
+      .onChange((index: number) => { this.currentTab = index; })
     }
-    .scrollable(false)
-    .barHeight(56)
-    .barBackgroundColor(Color.White)
-    .animationDuration(200)
-    .onChange((index: number) => { this.currentTab = index; })
+    .width('100%')
+    .height('100%')
+  }
+
+  private calculateTopSafeHeight(): void {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      ctx.windowStage.getMainWindow().then((win: window.Window) => {
+        let avoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+        let topPx = avoidArea.topRect.height;
+        let d = display.getDefaultDisplaySync();
+        let density = d.densityPixels;
+        this.topSafeHeight = topPx / density;
+        LogService.getInstance().info('App', `Status bar: ${topPx}px = ${this.topSafeHeight}vp (density=${density})`);
+      }).catch(() => {
+        this.topSafeHeight = 36;
+      });
+    } catch {
+      this.topSafeHeight = 36;
+    }
   }
 
   @Builder

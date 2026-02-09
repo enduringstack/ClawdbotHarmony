@@ -28,6 +28,16 @@ function buildZh(): Map<string, string> {
   m.set('chat.toolResult', '结果');
   m.set('chat.notificationReceived', '收到网关通知');
   m.set('chat.notificationFrom', '来自');
+  m.set('chat.playingAudio', '正在播放音频...');
+  m.set('chat.audioPlayed', '音频已播放');
+  m.set('chat.audioFailed', '音频播放失败');
+  m.set('chat.ttsReading', '🔊 正在朗读...');
+  m.set('chat.ttsReadDone', '🔊 已朗读');
+  m.set('chat.ttsReadFailed', '朗读失败');
+
+  // SettingsPage - TTS auto-read
+  m.set('settings.ttsAutoRead', '语音朗读');
+  m.set('settings.ttsAutoReadDesc', '自动朗读 AI 回复（使用本地 TTS）');
 
   // SkillsPage
   m.set('skills.title', '技能');
@@ -93,8 +103,10 @@ function buildZh(): Map<string, string> {
   m.set('settings.capLocation', '定位 (GPS)');
   m.set('settings.capCamera', '相机 (拍照/录像)');
   m.set('settings.capCanvas', '画布 (WebView)');
-  m.set('settings.capScreen', '录屏');
+  m.set('settings.capScreen', '截屏/录屏');
   m.set('settings.capNotification', '通知');
+  m.set('settings.capMicrophone', '麦克风 (录音)');
+  m.set('settings.capSpeaker', '音箱 (朗读/播放)');
   m.set('settings.about', '关于');
   m.set('settings.app', '应用');
   m.set('settings.appValue', 'ClawdBot for HarmonyOS');
@@ -156,6 +168,16 @@ function buildEn(): Map<string, string> {
   m.set('chat.toolResult', 'result');
   m.set('chat.notificationReceived', 'Gateway Notification');
   m.set('chat.notificationFrom', 'From');
+  m.set('chat.playingAudio', 'Playing audio...');
+  m.set('chat.audioPlayed', 'Audio played');
+  m.set('chat.audioFailed', 'Audio playback failed');
+  m.set('chat.ttsReading', '🔊 Reading aloud...');
+  m.set('chat.ttsReadDone', '🔊 Read aloud');
+  m.set('chat.ttsReadFailed', 'TTS read failed');
+
+  // SettingsPage - TTS auto-read
+  m.set('settings.ttsAutoRead', 'Auto Read Aloud');
+  m.set('settings.ttsAutoReadDesc', 'Auto read AI responses aloud (local TTS)');
 
   // SkillsPage
   m.set('skills.title', 'Skills');
@@ -221,8 +243,10 @@ function buildEn(): Map<string, string> {
   m.set('settings.capLocation', 'Location (GPS)');
   m.set('settings.capCamera', 'Camera (Photo/Video)');
   m.set('settings.capCanvas', 'Canvas (WebView)');
-  m.set('settings.capScreen', 'Screen Recording');
+  m.set('settings.capScreen', 'Screenshot/Recording');
   m.set('settings.capNotification', 'Notifications');
+  m.set('settings.capMicrophone', 'Microphone (Record)');
+  m.set('settings.capSpeaker', 'Speaker (TTS/Playback)');
   m.set('settings.about', 'ABOUT');
   m.set('settings.app', 'App');
   m.set('settings.appValue', 'ClawdBot for HarmonyOS');

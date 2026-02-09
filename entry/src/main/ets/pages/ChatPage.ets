@@ -19,6 +19,8 @@ export struct ChatPage {
   @State isLoading: boolean = false;
   @State gwConnected: boolean = false;
   @State @Watch('onLangChange') lang: string = 'zh';
+  @State ttsAutoRead: boolean = false;
+  // topAvoidHeight removed: window is now non-fullscreen, system reserves status bar area
 
   private scroller: Scroller = new Scroller();
   private ai: AIService = AIService.getInstance();
@@ -39,9 +41,15 @@ export struct ChatPage {
 
   aboutToAppear(): void {
     this.loadHistory();
+    this.loadTtsAutoReadSetting();
     this.gwConnected = NodeRuntime.getInstance().isConnected;
     this.gwListener = (state: ConnectionState, _text: string) => {
+      let wasConnected = this.gwConnected;
       this.gwConnected = (state === ConnectionState.Connected);
+      // When gateway first connects, sync memories from server
+      if (!wasConnected && this.gwConnected) {
+        this.syncMemoriesFromServer().catch(() => { /* ignore */ });
+      }
     };
     NodeRuntime.getInstance().addStateListener(this.gwListener);
     // Register chat event listener for gateway mode
@@ -122,6 +130,16 @@ export struct ChatPage {
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
+
+        // TTS auto-read quick toggle
+        Text(this.ttsAutoRead ? '\uD83D\uDD0A' : '\uD83D\uDD07')
+          .fontSize(20)
+          .padding(8)
+          .onClick(() => {
+            this.ttsAutoRead = !this.ttsAutoRead;
+            this.saveTtsAutoReadSetting();
+            this.log.info('ChatPage', `TTS auto-read toggled: ${this.ttsAutoRead}`);
+          })
 
         // clear button
         Text('\uD83D\uDDD1')
@@ -406,17 +424,40 @@ export struct ChatPage {
       }
     }
 
-    this.log.info('ChatPage', `gwChatEvent: state=${event.state} runId=${event.runId} myRunId=${this.gwRunId} textLen=${text.length} text(80)="${text.substring(0, 80)}"`);
+    this.log.info('ChatPage', `gwChatEvent: state=${event.state} runId=${event.runId} myRunId=${this.gwRunId} msgId=${this.gwAssistantMsgId} textLen=${text.length} text(80)="${text.substring(0, 80)}"`);
 
-    // Accept events for our current run, OR if we have no gwRunId yet
-    // (events may arrive before sendChatMessage resolves)
-    if (this.gwRunId.length > 0 && event.runId !== this.gwRunId) {
-      this.log.warn('ChatPage', `Ignoring chat event: event.runId=${event.runId} !== gwRunId=${this.gwRunId}`);
+    // Accept events if:
+    // 1. We have a pending assistant message (gwAssistantMsgId is set)
+    // 2. AND either: runId matches, OR we haven't locked to a runId yet, OR
+    //    the event carries actual text (agent events may use a different server-generated runId)
+    let isWaiting = this.gwAssistantMsgId.length > 0;
+    let runIdMatch = this.gwRunId.length === 0 || event.runId === this.gwRunId;
+
+    if (!isWaiting) {
+      // Not waiting for any response — ignore
+      this.log.info('ChatPage', `Ignoring chat event: not waiting for response`);
       return;
     }
 
+    if (!runIdMatch) {
+      // RunId doesn't match — but if we got an empty final from chat.send's runId,
+      // the real response comes via a different server-side runId (agent stream).
+      // Accept it if we have no accumulated text yet (the real response hasn't started).
+      if (this.gwAccumulatedText.length === 0 && text.length > 0) {
+        this.log.info('ChatPage', `Accepting agent event with different runId (no text yet): event.runId=${event.runId} gwRunId=${this.gwRunId}`);
+        this.gwRunId = event.runId; // Switch to tracking this runId
+      } else if (this.gwAccumulatedText.length === 0 && event.state === 'final') {
+        // Empty final for a different runId — might be a lifecycle end, skip it
+        this.log.info('ChatPage', `Ignoring empty final from different runId: ${event.runId}`);
+        return;
+      } else {
+        this.log.info('ChatPage', `Ignoring chat event: runId mismatch event=${event.runId} my=${this.gwRunId}`);
+        return;
+      }
+    }
+
     // If we haven't set gwRunId yet, adopt this event's runId
-    if (this.gwRunId.length === 0 && this.gwAssistantMsgId.length > 0 && event.runId.length > 0) {
+    if (this.gwRunId.length === 0 && event.runId.length > 0) {
       this.log.info('ChatPage', `Adopting runId from event: ${event.runId}`);
       this.gwRunId = event.runId;
     }
@@ -492,6 +533,66 @@ export struct ChatPage {
   /** Clean up state after a gateway chat run completes. */
   private finishGatewayChat(): void {
     this.log.info('ChatPage', `finishGatewayChat: gwRunId=${this.gwRunId} hadDelta=${this.gwReceivedDelta} accLen=${this.gwAccumulatedText.length}`);
+
+    let accText = this.gwAccumulatedText;
+
+    // If we received an empty final (no accumulated text and no deltas),
+    // the real response may arrive via a separate agent event stream with a different runId.
+    // Don't clean up yet — wait for agent events to arrive.
+    if (accText.length === 0 && !this.gwReceivedDelta) {
+      this.log.info('ChatPage', 'Empty final received — waiting for agent events (up to 30s)');
+      // Reset gwRunId so we can accept agent events with any runId
+      this.gwRunId = '';
+      // Set a timeout to eventually clean up if nothing arrives
+      if (this.gwIdleTimer >= 0) {
+        clearTimeout(this.gwIdleTimer);
+      }
+      this.gwIdleTimer = setTimeout(() => {
+        if (this.gwAssistantMsgId.length > 0) {
+          this.log.info('ChatPage', 'Timeout waiting for agent events after empty final');
+          let idx = this.findGwAssistantIndex();
+          if (idx >= 0 && (this.messages[idx].content === '...' || this.messages[idx].content.length === 0)) {
+            this.messages[idx].content = 'No response received';
+          }
+          this.doCleanupGatewayChat();
+        }
+      }, 30000);
+      // Resolve the wait promise but keep gwAssistantMsgId active
+      if (this.gwChatResolve) {
+        this.gwChatResolve();
+        this.gwChatResolve = undefined;
+      } else {
+        this.gwEarlyFinish = true;
+      }
+      return;
+    }
+
+    // Check if the response contains a MEDIA: reference (server-side TTS audio)
+    // The text may contain additional text like "MEDIA:/tmp/tts-xxx/voice.mp3\n\n其他文字"
+    // Use regex to extract the MEDIA path
+    let mediaMatch = /MEDIA:(\/[^\s\n]+\.(?:mp3|m4a|wav|aac|ogg))/i.exec(accText);
+    if (mediaMatch && mediaMatch[1]) {
+      let mediaPath = `MEDIA:${mediaMatch[1]}`;
+      // Extract remaining text (anything after the MEDIA path)
+      let remainingText = accText.replace(mediaMatch[0], '').trim();
+      this.log.info('ChatPage', `Detected MEDIA audio: path=${mediaPath} remaining="${remainingText.substring(0, 100)}"`);
+      this.handleMediaPlayback(mediaPath, remainingText);
+    } else {
+      // Auto-extract memory from both user text and assistant's response in gateway mode
+      if (accText.length > 0) {
+        this.autoExtractMemoryFromGatewayChat(accText);
+      }
+      // Auto-read the response aloud if TTS auto-read is enabled
+      if (accText.length > 0) {
+        this.autoReadAloud(accText);
+      }
+    }
+
+    this.doCleanupGatewayChat();
+  }
+
+  /** Actually reset all gateway chat state */
+  private doCleanupGatewayChat(): void {
     this.isLoading = false;
     this.gwRunId = '';
     this.gwAssistantMsgId = '';
@@ -508,6 +609,71 @@ export struct ChatPage {
       this.gwEarlyFinish = true;
     }
     this.saveHistory();
+  }
+
+  /**
+   * Handle a MEDIA: reference from gateway response.
+   * Downloads the audio from the gateway server and plays it.
+   * Updates the chat message to show a friendly audio indicator.
+   */
+  private handleMediaPlayback(mediaPath: string, remainingText: string): void {
+    let runtime = NodeRuntime.getInstance();
+
+    // Find the assistant message and update its display text
+    let idx = this.findGwAssistantIndex();
+    let prefix = remainingText.length > 0 ? remainingText + '\n' : '';
+    if (idx >= 0) {
+      this.messages[idx].content = prefix + '\uD83D\uDD0A ' + I18n.t('chat.playingAudio');  // 🔊 正在播放音频...
+    }
+
+    // Play the audio from gateway URL (fire-and-forget)
+    runtime.playMediaUrl(mediaPath).then(() => {
+      this.log.info('ChatPage', 'Media playback completed');
+      if (idx >= 0 && idx < this.messages.length) {
+        this.messages[idx].content = prefix + '\uD83D\uDD0A ' + I18n.t('chat.audioPlayed');  // 🔊 音频已播放
+        this.saveHistory();
+      }
+    }).catch((err: Error) => {
+      this.log.warn('ChatPage', `Media playback failed: ${err.message ?? ''}, trying local TTS fallback`);
+      // Fallback: try local TTS with the user's last message context
+      this.fallbackLocalTts(idx, prefix);
+    });
+  }
+
+  /**
+   * Fallback: if gateway media download fails, use local TTS to speak
+   * a simple acknowledgment or the user's last question.
+   */
+  private fallbackLocalTts(msgIdx: number, displayPrefix: string): void {
+    // Find the last user message to determine what to speak
+    let lastUserText = '';
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].role === 'user') {
+        lastUserText = this.messages[i].content;
+        break;
+      }
+    }
+
+    let runtime = NodeRuntime.getInstance();
+    // Speak a brief response using local TTS
+    let textToSpeak = lastUserText.length > 0
+      ? lastUserText.substring(0, 200)
+      : '\u4ECA\u5929\u5E94\u8BE5\u662F\u4E2A\u597D\u5929\u6C14'; // 今天应该是个好天气
+
+    let speakParams = `{"text":${JSON.stringify(textToSpeak)},"lang":"zh-CN"}`;
+    runtime.speakLocal(speakParams).then(() => {
+      this.log.info('ChatPage', 'Local TTS fallback completed');
+      if (msgIdx >= 0 && msgIdx < this.messages.length) {
+        this.messages[msgIdx].content = displayPrefix + '\uD83D\uDD0A ' + I18n.t('chat.audioPlayed');
+        this.saveHistory();
+      }
+    }).catch((err: Error) => {
+      this.log.error('ChatPage', `Local TTS fallback also failed: ${err.message ?? ''}`);
+      if (msgIdx >= 0 && msgIdx < this.messages.length) {
+        this.messages[msgIdx].content = displayPrefix + I18n.t('chat.audioFailed');
+        this.saveHistory();
+      }
+    });
   }
 
   /** Handle a gateway notification and display it as a chat message. */
@@ -553,6 +719,13 @@ export struct ChatPage {
       } else {
         for (let msg of result.messages) {
           this.messages.push(msg);
+        }
+        // Auto-read the last assistant message if TTS auto-read is enabled
+        if (result.messages.length > 0) {
+          let lastMsg = result.messages[result.messages.length - 1];
+          if (lastMsg.role === 'assistant' && lastMsg.content.length > 0) {
+            this.autoReadAloud(lastMsg.content);
+          }
         }
       }
 
@@ -652,6 +825,239 @@ Platform: HarmonyOS
   private clearMessages(): void {
     this.messages = [];
     this.saveHistory();
+  }
+
+  // ---- TTS Auto-read ----
+
+  /** Load the TTS auto-read preference from gateway settings. */
+  private async loadTtsAutoReadSetting(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let store = await preferences.getPreferences(ctx, Constants.PREFS_GATEWAY);
+      this.ttsAutoRead = (await store.get('ttsAutoRead', false)) as boolean;
+      this.log.info('ChatPage', `TTS auto-read loaded: ${this.ttsAutoRead}`);
+    } catch {
+      this.ttsAutoRead = false;
+    }
+  }
+
+  /** Save the TTS auto-read preference (called when toggled from chat header). */
+  private async saveTtsAutoReadSetting(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let store = await preferences.getPreferences(ctx, Constants.PREFS_GATEWAY);
+      await store.put('ttsAutoRead', this.ttsAutoRead);
+      await store.flush();
+    } catch { /* ignore */ }
+  }
+
+  /**
+   * Auto-read the AI response text using local TTS.
+   * Called after the gateway or local AI response is finalized.
+   * Strips MEDIA: references and other non-text content before reading.
+   */
+  private autoReadAloud(text: string): void {
+    if (!this.ttsAutoRead) return;
+    if (text.length === 0 || text === '...') return;
+
+    // Reload setting in case user changed it mid-session
+    this.loadTtsAutoReadSetting();
+
+    // Strip MEDIA: references, emoji indicators, and very short error messages
+    let cleanText = text
+      .replace(/MEDIA:\/[^\s\n]+/gi, '')
+      .replace(/[\uD83D\uDD0A\uD83D\uDD14]\s*/g, '') // strip 🔊 🔔
+      .replace(/Gateway error:.*/gi, '')
+      .replace(/Gateway:.*/gi, '')
+      .trim();
+
+    if (cleanText.length < 3) return; // too short to read
+
+    // Limit text length for TTS (avoid very long reads)
+    let maxLen = 500;
+    if (cleanText.length > maxLen) {
+      cleanText = cleanText.substring(0, maxLen) + '...';
+    }
+
+    // Detect language for TTS
+    let lang = 'zh-CN';
+    // Simple heuristic: if more than 60% ASCII, use English
+    let asciiCount = 0;
+    for (let i = 0; i < Math.min(cleanText.length, 100); i++) {
+      if (cleanText.charCodeAt(i) < 128) {
+        asciiCount++;
+      }
+    }
+    if (asciiCount > Math.min(cleanText.length, 100) * 0.6) {
+      lang = 'en-US';
+    }
+
+    this.log.info('ChatPage', `autoReadAloud: lang=${lang} textLen=${cleanText.length} text="${cleanText.substring(0, 80)}"`);
+
+    let runtime = NodeRuntime.getInstance();
+    let speakParams = `{"text":${JSON.stringify(cleanText)},"lang":"${lang}"}`;
+    runtime.speakLocal(speakParams).then(() => {
+      this.log.info('ChatPage', 'TTS auto-read completed');
+    }).catch((err: Error) => {
+      this.log.warn('ChatPage', `TTS auto-read failed: ${err.message ?? ''}`);
+    });
+  }
+
+  // ---- Gateway memory integration ----
+
+  /**
+   * Auto-extract memory from gateway chat.
+   * Extracts from the user's last message + looks for memory-save instructions
+   * in the assistant's response. Also tries to sync to OpenClaw server.
+   */
+  private autoExtractMemoryFromGatewayChat(assistantText: string): void {
+    // Find last user message
+    let lastUserText = '';
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].role === 'user') {
+        lastUserText = this.messages[i].content;
+        break;
+      }
+    }
+
+    // Fire-and-forget: extract memories in background
+    let ctx: common.UIAbilityContext;
+    try {
+      ctx = getContext(this) as common.UIAbilityContext;
+    } catch {
+      return;
+    }
+
+    // Auto-extract from user text (same as local AI mode)
+    if (lastUserText.length > 0) {
+      this.memSvc.autoExtract(ctx, lastUserText).catch(() => { /* ignore */ });
+    }
+
+    // Check if assistant response contains memory-save patterns
+    // e.g., "I'll remember that...", "[Memory saved: ...]", etc.
+    this.extractMemoryFromAssistantResponse(ctx, assistantText, lastUserText);
+  }
+
+  /**
+   * Parse assistant response for memory-worthy content.
+   * Detects patterns like:
+   * - "[Memory saved: ...]" or "[已记住: ...]"
+   * - "I'll remember that..." / "好的，我记住了..."
+   * - Save_memory tool call results embedded in text
+   */
+  private extractMemoryFromAssistantResponse(ctx: common.UIAbilityContext, assistantText: string, userText: string): void {
+    let memoryPatterns: RegExp[] = [
+      /\[Memory saved:\s*(.{5,}?)\]/gi,
+      /\[\u5df2\u8bb0\u4f4f:\s*(.{3,}?)\]/gi,    // [已记住: ...]
+      /\[\u8bb0\u5fc6\u5df2\u4fdd\u5b58:\s*(.{3,}?)\]/gi, // [记忆已保存: ...]
+    ];
+
+    for (let re of memoryPatterns) {
+      let match = re.exec(assistantText);
+      while (match !== null && match[1]) {
+        let content = match[1].trim();
+        this.log.info('ChatPage', `Memory extracted from assistant: "${content.substring(0, 60)}"`);
+        this.memSvc.add(ctx, 'fact', content, 0.8).then(() => {
+          // Also try to sync to server if connected
+          this.syncMemoryToServer('fact', content);
+        }).catch(() => { /* ignore */ });
+        match = re.exec(assistantText);
+      }
+    }
+
+    // If the user explicitly asked to remember something, check the assistant acknowledged
+    let rememberPatterns: RegExp[] = [
+      /(?:\u8bb0\u4f4f|\u8bb0\u4e0b|\u5907\u5fd8)(.{3,80})/i,  // 记住/记下/备忘 + content
+      /(?:remember|note down)\s+(?:that\s+)?(.{5,80})/i,
+    ];
+    let ackPatterns: RegExp[] = [
+      /\u597d\u7684|\u5df2\u8bb0\u4f4f|\u6211\u8bb0\u4e0b\u4e86|\u8bb0\u5fc6\u5df2\u4fdd\u5b58/i, // 好的/已记住/我记下了/记忆已保存
+      /i'?ll remember|noted|saved|got it/i,
+    ];
+
+    let shouldSave = false;
+    for (let ackRe of ackPatterns) {
+      if (ackRe.test(assistantText)) {
+        shouldSave = true;
+        break;
+      }
+    }
+
+    if (shouldSave && userText.length > 0) {
+      for (let re of rememberPatterns) {
+        let match = re.exec(userText);
+        if (match && match[1]) {
+          let content = match[1].trim();
+          if (content.length > 2) {
+            this.log.info('ChatPage', `Memory extracted from user request: "${content.substring(0, 60)}"`);
+            this.memSvc.add(ctx, 'fact', content, 0.9).then(() => {
+              this.syncMemoryToServer('fact', content);
+            }).catch(() => { /* ignore */ });
+          }
+        }
+      }
+    }
+  }
+
+  /** Try to sync a memory item to the OpenClaw server (fire-and-forget). */
+  private syncMemoryToServer(memType: string, content: string): void {
+    let runtime = NodeRuntime.getInstance();
+    if (!runtime.isConnected) return;
+
+    runtime.saveMemoryToServer(memType, content, 0.8).then((res) => {
+      this.log.info('ChatPage', `Memory synced to server: ${res.substring(0, 100)}`);
+    }).catch((err: Error) => {
+      this.log.warn('ChatPage', `Memory sync to server failed: ${err.message ?? ''}`);
+    });
+  }
+
+  /**
+   * Fetch memories from the OpenClaw server and merge with local memory store.
+   * Called when gateway connects or manually from UI.
+   */
+  async syncMemoriesFromServer(): Promise<void> {
+    let runtime = NodeRuntime.getInstance();
+    if (!runtime.isConnected) {
+      this.log.warn('ChatPage', 'Cannot sync memories: gateway not connected');
+      return;
+    }
+
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let resJson = await runtime.fetchMemories();
+      if (resJson.length === 0) return;
+
+      let res = JSON.parse(resJson) as Record<string, Object>;
+      let items = res['items'] as Object[] | undefined;
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        this.log.info('ChatPage', 'No memories from server');
+        return;
+      }
+
+      let localItems = await this.memSvc.loadAll(ctx);
+      let localContents = new Set<string>();
+      for (let li of localItems) {
+        localContents.add(li.content.toLowerCase().trim());
+      }
+
+      let addedCount = 0;
+      for (let item of items) {
+        let serverItem = item as Record<string, Object>;
+        let content = String(serverItem['content'] ?? '');
+        let memType = String(serverItem['type'] ?? serverItem['memType'] ?? 'fact');
+        let importance = (serverItem['importance'] as number) ?? 0.5;
+
+        if (content.length > 0 && !localContents.has(content.toLowerCase().trim())) {
+          await this.memSvc.add(ctx, memType, content, importance);
+          localContents.add(content.toLowerCase().trim());
+          addedCount++;
+        }
+      }
+
+      this.log.info('ChatPage', `Memory sync from server: ${items.length} server items, ${addedCount} new items merged`);
+    } catch (err) {
+      this.log.warn('ChatPage', `Memory sync from server failed: ${(err as Error).message ?? ''}`);
+    }
   }
 }
 

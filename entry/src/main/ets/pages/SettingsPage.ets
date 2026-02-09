@@ -32,6 +32,9 @@ export struct SettingsPage {
   @State capCanvas: boolean = true;
   @State capScreen: boolean = true;
   @State capNotification: boolean = true;
+  @State capMicrophone: boolean = true;
+  @State capSpeaker: boolean = true;
+  @State ttsAutoRead: boolean = false;
 
   private gwListener: ((state: ConnectionState, text: string) => void) | undefined = undefined;
   private langListener: (() => void) | undefined = undefined;
@@ -399,6 +402,28 @@ export struct SettingsPage {
             this.CapToggle(I18n.t('settings.capCanvas'), this.capCanvas, (v: boolean) => { this.capCanvas = v; })
             this.CapToggle(I18n.t('settings.capScreen'), this.capScreen, (v: boolean) => { this.capScreen = v; })
             this.CapToggle(I18n.t('settings.capNotification'), this.capNotification, (v: boolean) => { this.capNotification = v; })
+            this.CapToggle(I18n.t('settings.capMicrophone'), this.capMicrophone, (v: boolean) => { this.capMicrophone = v; })
+            this.CapToggle(I18n.t('settings.capSpeaker'), this.capSpeaker, (v: boolean) => { this.capSpeaker = v; })
+
+            // TTS auto-read
+            Divider().margin({ top: 10, bottom: 10 }).color('#F0F0F0')
+            Row() {
+              Column({ space: 2 }) {
+                Text(I18n.t('settings.ttsAutoRead'))
+                  .fontSize(13)
+                  .fontColor('#1A1A1A')
+                Text(I18n.t('settings.ttsAutoReadDesc'))
+                  .fontSize(11)
+                  .fontColor('#999999')
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+              Toggle({ type: ToggleType.Switch, isOn: this.ttsAutoRead })
+                .selectedColor('#D2691E')
+                .onChange((v: boolean) => { this.ttsAutoRead = v; })
+            }
+            .width('100%')
+            .height(50)
           }
         }
         .width('100%')
@@ -542,7 +567,8 @@ export struct SettingsPage {
     // Apply capability config before connecting
     NodeRuntime.getInstance().updateCapabilities(
       this.capLocation, this.capCamera, this.capCanvas,
-      this.capScreen, this.capNotification
+      this.capScreen, this.capNotification, undefined,
+      this.capMicrophone, this.capSpeaker
     );
     NodeRuntime.getInstance().connect(ctx, endpoint, token, password);
   }
@@ -580,6 +606,9 @@ export struct SettingsPage {
       this.capCanvas = (await store.get('capCanvas', true)) as boolean;
       this.capScreen = (await store.get('capScreen', true)) as boolean;
       this.capNotification = (await store.get('capNotification', true)) as boolean;
+      this.capMicrophone = (await store.get('capMicrophone', true)) as boolean;
+      this.capSpeaker = (await store.get('capSpeaker', true)) as boolean;
+      this.ttsAutoRead = (await store.get('ttsAutoRead', false)) as boolean;
     } catch { /* first launch defaults */ }
   }
 
@@ -609,12 +638,16 @@ export struct SettingsPage {
       await gwStore.put('capCanvas', this.capCanvas);
       await gwStore.put('capScreen', this.capScreen);
       await gwStore.put('capNotification', this.capNotification);
+      await gwStore.put('capMicrophone', this.capMicrophone);
+      await gwStore.put('capSpeaker', this.capSpeaker);
+      await gwStore.put('ttsAutoRead', this.ttsAutoRead);
       await gwStore.flush();
 
       // Update NodeRuntime capability config
       NodeRuntime.getInstance().updateCapabilities(
         this.capLocation, this.capCamera, this.capCanvas,
-        this.capScreen, this.capNotification
+        this.capScreen, this.capNotification, undefined,
+        this.capMicrophone, this.capSpeaker
       );
 
       // Save language

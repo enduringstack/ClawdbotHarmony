@@ -13,6 +13,8 @@ import { CameraCapability } from './CameraCapability';
 import { CanvasCapability } from './CanvasCapability';
 import { SmsCapability } from './SmsCapability';
 import { ScreenCapability } from './ScreenCapability';
+import { MicrophoneCapability } from './MicrophoneCapability';
+import { SpeakerCapability } from './SpeakerCapability';
 import { GatewayProtocol } from './GatewayProtocol';
 import { Capability, Command } from './GatewayProtocol';
 import {
@@ -49,6 +51,8 @@ export class NodeRuntime {
   private canvasCapability: CanvasCapability = new CanvasCapability();
   private smsCapability: SmsCapability = new SmsCapability();
   private screenCapability: ScreenCapability = new ScreenCapability();
+  private microphoneCapability: MicrophoneCapability = new MicrophoneCapability();
+  private speakerCapability: SpeakerCapability = new SpeakerCapability();
 
   // Capability toggles (default all enabled)
   private _capLocation: boolean = true;
@@ -57,6 +61,8 @@ export class NodeRuntime {
   private _capScreen: boolean = true;
   private _capNotification: boolean = true;
   private _capSms: boolean = true;
+  private _capMicrophone: boolean = true;
+  private _capSpeaker: boolean = true;
 
   // Observable state
   private _operatorState: ConnectionState = ConnectionState.Disconnected;
@@ -71,6 +77,9 @@ export class NodeRuntime {
   // Dedup: track runId+seq processed by 'agent' events to skip duplicate 'chat' events
   private _agentProcessedSeqs: Set<string> = new Set<string>();
   private _agentActiveRunId: string = '';
+
+  // Current endpoint (for media URL building)
+  private _endpoint: GatewayEndpoint | undefined = undefined;
 
   // Notification-to-chat listeners
   private _notifListeners: Array<(info: NotificationInfo) => void> = [];
@@ -122,7 +131,8 @@ export class NodeRuntime {
 
   /** Update which capabilities are enabled (called from SettingsPage) */
   updateCapabilities(location: boolean, camera: boolean, canvas: boolean,
-                     screen: boolean, notification: boolean, sms?: boolean): void {
+                     screen: boolean, notification: boolean, sms?: boolean,
+                     microphone?: boolean, speaker?: boolean): void {
     this._capLocation = location;
     this._capCamera = camera;
     this._capCanvas = canvas;
@@ -131,7 +141,13 @@ export class NodeRuntime {
     if (sms !== undefined) {
       this._capSms = sms;
     }
-    this.log.info(TAG, `Capabilities updated: location=${location} camera=${camera} canvas=${canvas} screen=${screen} notification=${notification} sms=${this._capSms}`);
+    if (microphone !== undefined) {
+      this._capMicrophone = microphone;
+    }
+    if (speaker !== undefined) {
+      this._capSpeaker = speaker;
+    }
+    this.log.info(TAG, `Capabilities updated: location=${location} camera=${camera} canvas=${canvas} screen=${screen} notification=${notification} sms=${this._capSms} mic=${this._capMicrophone} speaker=${this._capSpeaker}`);
   }
 
   addStateListener(listener: (state: ConnectionState, text: string) => void): void {
@@ -229,15 +245,86 @@ export class NodeRuntime {
     }
   }
 
+  /** Get the current gateway endpoint (for building media URLs, etc.) */
+  getEndpoint(): GatewayEndpoint | undefined {
+    return this._endpoint;
+  }
+
+  /**
+   * Build an HTTP URL from a MEDIA: path reference.
+   * Gateway serves media at: http(s)://host:port/media/<path>
+   * e.g., "MEDIA:/tmp/tts-xxx/voice.mp3" → "https://host:port/media/tmp/tts-xxx/voice.mp3"
+   */
+  buildMediaUrl(mediaPath: string): string | undefined {
+    let ep = this._endpoint;
+    if (!ep) return undefined;
+    // Strip "MEDIA:" prefix
+    let path = mediaPath;
+    if (path.startsWith('MEDIA:')) {
+      path = path.substring(6);
+    }
+    // Remove leading slash for clean join
+    if (path.startsWith('/')) {
+      path = path.substring(1);
+    }
+    let scheme = ep.useTls ? 'https' : 'http';
+    return `${scheme}://${ep.host}:${ep.port}/media/${path}`;
+  }
+
+  /**
+   * Play a MEDIA: reference URL through the speaker capability.
+   * Downloads from gateway and plays via AVPlayer.
+   */
+  async playMediaUrl(mediaPath: string): Promise<void> {
+    let url = this.buildMediaUrl(mediaPath);
+    if (!url) {
+      this.log.warn(TAG, 'Cannot play media: no gateway endpoint');
+      return;
+    }
+    if (!this._capSpeaker) {
+      this.log.warn(TAG, 'Cannot play media: speaker capability disabled');
+      return;
+    }
+    this.log.info(TAG, `Playing media URL: ${url}`);
+    let paramsJson = `{"url":${JSON.stringify(url)}}`;
+    try {
+      let result = await this.speakerCapability.execute(Command.SPEAKER_PLAY, paramsJson);
+      this.log.info(TAG, `Media playback result: ${result.substring(0, 200)}`);
+    } catch (err) {
+      this.log.error(TAG, `Media playback error: ${(err as Error).message ?? ''}`);
+    }
+  }
+
+  /**
+   * Use local TTS to speak text (bypasses gateway, uses device speaker directly).
+   */
+  async speakLocal(paramsJson: string): Promise<void> {
+    if (!this._capSpeaker) {
+      this.log.warn(TAG, 'Cannot speak: speaker capability disabled');
+      return;
+    }
+    this.log.info(TAG, `speakLocal: params=${paramsJson.substring(0, 200)}`);
+    try {
+      let result = await this.speakerCapability.execute(Command.SPEAKER_SPEAK, paramsJson);
+      this.log.info(TAG, `speakLocal result: ${result.substring(0, 200)}`);
+    } catch (err) {
+      this.log.error(TAG, `speakLocal error: ${(err as Error).message ?? ''}`);
+      throw err as Error;
+    }
+  }
+
   connect(context: common.UIAbilityContext, endpoint: GatewayEndpoint, token?: string, password?: string): void {
     // Disconnect existing sessions if any
     this.disconnect();
 
+    this._endpoint = endpoint;
     this.log.info(TAG, `connect() called: ${endpoint.host}:${endpoint.port} tls=${endpoint.useTls} token=${token ? 'yes' : 'no'} password=${password ? 'yes' : 'no'}`);
 
     // Set context for capabilities that need file system access
     this.cameraCapability.setContext(context);
     this.screenCapability.setContext(context);
+    this.microphoneCapability.setContext(context);
+    this.speakerCapability.setContext(context);
 
     // Set up notification capability: bundleName, icon, permission, and chat callback
     if (this._capNotification) {
@@ -298,6 +385,7 @@ export class NodeRuntime {
       this.nodeSession.disconnect();
       this.nodeSession = undefined;
     }
+    this._endpoint = undefined;
     this._operatorState = ConnectionState.Disconnected;
     this._nodeState = ConnectionState.Disconnected;
     this.updateStatus();
@@ -386,10 +474,25 @@ export class NodeRuntime {
           this.log.info(TAG, `sms.send result: ${result}`);
           return InvokeResult.success(result);
         }
+        case Command.SCREEN_CAPTURE:
         case Command.SCREEN_RECORD: {
-          this.log.info(TAG, 'Executing screen.record capability...');
-          let result = await this.screenCapability.execute(paramsJson);
-          this.log.info(TAG, `screen.record result: ${result.substring(0, 200)}`);
+          this.log.info(TAG, `Executing ${command} capability...`);
+          let result = await this.screenCapability.execute(command, paramsJson);
+          this.log.info(TAG, `${command} result: ${result.substring(0, 200)}`);
+          return InvokeResult.success(result);
+        }
+        case Command.MIC_RECORD: {
+          this.log.info(TAG, 'Executing mic.record capability...');
+          let result = await this.microphoneCapability.execute(paramsJson);
+          this.log.info(TAG, `mic.record result: ${result.substring(0, 200)}`);
+          return InvokeResult.success(result);
+        }
+        case Command.SPEAKER_SPEAK:
+        case Command.SPEAKER_PLAY:
+        case Command.SPEAKER_STOP: {
+          this.log.info(TAG, `Executing ${command} capability...`);
+          let result = await this.speakerCapability.execute(command, paramsJson);
+          this.log.info(TAG, `${command} result: ${result.substring(0, 200)}`);
           return InvokeResult.success(result);
         }
         default:
@@ -710,6 +813,7 @@ export class NodeRuntime {
     }
     if (this._capScreen) {
       caps.push(Capability.Screen);
+      commands.push(Command.SCREEN_CAPTURE);
       commands.push(Command.SCREEN_RECORD);
     }
     if (this._capNotification) {
@@ -721,6 +825,16 @@ export class NodeRuntime {
       caps.push(Capability.Sms);
       commands.push(Command.SMS_SEND);
     }
+    if (this._capMicrophone) {
+      caps.push(Capability.Microphone);
+      commands.push(Command.MIC_RECORD);
+    }
+    if (this._capSpeaker) {
+      caps.push(Capability.Speaker);
+      commands.push(Command.SPEAKER_SPEAK);
+      commands.push(Command.SPEAKER_PLAY);
+      commands.push(Command.SPEAKER_STOP);
+    }
 
     return {
       role: 'node',
@@ -731,6 +845,37 @@ export class NodeRuntime {
       client: this.buildClientInfo('openclaw-android', 'node'),
       userAgent: `ClawdBotHarmony/${APP_VERSION} (HarmonyOS NEXT)`,
     };
+  }
+
+  /** Fetch memories from the OpenClaw server via operator session RPC. */
+  async fetchMemories(): Promise<string> {
+    if (!this.operatorSession) {
+      throw new Error('Gateway not connected');
+    }
+    if (this._operatorState !== ConnectionState.Connected) {
+      throw new Error('Operator session not connected');
+    }
+
+    this.log.info(TAG, 'Fetching memories from server...');
+    let resJson = await this.operatorSession.request('memory.list', '{}', 15000);
+    this.log.info(TAG, `memory.list response: ${resJson.substring(0, 500)}`);
+    return resJson;
+  }
+
+  /** Save a memory item to the OpenClaw server via operator session RPC. */
+  async saveMemoryToServer(memType: string, content: string, importance: number = 0.5): Promise<string> {
+    if (!this.operatorSession) {
+      throw new Error('Gateway not connected');
+    }
+    if (this._operatorState !== ConnectionState.Connected) {
+      throw new Error('Operator session not connected');
+    }
+
+    let params = `{"type":${JSON.stringify(memType)},"content":${JSON.stringify(content)},"importance":${importance}}`;
+    this.log.info(TAG, `Saving memory to server: type=${memType} content=${content.substring(0, 80)}`);
+    let resJson = await this.operatorSession.request('memory.add', params, 15000);
+    this.log.info(TAG, `memory.add response: ${resJson.substring(0, 200)}`);
+    return resJson;
   }
 
   /** Load the app icon as PixelMap for notification status bar display */
