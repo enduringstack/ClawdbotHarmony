@@ -33,12 +33,22 @@ export class LogService {
   private static instance: LogService | undefined = undefined;
   private entries: LogEntry[] = [];
   private listeners: Array<() => void> = [];
+  private _enabled: boolean = false;
 
   static getInstance(): LogService {
     if (!LogService.instance) {
       LogService.instance = new LogService();
     }
     return LogService.instance;
+  }
+
+  /** Whether log recording is enabled */
+  get enabled(): boolean {
+    return this._enabled;
+  }
+
+  set enabled(val: boolean) {
+    this._enabled = val;
   }
 
   info(tag: string, message: string): void {
@@ -97,6 +107,7 @@ export class LogService {
   }
 
   private add(level: string, tag: string, message: string): void {
+    if (!this._enabled) return;
     let entry = new LogEntry(level, tag, message);
     this.entries.push(entry);
     if (this.entries.length > MAX_LOG_ENTRIES) {

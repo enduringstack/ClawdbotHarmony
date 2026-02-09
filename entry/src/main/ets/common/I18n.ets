@@ -26,6 +26,8 @@ function buildZh(): Map<string, string> {
   m.set('chat.quick.searchWeb', '搜索网页');
   m.set('chat.quick.smartHome', '智能家居状态');
   m.set('chat.toolResult', '结果');
+  m.set('chat.notificationReceived', '收到网关通知');
+  m.set('chat.notificationFrom', '来自');
 
   // SkillsPage
   m.set('skills.title', '技能');
@@ -119,6 +121,8 @@ function buildZh(): Map<string, string> {
   m.set('log.copied', '已复制到剪贴板');
   m.set('log.exported', '已导出到文件');
   m.set('log.exportFail', '导出失败');
+  m.set('log.recording', '记录中');
+  m.set('log.filePath', '文件路径');
 
   // Connection states
   m.set('state.offline', '离线');
@@ -150,6 +154,8 @@ function buildEn(): Map<string, string> {
   m.set('chat.quick.searchWeb', 'Search the web');
   m.set('chat.quick.smartHome', 'Smart home status');
   m.set('chat.toolResult', 'result');
+  m.set('chat.notificationReceived', 'Gateway Notification');
+  m.set('chat.notificationFrom', 'From');
 
   // SkillsPage
   m.set('skills.title', 'Skills');
@@ -243,6 +249,8 @@ function buildEn(): Map<string, string> {
   m.set('log.copied', 'Copied to clipboard');
   m.set('log.exported', 'Exported to file');
   m.set('log.exportFail', 'Export failed');
+  m.set('log.recording', 'Recording');
+  m.set('log.filePath', 'File path');
 
   // Connection states
   m.set('state.offline', 'Offline');

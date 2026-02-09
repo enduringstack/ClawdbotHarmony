@@ -8,7 +8,7 @@ import { GatewaySession } from './GatewaySession';
 import { DeviceIdentityStore } from './DeviceIdentityStore';
 import { DeviceAuthStore } from './DeviceAuthStore';
 import { LocationCapability } from './LocationCapability';
-import { NotificationCapability } from './NotificationCapability';
+import { NotificationCapability, NotificationInfo } from './NotificationCapability';
 import { CameraCapability } from './CameraCapability';
 import { CanvasCapability } from './CanvasCapability';
 import { SmsCapability } from './SmsCapability';
@@ -25,6 +25,7 @@ import {
   GatewayChatEvent,
   GatewayChatContentBlock,
 } from './GatewayModels';
+import { image } from '@kit.ImageKit';
 import { LogService } from '../../common/LogService';
 
 const TAG = 'NodeRuntime';
@@ -66,6 +67,13 @@ export class NodeRuntime {
   // Chat via gateway
   private _chatListeners: Array<(event: GatewayChatEvent) => void> = [];
   private _chatIdCounter: number = 0;
+
+  // Dedup: track runId+seq processed by 'agent' events to skip duplicate 'chat' events
+  private _agentProcessedSeqs: Set<string> = new Set<string>();
+  private _agentActiveRunId: string = '';
+
+  // Notification-to-chat listeners
+  private _notifListeners: Array<(info: NotificationInfo) => void> = [];
 
   static getInstance(): NodeRuntime {
     if (!NodeRuntime.instance) {
@@ -197,6 +205,30 @@ export class NodeRuntime {
     }
   }
 
+  // ---- Notification-to-chat listeners ----
+
+  addNotificationListener(listener: (info: NotificationInfo) => void): void {
+    this._notifListeners.push(listener);
+  }
+
+  removeNotificationListener(listener: (info: NotificationInfo) => void): void {
+    let idx = this._notifListeners.indexOf(listener);
+    if (idx >= 0) {
+      this._notifListeners.splice(idx, 1);
+    }
+  }
+
+  private dispatchNotification(info: NotificationInfo): void {
+    this.log.info(TAG, `dispatchNotification: title="${info.title}" sender="${info.sender}" body="${info.body.substring(0, 80)}"`);
+    for (let listener of this._notifListeners) {
+      try {
+        listener(info);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   connect(context: common.UIAbilityContext, endpoint: GatewayEndpoint, token?: string, password?: string): void {
     // Disconnect existing sessions if any
     this.disconnect();
@@ -206,6 +238,17 @@ export class NodeRuntime {
     // Set context for capabilities that need file system access
     this.cameraCapability.setContext(context);
     this.screenCapability.setContext(context);
+
+    // Set up notification capability: bundleName, icon, permission, and chat callback
+    if (this._capNotification) {
+      this.notificationCapability.setBundleName(context.abilityInfo.bundleName);
+      this.notificationCapability.requestPermissionEarly();
+      this.notificationCapability.onNotificationPublished = (info: NotificationInfo) => {
+        this.dispatchNotification(info);
+      };
+      // Load small icon for status bar display (fire-and-forget)
+      this.loadNotificationIcon(context);
+    }
 
     // Create operator session
     let operatorOpts = this.buildOperatorOptions();
@@ -313,10 +356,11 @@ export class NodeRuntime {
           this.log.info(TAG, `location.get result: ${result}`);
           return InvokeResult.success(result);
         }
-        case Command.NOTIFICATION_SHOW: {
-          this.log.info(TAG, 'Executing notification.show capability...');
+        case Command.NOTIFICATION_SHOW:
+        case Command.SYSTEM_NOTIFY: {
+          this.log.info(TAG, `Executing ${command} capability...`);
           let result = await this.notificationCapability.execute(paramsJson);
-          this.log.info(TAG, `notification.show result: ${result}`);
+          this.log.info(TAG, `${command} result: ${result}`);
           return InvokeResult.success(result);
         }
         case Command.CAMERA_SNAP:
@@ -360,7 +404,7 @@ export class NodeRuntime {
   }
 
   private handleOperatorEvent(event: string, payloadJson: string | undefined): void {
-    this.log.info(TAG, `operator event: "${event}" payloadLen=${payloadJson ? payloadJson.length : 0} payload(200)=${payloadJson ? payloadJson.substring(0, 200) : '(none)'}`);
+    this.log.info(TAG, `operator event: "${event}" payloadLen=${payloadJson ? payloadJson.length : 0} payload(500)=${payloadJson ? payloadJson.substring(0, 500) : '(none)'}`);
 
     if (!payloadJson) return;
 
@@ -381,16 +425,64 @@ export class NodeRuntime {
         let seq: number = (raw['seq'] as number) ?? 0;
         let sessionKey: string = (raw['sessionKey'] as string) ?? '';
 
-        // Extract text: try data.text first, then top-level text
+        // Extract INCREMENTAL text (delta) from agent events.
+        // Wire format: data.text = accumulated full text, data.delta = incremental chunk.
+        // We use data.delta (incremental) because ChatPage accumulates text on its side.
+        // Fallback order:
+        // 1. data.delta (incremental chunk — preferred)
+        // 2. data.text (accumulated — only if delta not available)
+        // 3. top-level text field
+        // 4. message.content[].text (chat-style message format)
+        // 5. content[].text (direct content blocks)
+        // 6. data (if data is a string directly)
         let fullText: string = '';
         let dataObj = raw['data'] as Record<string, Object> | undefined;
         if (dataObj !== undefined && dataObj !== null) {
-          if (dataObj['text'] !== undefined) {
+          if (typeof dataObj === 'string') {
+            fullText = String(dataObj);
+          } else if (dataObj['delta'] !== undefined && String(dataObj['delta']).length > 0) {
+            // Prefer incremental delta text — ChatPage accumulates these
+            fullText = String(dataObj['delta']);
+          } else if (dataObj['text'] !== undefined) {
+            // Fallback to accumulated text (used for final events that have no delta)
             fullText = String(dataObj['text']);
           }
         }
         if (fullText.length === 0 && raw['text'] !== undefined) {
           fullText = String(raw['text']);
+        }
+        // Try message.content[].text format
+        if (fullText.length === 0 && raw['message'] !== undefined) {
+          let msgObj = raw['message'] as Record<string, Object>;
+          if (msgObj !== null && msgObj['content'] !== undefined) {
+            let contentVal = msgObj['content'];
+            if (Array.isArray(contentVal)) {
+              let arr: Object[] = contentVal as Object[];
+              for (let i = 0; i < arr.length; i++) {
+                let block: Record<string, string> = arr[i] as Record<string, string>;
+                if (block['type'] === 'text' && block['text']) {
+                  fullText += block['text'];
+                }
+              }
+            } else if (typeof contentVal === 'string') {
+              fullText = contentVal as string;
+            }
+          }
+        }
+        // Try top-level content array
+        if (fullText.length === 0 && raw['content'] !== undefined) {
+          let contentVal = raw['content'];
+          if (Array.isArray(contentVal)) {
+            let arr: Object[] = contentVal as Object[];
+            for (let i = 0; i < arr.length; i++) {
+              let block: Record<string, string> = arr[i] as Record<string, string>;
+              if (block['type'] === 'text' && block['text']) {
+                fullText += block['text'];
+              }
+            }
+          } else if (typeof contentVal === 'string') {
+            fullText = contentVal as string;
+          }
         }
 
         // Determine state from multiple signals:
@@ -448,6 +540,15 @@ export class NodeRuntime {
           }
         }
 
+        // Check lifecycle stream: stream=lifecycle, data.phase=end means the run is complete
+        if (chatState === 'delta' && stream === 'lifecycle' && dataObj !== undefined && dataObj !== null) {
+          let phase = dataObj['phase'];
+          if (phase !== undefined && String(phase) === 'end') {
+            chatState = 'final';
+            this.log.info(TAG, `lifecycle phase=end detected, marking as final`);
+          }
+        }
+
         // Build GatewayChatEvent with text
         let errorMsg: string | undefined = undefined;
         if (raw['errorMessage'] !== undefined) {
@@ -477,6 +578,20 @@ export class NodeRuntime {
         };
 
         this.log.info(TAG, `agentChat: state=${chatState} runId=${runId} seq=${seq} textLen=${fullText.length} blocks=${blocks.length} text(100)="${fullText.substring(0, 100)}"`);
+
+        // Track this runId+seq so we can skip duplicate 'chat' events for the same data
+        this._agentActiveRunId = runId;
+        let dedupKey = `${runId}:${seq}`;
+        this._agentProcessedSeqs.add(dedupKey);
+        // Keep set small: clear old entries when final
+        if (chatState === 'final' || chatState === 'error' || chatState === 'aborted') {
+          // Schedule cleanup after a short delay so any lagging chat events still get filtered
+          setTimeout(() => {
+            this._agentProcessedSeqs.clear();
+            this._agentActiveRunId = '';
+          }, 3000);
+        }
+
         this.dispatchChatEvent(chatEvent);
       } catch (err) {
         this.log.error(TAG, `Failed to parse agent event: ${(err as Error).message ?? ''}`);
@@ -485,16 +600,30 @@ export class NodeRuntime {
     }
 
     // Handle 'chat' event format (legacy / direct chat.send response)
+    // Skip if we already processed the same runId+seq from 'agent' events (dedup)
     if (event === 'chat') {
       try {
         let raw = JSON.parse(payloadJson) as Record<string, Object>;
         let runId: string = (raw['runId'] as string) ?? '';
         let state: string = (raw['state'] as string) ?? '';
+        let chatSeq: number = (raw['seq'] as number) ?? 0;
+
+        // Dedup: if this runId+seq was already handled by an 'agent' event, skip it
+        let dedupKey = `${runId}:${chatSeq}`;
+        if (this._agentProcessedSeqs.has(dedupKey)) {
+          this.log.info(TAG, `chat event SKIPPED (dedup): runId=${runId} seq=${chatSeq} state=${state}`);
+          return;
+        }
+        // Also skip if we have an active agent run for this runId (agent events are preferred)
+        if (this._agentActiveRunId.length > 0 && runId === this._agentActiveRunId) {
+          this.log.info(TAG, `chat event SKIPPED (agent active): runId=${runId} seq=${chatSeq} state=${state}`);
+          return;
+        }
 
         let chatEvent: GatewayChatEvent = {
           runId: runId,
           sessionKey: (raw['sessionKey'] as string) ?? '',
-          seq: (raw['seq'] as number) ?? 0,
+          seq: chatSeq,
           state: state,
           errorMessage: (raw['errorMessage'] as string) ?? undefined,
           stopReason: (raw['stopReason'] as string) ?? undefined,
@@ -586,6 +715,7 @@ export class NodeRuntime {
     if (this._capNotification) {
       caps.push(Capability.Notification);
       commands.push(Command.NOTIFICATION_SHOW);
+      commands.push(Command.SYSTEM_NOTIFY);
     }
     if (this._capSms) {
       caps.push(Capability.Sms);
@@ -601,5 +731,28 @@ export class NodeRuntime {
       client: this.buildClientInfo('openclaw-android', 'node'),
       userAgent: `ClawdBotHarmony/${APP_VERSION} (HarmonyOS NEXT)`,
     };
+  }
+
+  /** Load the app icon as PixelMap for notification status bar display */
+  private loadNotificationIcon(context: common.UIAbilityContext): void {
+    try {
+      let mgr = context.resourceManager;
+      // Use getRawFileContent to load icon from rawfile, or getMediaByName
+      mgr.getMediaByName('icon').then((data: Uint8Array) => {
+        let imageSource = image.createImageSource(data.buffer);
+        imageSource.createPixelMap({
+          desiredSize: { width: 48, height: 48 },
+        }).then((pixelMap: image.PixelMap) => {
+          this.notificationCapability.setSmallIcon(pixelMap);
+          this.log.info(TAG, 'Notification small icon loaded');
+        }).catch((err: Error) => {
+          this.log.warn(TAG, `Failed to create PixelMap for icon: ${err.message ?? ''}`);
+        });
+      }).catch((err: Error) => {
+        this.log.warn(TAG, `Failed to load icon media content: ${err.message ?? ''}`);
+      });
+    } catch (err) {
+      this.log.warn(TAG, `Failed to load notification icon: ${(err as Error).message ?? ''}`);
+    }
   }
 }

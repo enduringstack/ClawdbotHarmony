@@ -12,12 +12,14 @@ import { I18n } from '../common/I18n';
 struct LogViewerPage {
   @State logText: string = '';
   @State fileName: string = '';
+  @State filePath: string = '';
 
   aboutToAppear(): void {
     let params = router.getParams() as Record<string, string> | undefined;
     if (params) {
       this.logText = params['text'] ?? '';
       this.fileName = params['fileName'] ?? 'log.txt';
+      this.filePath = params['filePath'] ?? '';
     }
   }
 
@@ -59,6 +61,25 @@ struct LogViewerPage {
       .padding({ left: 8, right: 16 })
       .backgroundColor(Color.White)
       .shadow({ radius: 2, color: '#00000008', offsetY: 1 })
+
+      // File path
+      if (this.filePath.length > 0) {
+        Row() {
+          Text(`${I18n.t('log.filePath')}: `)
+            .fontSize(11)
+            .fontColor('#666666')
+          Text(this.filePath)
+            .fontSize(11)
+            .fontColor('#1976D2')
+            .layoutWeight(1)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .copyOption(CopyOptions.LocalDevice)
+        }
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+        .backgroundColor('#F5F5F5')
+      }
 
       // Log content
       Scroll() {

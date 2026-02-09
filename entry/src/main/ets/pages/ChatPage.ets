@@ -8,6 +8,7 @@ import { getEnabledToolSchemas, getSkillSystemPrompt, getDefaultSkills } from '.
 import { Constants } from '../common/Constants';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
 import { ConnectionState, GatewayChatEvent } from '../service/gateway/GatewayModels';
+import { NotificationInfo } from '../service/gateway/NotificationCapability';
 import { LogService } from '../common/LogService';
 import { I18n } from '../common/I18n';
 
@@ -25,6 +26,7 @@ export struct ChatPage {
   private log: LogService = LogService.getInstance();
   private gwListener: ((state: ConnectionState, text: string) => void) | undefined = undefined;
   private chatListener: ((event: GatewayChatEvent) => void) | undefined = undefined;
+  private notifListener: ((info: NotificationInfo) => void) | undefined = undefined;
   private langListener: (() => void) | undefined = undefined;
   // Track the current gateway chat run
   private gwRunId: string = '';
@@ -33,6 +35,7 @@ export struct ChatPage {
   private gwEarlyFinish: boolean = false;
   private gwIdleTimer: number = -1; // auto-finish after no events for N seconds
   private gwReceivedDelta: boolean = false; // whether we got at least one delta with text
+  private gwAccumulatedText: string = ''; // accumulated text from delta events
 
   aboutToAppear(): void {
     this.loadHistory();
@@ -46,6 +49,11 @@ export struct ChatPage {
       this.handleGatewayChatEvent(event);
     };
     NodeRuntime.getInstance().addChatListener(this.chatListener);
+    // Register notification listener to display gateway notifications in chat
+    this.notifListener = (info: NotificationInfo) => {
+      this.handleNotificationInChat(info);
+    };
+    NodeRuntime.getInstance().addNotificationListener(this.notifListener);
     this.lang = I18n.lang;
     this.langListener = () => { this.lang = I18n.lang; };
     I18n.addListener(this.langListener);
@@ -59,6 +67,10 @@ export struct ChatPage {
     if (this.chatListener) {
       NodeRuntime.getInstance().removeChatListener(this.chatListener);
       this.chatListener = undefined;
+    }
+    if (this.notifListener) {
+      NodeRuntime.getInstance().removeNotificationListener(this.notifListener);
+      this.notifListener = undefined;
     }
     if (this.langListener) {
       I18n.removeListener(this.langListener);
@@ -134,8 +146,8 @@ export struct ChatPage {
             }
           }, (msg: ChatMessage): string => msg.id)
 
-          // loading indicator
-          if (this.isLoading) {
+          // loading indicator — only for local AI mode (gateway mode uses a placeholder message)
+          if (this.isLoading && this.gwAssistantMsgId.length === 0) {
             ListItem() {
               Row() {
                 Text('C')
@@ -281,6 +293,7 @@ export struct ChatPage {
       // Reset state flags
       this.gwEarlyFinish = false;
       this.gwReceivedDelta = false;
+      this.gwAccumulatedText = '';
       if (this.gwIdleTimer >= 0) {
         clearTimeout(this.gwIdleTimer);
         this.gwIdleTimer = -1;
@@ -289,7 +302,7 @@ export struct ChatPage {
       // Create placeholder assistant message BEFORE sending RPC
       // to avoid race condition where events arrive before gwRunId is set.
       // The handleGatewayChatEvent will adopt any runId it receives while gwRunId is empty.
-      let assistantMsg = new ChatMessage('assistant', '');
+      let assistantMsg = new ChatMessage('assistant', '...');
       this.gwAssistantMsgId = assistantMsg.id;
       this.gwRunId = ''; // will be set from RPC response or adopted from events
       this.messages.push(assistantMsg);
@@ -324,10 +337,7 @@ export struct ChatPage {
       // Update placeholder or add new error message
       let idx = this.findGwAssistantIndex();
       if (idx >= 0) {
-        let updated = new ChatMessage('assistant', `Gateway error: ${errMsg}`);
-        updated.id = this.gwAssistantMsgId;
-        this.messages[idx] = updated;
-        this.messages = [...this.messages];
+        this.messages[idx].content = `Gateway error: ${errMsg}`;
       } else {
         this.messages.push(new ChatMessage('assistant', `Gateway error: ${errMsg}`));
       }
@@ -335,6 +345,7 @@ export struct ChatPage {
       this.gwRunId = '';
       this.gwAssistantMsgId = '';
       this.gwReceivedDelta = false;
+      this.gwAccumulatedText = '';
       if (this.gwIdleTimer >= 0) {
         clearTimeout(this.gwIdleTimer);
         this.gwIdleTimer = -1;
@@ -350,12 +361,9 @@ export struct ChatPage {
         let idx = this.findGwAssistantIndex();
         if (idx >= 0) {
           let existingText = this.messages[idx].content;
-          if (existingText.length === 0) {
+          if (existingText.length === 0 || existingText === '...') {
             // No text received at all — show timeout error
-            let updated = new ChatMessage('assistant', 'Gateway response timeout');
-            updated.id = this.gwAssistantMsgId;
-            this.messages[idx] = updated;
-            this.messages = [...this.messages];
+            this.messages[idx].content = 'Gateway response timeout';
           } else {
             // We have partial text from deltas — keep it (treat as final)
             this.log.info('ChatPage', `Timeout but have text (${existingText.length} chars), keeping it`);
@@ -414,19 +422,19 @@ export struct ChatPage {
     }
 
     if (event.state === 'delta') {
-      // Streaming: update the placeholder assistant message
+      // Streaming: accumulate text and update the placeholder assistant message
+      if (text.length > 0) {
+        this.gwAccumulatedText += text;
+      }
       let idx = this.findGwAssistantIndex();
-      if (idx >= 0 && text.length > 0) {
-        let updated = new ChatMessage('assistant', text);
-        updated.id = this.gwAssistantMsgId;
-        updated.timestamp = this.messages[idx].timestamp;
-        this.messages[idx] = updated;
-        this.messages = [...this.messages]; // trigger re-render
+      if (idx >= 0 && this.gwAccumulatedText.length > 0) {
+        // Mutate the @Observed object directly so @ObjectLink in MessageBubble detects the change
+        this.messages[idx].content = this.gwAccumulatedText;
         this.scrollToEnd();
         this.gwReceivedDelta = true;
-        this.log.info('ChatPage', `Updated msg idx=${idx} textLen=${text.length}`);
+        this.log.info('ChatPage', `Updated msg idx=${idx} chunkLen=${text.length} totalLen=${this.gwAccumulatedText.length}`);
       } else {
-        this.log.warn('ChatPage', `Delta but no update: idx=${idx} textLen=${text.length}`);
+        this.log.warn('ChatPage', `Delta but no update: idx=${idx} chunkLen=${text.length} accLen=${this.gwAccumulatedText.length}`);
       }
 
       // Reset idle timer: if no new events for 15 seconds after receiving text, treat as final
@@ -442,31 +450,39 @@ export struct ChatPage {
         }, 15000);
       }
     } else if (event.state === 'final') {
-      // Final message: update with complete text
+      // Final message: if final event has text, it might be:
+      // 1. The complete accumulated text (use it directly)
+      // 2. A last delta chunk (accumulate it)
+      // We check: if final text is longer than our accumulated text, use it directly.
+      // Otherwise, accumulate it and use the accumulated text.
+      if (text.length > 0) {
+        if (text.length > this.gwAccumulatedText.length) {
+          // Final text is likely the complete response
+          this.gwAccumulatedText = text;
+        } else {
+          // Final text is a last chunk — accumulate
+          this.gwAccumulatedText += text;
+        }
+      }
       let idx = this.findGwAssistantIndex();
       if (idx >= 0) {
-        if (text.length > 0) {
-          let updated = new ChatMessage('assistant', text);
-          updated.id = this.gwAssistantMsgId;
-          updated.timestamp = this.messages[idx].timestamp;
-          this.messages[idx] = updated;
+        let finalText = this.gwAccumulatedText.length > 0 ? this.gwAccumulatedText : text;
+        if (finalText.length > 0) {
+          // Mutate the @Observed object directly for proper re-render
+          this.messages[idx].content = finalText;
         }
-        // If final event has no text, keep whatever we accumulated from deltas
-        this.messages = [...this.messages];
+        // If final event has no text and no accumulated text, keep placeholder "..."
       }
-      this.log.info('ChatPage', `Gateway chat FINAL: textLen=${text.length} text(200)="${text.substring(0, 200)}"`);
+      this.log.info('ChatPage', `Gateway chat FINAL: chunkLen=${text.length} accLen=${this.gwAccumulatedText.length} text(200)="${this.gwAccumulatedText.substring(0, 200)}"`);
       this.finishGatewayChat();
     } else if (event.state === 'error' || event.state === 'aborted') {
       let errText = event.errorMessage ?? (event.state === 'aborted' ? 'Response aborted' : 'Unknown error');
       let idx = this.findGwAssistantIndex();
       if (idx >= 0) {
         // If we already have text from deltas, keep it; otherwise show error
-        if (this.messages[idx].content.length === 0) {
-          let updated = new ChatMessage('assistant', `Gateway: ${errText}`);
-          updated.id = this.gwAssistantMsgId;
-          this.messages[idx] = updated;
+        if (this.messages[idx].content.length === 0 || this.messages[idx].content === '...') {
+          this.messages[idx].content = `Gateway: ${errText}`;
         }
-        this.messages = [...this.messages];
       }
       this.log.error('ChatPage', `Gateway chat ${event.state}: ${errText}`);
       this.finishGatewayChat();
@@ -475,11 +491,12 @@ export struct ChatPage {
 
   /** Clean up state after a gateway chat run completes. */
   private finishGatewayChat(): void {
-    this.log.info('ChatPage', `finishGatewayChat: gwRunId=${this.gwRunId} hadDelta=${this.gwReceivedDelta}`);
+    this.log.info('ChatPage', `finishGatewayChat: gwRunId=${this.gwRunId} hadDelta=${this.gwReceivedDelta} accLen=${this.gwAccumulatedText.length}`);
     this.isLoading = false;
     this.gwRunId = '';
     this.gwAssistantMsgId = '';
     this.gwReceivedDelta = false;
+    this.gwAccumulatedText = '';
     if (this.gwIdleTimer >= 0) {
       clearTimeout(this.gwIdleTimer);
       this.gwIdleTimer = -1;
@@ -490,6 +507,31 @@ export struct ChatPage {
     } else {
       this.gwEarlyFinish = true;
     }
+    this.saveHistory();
+  }
+
+  /** Handle a gateway notification and display it as a chat message. */
+  private handleNotificationInChat(info: NotificationInfo): void {
+    this.log.info('ChatPage', `Notification received: title="${info.title}" sender="${info.sender}" body="${info.body.substring(0, 80)}"`);
+
+    // Build a display message with sender and notification content
+    let parts: string[] = [];
+    parts.push(`\uD83D\uDD14 ${I18n.t('chat.notificationReceived')}`);  // 🔔
+    if (info.sender.length > 0) {
+      parts.push(`${I18n.t('chat.notificationFrom')}: ${info.sender}`);
+    }
+    if (info.title.length > 0 && info.title !== 'OpenClaw') {
+      parts.push(`${info.title}`);
+    }
+    if (info.body.length > 0) {
+      parts.push(info.body);
+    }
+
+    let displayText = parts.join('\n');
+    let msg = new ChatMessage('assistant', displayText);
+    this.messages.push(msg);
+    this.messages = [...this.messages]; // trigger re-render
+    this.scrollToEnd();
     this.saveHistory();
   }
 

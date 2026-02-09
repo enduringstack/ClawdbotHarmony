@@ -1,12 +1,14 @@
 import { LogService, LogEntry } from '../common/LogService';
 import { I18n } from '../common/I18n';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { fileIo } from '@kit.CoreFileKit';
+import { fileIo, picker } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
 
 class LogViewerParams {
   text: string = '';
   fileName: string = '';
+  filePath: string = '';
 }
 
 @Component
@@ -14,6 +16,7 @@ export struct LogPage {
   @State logs: LogEntry[] = [];
   @State filterLevel: string = 'ALL';
   @State autoScroll: boolean = true;
+  @State logEnabled: boolean = false;
   @State @Watch('onLangChange') lang: string = 'zh';
 
   private logSvc: LogService = LogService.getInstance();
@@ -23,6 +26,7 @@ export struct LogPage {
   private levels: string[] = ['ALL', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
 
   aboutToAppear(): void {
+    this.logEnabled = this.logSvc.enabled;
     this.logs = this.logSvc.getAll();
     this.logListener = () => {
       this.logs = this.logSvc.getFiltered(this.filterLevel);
@@ -61,6 +65,25 @@ export struct LogPage {
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
           .fontColor('#1A1A1A')
+
+        // Log recording toggle
+        Toggle({ type: ToggleType.Switch, isOn: this.logEnabled })
+          .selectedColor('#D2691E')
+          .switchPointColor(Color.White)
+          .width(44)
+          .height(24)
+          .margin({ left: 8 })
+          .onChange((isOn: boolean) => {
+            this.logEnabled = isOn;
+            this.logSvc.enabled = isOn;
+          })
+
+        Text(I18n.t('log.recording'))
+          .fontSize(11)
+          .fontColor(this.logEnabled ? '#D2691E' : '#999999')
+          .margin({ left: 4 })
+
+        Blank()
           .layoutWeight(1)
 
         // Copy button
@@ -206,40 +229,64 @@ export struct LogPage {
     });
   }
 
-  /** Export all visible logs to a text file and open in-app viewer */
+  /** Export all visible logs — save via DocumentViewPicker to Downloads */
   private exportLogs(): void {
     if (this.logs.length === 0) return;
 
+    let lines: string[] = [];
+    for (let i = 0; i < this.logs.length; i++) {
+      lines.push(this.logs[i].format());
+    }
+    let text: string = lines.join('\n');
+
+    let now = new Date();
+    let dateStr: string = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+    let fileName: string = `clawdbot_log_${dateStr}.txt`;
+
+    this.doExport(text, fileName);
+  }
+
+  private async doExport(text: string, fileName: string): Promise<void> {
     try {
-      let lines: string[] = [];
-      for (let i = 0; i < this.logs.length; i++) {
-        lines.push(this.logs[i].format());
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let docPicker = new picker.DocumentViewPicker(ctx);
+      let saveOpts = new picker.DocumentSaveOptions();
+      saveOpts.newFileNames = [fileName];
+      saveOpts.fileSuffixChoices = ['.txt'];
+
+      let uris = await docPicker.save(saveOpts);
+      if (uris.length === 0) {
+        console.info('[LogPage] User cancelled save picker');
+        return;
       }
-      let text: string = lines.join('\n');
+      let uri = uris[0];
+      console.info(`[LogPage] Picker returned URI: ${uri}`);
 
-      let now = new Date();
-      let dateStr: string = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
-      let fileName: string = `clawdbot_log_${dateStr}.txt`;
-
-      // Also save to file for later access
-      let ctx: Context = getContext(this);
-      let filePath: string = `${ctx.filesDir}/${fileName}`;
-      let file = fileIo.openSync(filePath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+      // Write content to the file URI returned by picker
+      let file = fileIo.openSync(uri, fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
       fileIo.writeSync(file.fd, text);
       fileIo.closeSync(file);
 
-      // Open in-app log viewer
+      promptAction.showToast({
+        message: I18n.t('log.exported'),
+        duration: 2000,
+      });
+
+      // Open in-app log viewer showing content and file path
       let params = new LogViewerParams();
       params.text = text;
       params.fileName = fileName;
+      params.filePath = uri;
       router.pushUrl({
         url: 'pages/LogViewerPage',
         params: params,
       });
-    } catch {
+    } catch (err) {
+      let errMsg = (err as Error).message ?? String(err);
+      console.error(`[LogPage] Export failed: ${errMsg}`);
       promptAction.showToast({
-        message: I18n.t('log.exportFail'),
-        duration: 2000,
+        message: `${I18n.t('log.exportFail')}: ${errMsg}`,
+        duration: 3000,
       });
     }
   }

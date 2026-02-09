@@ -39,4 +39,5 @@ export class Command {
   static readonly LOCATION_GET: string = 'location.get';
   // Notification
   static readonly NOTIFICATION_SHOW: string = 'notification.show';
+  static readonly SYSTEM_NOTIFY: string = 'system.notify';
 }
