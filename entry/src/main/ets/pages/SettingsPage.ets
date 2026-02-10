@@ -14,12 +14,18 @@ export struct SettingsPage {
   @State baseUrl: string = '';
   @State temperature: number = 0.7;
 
-  // Per-provider saved models
+  // Per-provider saved settings
   private savedModels: Record<string, string> = {
     'openrouter': Constants.DEFAULT_MODEL_OPENROUTER,
     'anthropic': Constants.DEFAULT_MODEL_ANTHROPIC,
     'openai': Constants.DEFAULT_MODEL_OPENAI,
     'local': 'llama3'
+  };
+  private savedKeys: Record<string, string> = {
+    'openrouter': '', 'anthropic': '', 'openai': '', 'local': ''
+  };
+  private savedUrls: Record<string, string> = {
+    'openrouter': '', 'anthropic': '', 'openai': '', 'local': ''
   };
   @State showKey: boolean = false;
   @State @Watch('onLangChange') lang: string = 'zh';
@@ -148,11 +154,15 @@ export struct SettingsPage {
                 .padding({ left: 12, right: 12, top: 8, bottom: 8 })
                 .borderRadius(8)
                 .onClick(() => {
-                  // Save current model for current provider before switching
+                  // Save current settings for current provider before switching
                   this.savedModels[this.provider] = this.model;
+                  this.savedKeys[this.provider] = this.apiKey;
+                  this.savedUrls[this.provider] = this.baseUrl;
                   this.provider = p;
-                  // Restore saved model for the new provider
+                  // Restore saved settings for the new provider
                   this.model = this.savedModels[p] ?? this.defaultModelFor(p);
+                  this.apiKey = this.savedKeys[p] ?? '';
+                  this.baseUrl = this.savedUrls[p] ?? '';
                 })
             }, (p: string): string => p)
             }
@@ -625,16 +635,24 @@ export struct SettingsPage {
       let ctx = getContext(this) as common.UIAbilityContext;
       let store = await preferences.getPreferences(ctx, Constants.PREFS_SETTINGS);
       this.provider = (await store.get('provider', 'openrouter')) as string;
-      this.apiKey = (await store.get('apiKey', '')) as string;
-      this.baseUrl = (await store.get('baseUrl', '')) as string;
       this.temperature = (await store.get('temperature', 0.7)) as number;
-      // Load per-provider models
+      // Load per-provider settings
       this.savedModels['openrouter'] = (await store.get('model_openrouter', Constants.DEFAULT_MODEL_OPENROUTER)) as string;
       this.savedModels['anthropic'] = (await store.get('model_anthropic', Constants.DEFAULT_MODEL_ANTHROPIC)) as string;
       this.savedModels['openai'] = (await store.get('model_openai', Constants.DEFAULT_MODEL_OPENAI)) as string;
       this.savedModels['local'] = (await store.get('model_local', 'llama3')) as string;
-      // Set current model from active provider
+      this.savedKeys['openrouter'] = (await store.get('key_openrouter', '')) as string;
+      this.savedKeys['anthropic'] = (await store.get('key_anthropic', '')) as string;
+      this.savedKeys['openai'] = (await store.get('key_openai', '')) as string;
+      this.savedKeys['local'] = (await store.get('key_local', '')) as string;
+      this.savedUrls['openrouter'] = (await store.get('url_openrouter', '')) as string;
+      this.savedUrls['anthropic'] = (await store.get('url_anthropic', '')) as string;
+      this.savedUrls['openai'] = (await store.get('url_openai', '')) as string;
+      this.savedUrls['local'] = (await store.get('url_local', '')) as string;
+      // Set current values from active provider
       this.model = this.savedModels[this.provider] ?? this.defaultModelFor(this.provider);
+      this.apiKey = this.savedKeys[this.provider] ?? '';
+      this.baseUrl = this.savedUrls[this.provider] ?? '';
     } catch { /* first launch defaults */ }
   }
 
@@ -671,16 +689,23 @@ export struct SettingsPage {
       // Save AI settings
       let store = await preferences.getPreferences(ctx, Constants.PREFS_SETTINGS);
       await store.put('provider', this.provider);
-      await store.put('apiKey', this.apiKey);
-      await store.put('model', this.model);
-      await store.put('baseUrl', this.baseUrl);
       await store.put('temperature', this.temperature);
-      // Save per-provider models
+      // Save per-provider settings
       this.savedModels[this.provider] = this.model;
+      this.savedKeys[this.provider] = this.apiKey;
+      this.savedUrls[this.provider] = this.baseUrl;
       await store.put('model_openrouter', this.savedModels['openrouter'] ?? Constants.DEFAULT_MODEL_OPENROUTER);
       await store.put('model_anthropic', this.savedModels['anthropic'] ?? Constants.DEFAULT_MODEL_ANTHROPIC);
       await store.put('model_openai', this.savedModels['openai'] ?? Constants.DEFAULT_MODEL_OPENAI);
       await store.put('model_local', this.savedModels['local'] ?? 'llama3');
+      await store.put('key_openrouter', this.savedKeys['openrouter'] ?? '');
+      await store.put('key_anthropic', this.savedKeys['anthropic'] ?? '');
+      await store.put('key_openai', this.savedKeys['openai'] ?? '');
+      await store.put('key_local', this.savedKeys['local'] ?? '');
+      await store.put('url_openrouter', this.savedUrls['openrouter'] ?? '');
+      await store.put('url_anthropic', this.savedUrls['anthropic'] ?? '');
+      await store.put('url_openai', this.savedUrls['openai'] ?? '');
+      await store.put('url_local', this.savedUrls['local'] ?? '');
       await store.flush();
 
       // Save gateway settings

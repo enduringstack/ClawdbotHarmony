@@ -195,7 +195,7 @@ export struct ChatPage {
                 .backgroundColor('#F0F0F0')
                 .borderRadius(16)
               }
-              .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+              .padding({ left: 16, right: 16, top: 4, bottom: 4 })
             }
           }
         }
@@ -797,16 +797,25 @@ Platform: HarmonyOS
   private async loadSettings(ctx: common.UIAbilityContext): Promise<SettingsData> {
     let store = await preferences.getPreferences(ctx, Constants.PREFS_SETTINGS);
     let provider = (await store.get('provider', 'openrouter')) as string;
-    let apiKey = (await store.get('apiKey', '')) as string;
-    // Use built-in OpenRouter key as fallback when no key is configured
+    // Load per-provider apiKey and baseUrl
+    let keyPref = 'key_' + provider;
+    let urlPref = 'url_' + provider;
+    let modelPref = 'model_' + provider;
+    let apiKey = (await store.get(keyPref, '')) as string;
+    let baseUrl = (await store.get(urlPref, '')) as string;
+    let defaultModel = provider === 'openrouter' ? Constants.DEFAULT_MODEL_OPENROUTER
+      : provider === 'anthropic' ? Constants.DEFAULT_MODEL_ANTHROPIC
+        : provider === 'openai' ? Constants.DEFAULT_MODEL_OPENAI : 'llama3';
+    let model = (await store.get(modelPref, defaultModel)) as string;
+    // Use built-in OpenRouter key as fallback
     if (apiKey.length === 0 && provider === 'openrouter' && Constants.OPENROUTER_DEFAULT_KEY.length > 0) {
       apiKey = Constants.OPENROUTER_DEFAULT_KEY;
     }
     return {
       provider: provider,
       apiKey: apiKey,
-      model: (await store.get('model', Constants.DEFAULT_MODEL_OPENROUTER)) as string,
-      baseUrl: (await store.get('baseUrl', '')) as string,
+      model: model,
+      baseUrl: baseUrl,
       temperature: (await store.get('temperature', 0.7)) as number,
     };
   }

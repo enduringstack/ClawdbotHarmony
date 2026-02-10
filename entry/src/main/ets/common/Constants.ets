@@ -15,8 +15,8 @@ export class Constants {
   static readonly DEFAULT_MODEL_OPENAI: string = 'gpt-4o';
   static readonly DEFAULT_MODEL_OPENROUTER: string = 'google/gemini-2.5-flash:free';
 
-  // Built-in OpenRouter API key for free models (replace with your own key)
-  static readonly OPENROUTER_DEFAULT_KEY: string = '';
+  // Built-in OpenRouter API key for free models
+  static readonly OPENROUTER_DEFAULT_KEY: string = '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';
 
   static readonly MAX_TOKENS: number = 4096;
   static readonly MAX_HISTORY: number = 50;

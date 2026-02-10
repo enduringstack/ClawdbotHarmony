@@ -35,7 +35,7 @@ export struct MessageBubble {
         .copyOption(CopyOptions.LocalDevice)
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+    .padding({ left: 16, right: 16, top: 4, bottom: 4 })
   }
 
   @Builder
@@ -59,6 +59,7 @@ export struct MessageBubble {
           baseFontSize: 15
         })
       }
+      .alignItems(HorizontalAlign.Start)
       .padding(12)
       .backgroundColor('#F0F0F0')
       .borderRadius({
@@ -69,7 +70,7 @@ export struct MessageBubble {
       Blank()
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+    .padding({ left: 16, right: 16, top: 4, bottom: 4 })
     .alignItems(VerticalAlign.Top)
   }
 
@@ -108,7 +109,7 @@ export struct MessageBubble {
       Blank()
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 2, bottom: 2 })
+    .padding({ left: 16, right: 16, top: 2, bottom: 2 })
   }
 
   @Builder
@@ -146,7 +147,7 @@ export struct MessageBubble {
       Blank()
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 2, bottom: 2 })
+    .padding({ left: 16, right: 16, top: 2, bottom: 2 })
   }
 
   private formatJson(s: string): string {

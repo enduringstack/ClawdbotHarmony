@@ -255,6 +255,8 @@ export struct MarkdownText {
           .fontWeight(FontWeight.Bold)
           .lineHeight(block.level <= 1 ? 28 : 24)
           .margin({ top: 4, bottom: 2 })
+          .width('100%')
+          .textAlign(TextAlign.Start)
         } else if (block.type === 'hr') {
           Divider().color('#D0D0D0').margin({ top: 6, bottom: 6 })
         } else if (block.type === 'list_item') {
@@ -293,8 +295,12 @@ export struct MarkdownText {
           .fontSize(this.baseFontSize)
           .fontColor(this.textColor)
           .lineHeight(22)
+          .width('100%')
+          .textAlign(TextAlign.Start)
         }
       }, (block: MdBlock): string => block.key)
     }
+    .alignItems(HorizontalAlign.Start)
+    .width('100%')
   }
 }
