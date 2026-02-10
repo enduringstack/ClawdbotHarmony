@@ -1,4 +1,7 @@
 import { http } from '@kit.NetworkKit';
+import { fileIo, picker } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
+import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { ChatMessage, ApiMessage, ToolSchema, SettingsData } from '../model/Models';
 import { Constants } from '../common/Constants';
 import { LogService } from '../common/LogService';
@@ -99,7 +102,8 @@ export class AIService {
     history: ChatMessage[],
     settings: SettingsData,
     systemPrompt: string,
-    tools: ToolSchema[]
+    tools: ToolSchema[],
+    context?: common.UIAbilityContext
   ): Promise<AIResult> {
     let result = new AIResult();
     if (!settings.apiKey && settings.provider !== 'local') {
@@ -116,7 +120,7 @@ export class AIService {
       try {
         if (settings.provider === 'anthropic') {
           response = await this.callAnthropic(allMessages, settings, systemPrompt, tools);
-        } else if (settings.provider === 'openai') {
+        } else if (settings.provider === 'openai' || settings.provider === 'openrouter') {
           response = await this.callOpenAI(allMessages, settings, systemPrompt, tools);
         } else {
           response = await this.callLocal(allMessages, settings, systemPrompt);
@@ -147,7 +151,7 @@ export class AIService {
         result.messages.push(callMsg);
 
         // Execute
-        let output = this.executeTool(tc.name, tc.input);
+        let output = await this.executeTool(tc.name, tc.input, context);
 
         // Show the result
         let resultMsg = new ChatMessage('tool', output);
@@ -279,8 +283,9 @@ export class AIService {
       'Authorization': `Bearer ${settings.apiKey}`
     };
 
+    let defaultUrl = settings.provider === 'openrouter' ? Constants.OPENROUTER_URL : Constants.OPENAI_URL;
     let resp = await this.httpPost(
-      settings.baseUrl || Constants.OPENAI_URL,
+      settings.baseUrl || defaultUrl,
       bodyStr,
       headers
     );
@@ -370,8 +375,8 @@ export class AIService {
     }
   }
 
-  // --------- Tool execution (local stubs) ---------
-  private executeTool(name: string, inputJson: string): string {
+  // --------- Tool execution ---------
+  private async executeTool(name: string, inputJson: string, context?: common.UIAbilityContext): Promise<string> {
     try {
       let input = JSON.parse(inputJson) as Record<string, string>;
       switch (name) {
@@ -384,16 +389,108 @@ export class AIService {
           return JSON.stringify(r);
         }
         case 'read_file': {
-          let r: ToolResultObj = { note: 'File read stub', path: input['path'] ?? '' };
-          return JSON.stringify(r);
+          let filePath = input['path'] ?? '';
+          if (filePath.length === 0) {
+            let r: ToolResultObj = { error: 'No path provided' };
+            return JSON.stringify(r);
+          }
+          try {
+            let stat = fileIo.statSync(filePath);
+            if (!stat.isFile()) {
+              let r: ToolResultObj = { error: 'Not a file: ' + filePath };
+              return JSON.stringify(r);
+            }
+            if (stat.size > 512 * 1024) {
+              let r: ToolResultObj = { error: 'File too large: ' + stat.size + ' bytes (max 512KB)', path: filePath };
+              return JSON.stringify(r);
+            }
+            let file = fileIo.openSync(filePath, fileIo.OpenMode.READ_ONLY);
+            let buf = new ArrayBuffer(stat.size);
+            fileIo.readSync(file.fd, buf);
+            fileIo.closeSync(file);
+            let decoder = util.TextDecoder.create('utf-8');
+            let text = decoder.decodeWithStream(new Uint8Array(buf));
+            let r: ToolResultObj = { content: text, path: filePath };
+            return JSON.stringify(r);
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Failed to read: ' + (e as Error).message, path: filePath };
+            return JSON.stringify(r);
+          }
         }
         case 'write_file': {
-          let r: ToolResultObj = { note: 'File write stub', path: input['path'] ?? '' };
-          return JSON.stringify(r);
+          let wPath = input['path'] ?? '';
+          let wContent = input['content'] ?? '';
+          if (wPath.length === 0) {
+            let r: ToolResultObj = { error: 'No path provided' };
+            return JSON.stringify(r);
+          }
+          try {
+            let encoder = new util.TextEncoder();
+            let encoded = encoder.encodeInto(wContent);
+            let file = fileIo.openSync(wPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+            fileIo.writeSync(file.fd, encoded.buffer);
+            fileIo.closeSync(file);
+            let r: ToolResultObj = { note: 'Written ' + encoded.length + ' bytes', path: wPath };
+            return JSON.stringify(r);
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Failed to write: ' + (e as Error).message, path: wPath };
+            return JSON.stringify(r);
+          }
         }
         case 'list_files': {
-          let r: ToolResultObj = { note: 'List stub', path: input['path'] ?? '' };
-          return JSON.stringify(r);
+          let lPath = input['path'] ?? '';
+          if (lPath.length === 0) {
+            let r: ToolResultObj = { error: 'No path provided' };
+            return JSON.stringify(r);
+          }
+          try {
+            let entries = fileIo.listFileSync(lPath);
+            let r: ToolResultObj = { content: entries.join('\n'), path: lPath, note: entries.length + ' entries' };
+            return JSON.stringify(r);
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Failed to list: ' + (e as Error).message, path: lPath };
+            return JSON.stringify(r);
+          }
+        }
+        case 'pick_file': {
+          if (!context) {
+            let r: ToolResultObj = { error: 'No UI context available for file picker' };
+            return JSON.stringify(r);
+          }
+          try {
+            // Request file access permissions at runtime
+            let atManager = abilityAccessCtrl.createAtManager();
+            await atManager.requestPermissionsFromUser(context, [
+              'ohos.permission.READ_WRITE_DOWNLOAD_DIRECTORY',
+              'ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY'
+            ]);
+            let options = new picker.DocumentSelectOptions();
+            let documentPicker = new picker.DocumentViewPicker(context);
+            let uris = await documentPicker.select(options);
+            if (uris.length === 0) {
+              let r: ToolResultObj = { note: 'User cancelled file selection' };
+              return JSON.stringify(r);
+            }
+            let uri = uris[0];
+            // Try to read the selected file
+            let file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+            let stat = fileIo.statSync(file.fd);
+            if (stat.size > 512 * 1024) {
+              fileIo.closeSync(file);
+              let r: ToolResultObj = { note: 'File selected but too large to read (' + stat.size + ' bytes)', path: uri };
+              return JSON.stringify(r);
+            }
+            let buf = new ArrayBuffer(stat.size);
+            fileIo.readSync(file.fd, buf);
+            fileIo.closeSync(file);
+            let decoder = util.TextDecoder.create('utf-8');
+            let text = decoder.decodeWithStream(new Uint8Array(buf));
+            let r: ToolResultObj = { content: text, path: uri, note: stat.size + ' bytes' };
+            return JSON.stringify(r);
+          } catch (e) {
+            let r: ToolResultObj = { error: 'File pick failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
         }
         case 'web_search': {
           let r: ToolResultObj = { note: 'Connect a search API', query: input['query'] ?? '' };

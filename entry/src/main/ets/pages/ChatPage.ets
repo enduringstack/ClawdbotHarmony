@@ -20,7 +20,8 @@ export struct ChatPage {
   @State gwConnected: boolean = false;
   @State @Watch('onLangChange') lang: string = 'zh';
   @State ttsAutoRead: boolean = false;
-  // topAvoidHeight removed: window is now non-fullscreen, system reserves status bar area
+  @State dotPhase: number = 0;
+  private dotTimer: number = -1;
 
   private scroller: Scroller = new Scroller();
   private ai: AIService = AIService.getInstance();
@@ -84,6 +85,7 @@ export struct ChatPage {
       I18n.removeListener(this.langListener);
       this.langListener = undefined;
     }
+    this.stopDotAnimation();
   }
 
   onLangChange(): void {
@@ -178,12 +180,20 @@ export struct ChatPage {
                   .borderRadius(15)
                   .backgroundColor('#D2691E')
                   .margin({ right: 8 })
-                Text('...')
-                  .fontSize(24)
-                  .fontColor('#999999')
-                  .padding({ left: 12, right: 12, top: 4, bottom: 4 })
-                  .backgroundColor('#F0F0F0')
-                  .borderRadius(16)
+                Row({ space: 6 }) {
+                  Circle({ width: 8, height: 8 })
+                    .fill(this.dotPhase === 0 ? '#D2691E' : '#CCCCCC')
+                    .animation({ duration: 300 })
+                  Circle({ width: 8, height: 8 })
+                    .fill(this.dotPhase === 1 ? '#D2691E' : '#CCCCCC')
+                    .animation({ duration: 300 })
+                  Circle({ width: 8, height: 8 })
+                    .fill(this.dotPhase === 2 ? '#D2691E' : '#CCCCCC')
+                    .animation({ duration: 300 })
+                }
+                .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+                .backgroundColor('#F0F0F0')
+                .borderRadius(16)
               }
               .padding({ left: 12, right: 12, top: 4, bottom: 4 })
             }
@@ -290,6 +300,7 @@ export struct ChatPage {
     this.scrollToEnd();
 
     this.isLoading = true;
+    this.startDotAnimation();
 
     if (this.gwConnected) {
       // ---- Gateway path: send via operator session ----
@@ -343,6 +354,7 @@ export struct ChatPage {
         this.log.info('ChatPage', `Early finish detected for runId=${this.gwRunId}`);
         this.gwEarlyFinish = false;
         this.isLoading = false;
+    this.stopDotAnimation();
         return;
       }
 
@@ -360,6 +372,7 @@ export struct ChatPage {
         this.messages.push(new ChatMessage('assistant', `Gateway error: ${errMsg}`));
       }
       this.isLoading = false;
+    this.stopDotAnimation();
       this.gwRunId = '';
       this.gwAssistantMsgId = '';
       this.gwReceivedDelta = false;
@@ -388,6 +401,7 @@ export struct ChatPage {
           }
         }
         this.isLoading = false;
+    this.stopDotAnimation();
         this.gwRunId = '';
         this.gwAssistantMsgId = '';
         resolve();
@@ -594,6 +608,7 @@ export struct ChatPage {
   /** Actually reset all gateway chat state */
   private doCleanupGatewayChat(): void {
     this.isLoading = false;
+    this.stopDotAnimation();
     this.gwRunId = '';
     this.gwAssistantMsgId = '';
     this.gwReceivedDelta = false;
@@ -701,6 +716,20 @@ export struct ChatPage {
     this.saveHistory();
   }
 
+  private startDotAnimation(): void {
+    this.dotPhase = 0;
+    this.dotTimer = setInterval(() => {
+      this.dotPhase = (this.dotPhase + 1) % 3;
+    }, 400);
+  }
+
+  private stopDotAnimation(): void {
+    if (this.dotTimer !== -1) {
+      clearInterval(this.dotTimer);
+      this.dotTimer = -1;
+    }
+  }
+
   /** Send message through local AI service (direct HTTP API). */
   private async sendViaLocalAI(text: string): Promise<void> {
     try {
@@ -712,7 +741,7 @@ export struct ChatPage {
       let systemPrompt = this.buildSystemPrompt(memItems, skills);
       let tools = getEnabledToolSchemas(skills);
 
-      let result: AIResult = await this.ai.chat(this.messages, settings, systemPrompt, tools);
+      let result: AIResult = await this.ai.chat(this.messages, settings, systemPrompt, tools, ctx);
 
       if (result.error.length > 0) {
         this.messages.push(new ChatMessage('assistant', result.error));
@@ -750,6 +779,7 @@ export struct ChatPage {
     }
 
     this.isLoading = false;
+    this.stopDotAnimation();
   }
 
   private buildSystemPrompt(memItems: MemoryItem[], skills: import('../model/Models').SkillItem[]): string {
@@ -766,10 +796,16 @@ Platform: HarmonyOS
 
   private async loadSettings(ctx: common.UIAbilityContext): Promise<SettingsData> {
     let store = await preferences.getPreferences(ctx, Constants.PREFS_SETTINGS);
+    let provider = (await store.get('provider', 'openrouter')) as string;
+    let apiKey = (await store.get('apiKey', '')) as string;
+    // Use built-in OpenRouter key as fallback when no key is configured
+    if (apiKey.length === 0 && provider === 'openrouter' && Constants.OPENROUTER_DEFAULT_KEY.length > 0) {
+      apiKey = Constants.OPENROUTER_DEFAULT_KEY;
+    }
     return {
-      provider: (await store.get('provider', 'anthropic')) as string,
-      apiKey: (await store.get('apiKey', '')) as string,
-      model: (await store.get('model', Constants.DEFAULT_MODEL_ANTHROPIC)) as string,
+      provider: provider,
+      apiKey: apiKey,
+      model: (await store.get('model', Constants.DEFAULT_MODEL_OPENROUTER)) as string,
       baseUrl: (await store.get('baseUrl', '')) as string,
       temperature: (await store.get('temperature', 0.7)) as number,
     };

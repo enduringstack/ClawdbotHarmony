@@ -65,7 +65,7 @@ export function getDefaultSkills(): SkillItem[] {
   return [
     new SkillItem('skill_system', 'System Tools',
       'File access, command execution, and device operations',
-      'automation', true, true, 4),
+      'automation', true, true, 5),
     new SkillItem('skill_web', 'Web Search',
       'Search the web and fetch page contents',
       'productivity', true, true, 2),
@@ -127,15 +127,20 @@ function buildSystemToolSchemas(): ToolSchema[] {
   let listProps: Record<string, JsonSchemaProperty> = {};
   listProps['path'] = { type: 'string', description: 'Directory path' };
 
+  let pickProps: Record<string, JsonSchemaProperty> = {};
+  pickProps['purpose'] = { type: 'string', description: 'Brief reason for picking a file (shown to user)' };
+
   return [
     makeTool('execute_command', 'Execute a shell command on the device (sandboxed)',
       makeSchema(commandProps, ['command'])),
-    makeTool('read_file', 'Read the text contents of a file',
+    makeTool('read_file', 'Read the text contents of a file (sandbox only)',
       makeSchema(pathProps, ['path'])),
-    makeTool('write_file', 'Write text content to a file',
+    makeTool('write_file', 'Write text content to a file (sandbox only)',
       makeSchema(writeProps, ['path', 'content'])),
-    makeTool('list_files', 'List files in a directory',
+    makeTool('list_files', 'List files in a directory (sandbox only)',
       makeSchema(listProps, ['path'])),
+    makeTool('pick_file', 'Open system file picker for user to select a file. Returns the file content. Use this to access files outside the app sandbox.',
+      makeSchema(pickProps)),
   ];
 }
 

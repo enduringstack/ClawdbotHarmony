@@ -1,6 +1,6 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 import { Constants } from '../common/Constants';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
 import { ConnectionState, GatewayEndpoint } from '../service/gateway/GatewayModels';
@@ -8,11 +8,19 @@ import { I18n, LangCode } from '../common/I18n';
 
 @Component
 export struct SettingsPage {
-  @State provider: string = 'anthropic';
+  @State provider: string = 'openrouter';
   @State apiKey: string = '';
-  @State model: string = Constants.DEFAULT_MODEL_ANTHROPIC;
+  @State model: string = Constants.DEFAULT_MODEL_OPENROUTER;
   @State baseUrl: string = '';
   @State temperature: number = 0.7;
+
+  // Per-provider saved models
+  private savedModels: Record<string, string> = {
+    'openrouter': Constants.DEFAULT_MODEL_OPENROUTER,
+    'anthropic': Constants.DEFAULT_MODEL_ANTHROPIC,
+    'openai': Constants.DEFAULT_MODEL_OPENAI,
+    'local': 'llama3'
+  };
   @State showKey: boolean = false;
   @State @Watch('onLangChange') lang: string = 'zh';
 
@@ -130,8 +138,9 @@ export struct SettingsPage {
             .fontColor('#666666')
             .margin({ bottom: 8 })
             .width('100%')
-          Row({ space: 8 }) {
-            ForEach(['anthropic', 'openai', 'local'] as string[], (p: string) => {
+          Scroll() {
+            Row({ space: 8 }) {
+            ForEach(['openrouter', 'anthropic', 'openai', 'local'] as string[], (p: string) => {
               Text(this.providerLabel(p))
                 .fontSize(13)
                 .fontColor(this.provider === p ? Color.White : '#666666')
@@ -139,13 +148,18 @@ export struct SettingsPage {
                 .padding({ left: 12, right: 12, top: 8, bottom: 8 })
                 .borderRadius(8)
                 .onClick(() => {
+                  // Save current model for current provider before switching
+                  this.savedModels[this.provider] = this.model;
                   this.provider = p;
-                  if (p === 'anthropic') this.model = Constants.DEFAULT_MODEL_ANTHROPIC;
-                  else if (p === 'openai') this.model = Constants.DEFAULT_MODEL_OPENAI;
-                  else this.model = 'llama3';
+                  // Restore saved model for the new provider
+                  this.model = this.savedModels[p] ?? this.defaultModelFor(p);
                 })
             }, (p: string): string => p)
+            }
           }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .width('100%')
 
           Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
@@ -205,11 +219,13 @@ export struct SettingsPage {
             .margin({ top: 2 })
           TextInput({
             text: this.baseUrl,
-            placeholder: this.provider === 'anthropic'
-              ? 'https://api.anthropic.com/v1/messages'
-              : this.provider === 'openai'
-                ? 'https://api.openai.com/v1/chat/completions'
-                : 'http://localhost:11434/api/chat'
+            placeholder: this.provider === 'openrouter'
+              ? 'https://openrouter.ai/api/v1/chat/completions'
+              : this.provider === 'anthropic'
+                ? 'https://api.anthropic.com/v1/messages'
+                : this.provider === 'openai'
+                  ? 'https://api.openai.com/v1/chat/completions'
+                  : 'http://localhost:11434/api/chat'
           })
             .height(40)
             .backgroundColor('#F5F5F5')
@@ -457,8 +473,31 @@ export struct SettingsPage {
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
           .borderRadius(12)
-          .margin({ top: 24, bottom: 40 })
+          .margin({ top: 24 })
           .onClick(() => { this.save(); })
+
+        // ---- Logout ----
+        Column({ space: 8 }) {
+          // Show connected gateway address
+          if (this.gwHost.length > 0) {
+            Text(`${I18n.t('settings.gatewayAddress')}: ${this.gwHost}:${this.gwPort}`)
+              .fontSize(12)
+              .fontColor('#999999')
+          }
+
+          Button(I18n.t('settings.logout'))
+            .width('90%')
+            .height(44)
+            .backgroundColor('#D32F2F')
+            .fontColor(Color.White)
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .borderRadius(12)
+            .onClick(() => { this.confirmLogout(); })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Center)
+        .margin({ top: 16, bottom: 40 })
       }
       .width('100%')
     }
@@ -512,10 +551,18 @@ export struct SettingsPage {
 
   // ============ logic ============
 
+  private defaultModelFor(p: string): string {
+    if (p === 'openrouter') return Constants.DEFAULT_MODEL_OPENROUTER;
+    if (p === 'anthropic') return Constants.DEFAULT_MODEL_ANTHROPIC;
+    if (p === 'openai') return Constants.DEFAULT_MODEL_OPENAI;
+    return 'llama3';
+  }
+
   private providerLabel(p: string): string {
+    if (p === 'openrouter') return 'OpenRouter';
     if (p === 'anthropic') return 'Anthropic';
     if (p === 'openai') return 'OpenAI';
-    return 'Local (Ollama)';
+    return 'Ollama';
   }
 
   private gwStateColor(): string {
@@ -577,11 +624,17 @@ export struct SettingsPage {
     try {
       let ctx = getContext(this) as common.UIAbilityContext;
       let store = await preferences.getPreferences(ctx, Constants.PREFS_SETTINGS);
-      this.provider = (await store.get('provider', 'anthropic')) as string;
+      this.provider = (await store.get('provider', 'openrouter')) as string;
       this.apiKey = (await store.get('apiKey', '')) as string;
-      this.model = (await store.get('model', Constants.DEFAULT_MODEL_ANTHROPIC)) as string;
       this.baseUrl = (await store.get('baseUrl', '')) as string;
       this.temperature = (await store.get('temperature', 0.7)) as number;
+      // Load per-provider models
+      this.savedModels['openrouter'] = (await store.get('model_openrouter', Constants.DEFAULT_MODEL_OPENROUTER)) as string;
+      this.savedModels['anthropic'] = (await store.get('model_anthropic', Constants.DEFAULT_MODEL_ANTHROPIC)) as string;
+      this.savedModels['openai'] = (await store.get('model_openai', Constants.DEFAULT_MODEL_OPENAI)) as string;
+      this.savedModels['local'] = (await store.get('model_local', 'llama3')) as string;
+      // Set current model from active provider
+      this.model = this.savedModels[this.provider] ?? this.defaultModelFor(this.provider);
     } catch { /* first launch defaults */ }
   }
 
@@ -622,6 +675,12 @@ export struct SettingsPage {
       await store.put('model', this.model);
       await store.put('baseUrl', this.baseUrl);
       await store.put('temperature', this.temperature);
+      // Save per-provider models
+      this.savedModels[this.provider] = this.model;
+      await store.put('model_openrouter', this.savedModels['openrouter'] ?? Constants.DEFAULT_MODEL_OPENROUTER);
+      await store.put('model_anthropic', this.savedModels['anthropic'] ?? Constants.DEFAULT_MODEL_ANTHROPIC);
+      await store.put('model_openai', this.savedModels['openai'] ?? Constants.DEFAULT_MODEL_OPENAI);
+      await store.put('model_local', this.savedModels['local'] ?? 'llama3');
       await store.flush();
 
       // Save gateway settings
@@ -656,6 +715,47 @@ export struct SettingsPage {
       promptAction.showToast({ message: I18n.t('settings.saved'), duration: 1500 });
     } catch (e) {
       promptAction.showToast({ message: I18n.t('settings.saveFailed') + String(e), duration: 2000 });
+    }
+  }
+
+  private confirmLogout(): void {
+    AlertDialog.show({
+      title: I18n.t('settings.logoutConfirmTitle'),
+      message: I18n.t('settings.logoutConfirmMessage'),
+      primaryButton: {
+        value: I18n.t('settings.cancel'),
+        action: () => {}
+      },
+      secondaryButton: {
+        value: I18n.t('settings.confirm'),
+        fontColor: '#D32F2F',
+        action: () => { this.doLogout(); }
+      }
+    });
+  }
+
+  private async doLogout(): Promise<void> {
+    try {
+      // Disconnect gateway
+      NodeRuntime.getInstance().disconnect();
+
+      let ctx = getContext(this) as common.UIAbilityContext;
+
+      // Clear login state
+      let loginStore = await preferences.getPreferences(ctx, Constants.PREFS_LOGIN);
+      await loginStore.put('loggedIn', false);
+      await loginStore.flush();
+
+      // Clear gateway enabled flag (keep address for convenience)
+      let gwStore = await preferences.getPreferences(ctx, Constants.PREFS_GATEWAY);
+      await gwStore.put('enabled', false);
+      await gwStore.put('password', '');
+      await gwStore.flush();
+
+      // Navigate to login page
+      router.replaceUrl({ url: 'pages/LoginPage' });
+    } catch (e) {
+      promptAction.showToast({ message: 'Logout failed: ' + String(e), duration: 2000 });
     }
   }
 }

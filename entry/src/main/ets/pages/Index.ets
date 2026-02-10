@@ -7,23 +7,21 @@ import { I18n, LangCode } from '../common/I18n';
 import { LogService } from '../common/LogService';
 import { Constants } from '../common/Constants';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
-import { GatewayEndpoint } from '../service/gateway/GatewayModels';
+import { ConnectionState, GatewayEndpoint } from '../service/gateway/GatewayModels';
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
-import { window, display } from '@kit.ArkUI';
+import { router } from '@kit.ArkUI';
 
 @Entry
 @Component
 struct Index {
   @State currentTab: number = 0;
   @State @Watch('onLangChange') lang: string = 'zh';
-  @State topSafeHeight: number = 0;
   private controller: TabsController = new TabsController();
   private langListener: (() => void) | undefined = undefined;
 
   aboutToAppear(): void {
     LogService.getInstance().info('App', 'ClawdBot started');
-    this.calculateTopSafeHeight();
     this.loadLang();
     this.autoConnectGateway();
     this.langListener = () => {
@@ -71,6 +69,20 @@ struct Index {
       let endpoint: GatewayEndpoint = { host: host, port: port, useTls: useTls };
       let runtime = NodeRuntime.getInstance();
       runtime.updateCapabilities(capLocation, capCamera, capCanvas, capScreen, capNotification, undefined, capMicrophone, capSpeaker);
+      // Listen for auth failures during auto-reconnect
+      let authFailListener = (state: ConnectionState, text: string) => {
+        if (state === ConnectionState.Error) {
+          let lower = text.toLowerCase();
+          if (lower.includes('auth') || lower.includes('unauthorized') || lower.includes('forbidden') || lower.includes('password')) {
+            LogService.getInstance().warn('App', `Auth failure detected: ${text}, redirecting to login`);
+            runtime.removeStateListener(authFailListener);
+            runtime.disconnect();
+            this.clearLoginState();
+          }
+        }
+      };
+      runtime.addStateListener(authFailListener);
+
       runtime.connect(ctx, endpoint,
         token.length > 0 ? token : undefined,
         password.length > 0 ? password : undefined);
@@ -79,6 +91,16 @@ struct Index {
     } catch {
       LogService.getInstance().warn('App', 'Failed to auto-connect gateway');
     }
+  }
+
+  private async clearLoginState(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let loginStore = await preferences.getPreferences(ctx, Constants.PREFS_LOGIN);
+      await loginStore.put('loggedIn', false);
+      await loginStore.flush();
+    } catch { /* ignore */ }
+    router.replaceUrl({ url: 'pages/LoginPage' });
   }
 
   private async loadLang(): Promise<void> {
@@ -98,12 +120,6 @@ struct Index {
 
   build() {
     Column() {
-      // Status bar spacer — reserves space so content never overlaps with system status bar
-      Row()
-        .width('100%')
-        .height(this.topSafeHeight)
-        .backgroundColor(Color.White)
-
       Tabs({ barPosition: BarPosition.End, controller: this.controller }) {
         TabContent() {
           ChatPage()
@@ -139,24 +155,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-  }
-
-  private calculateTopSafeHeight(): void {
-    try {
-      let ctx = getContext(this) as common.UIAbilityContext;
-      ctx.windowStage.getMainWindow().then((win: window.Window) => {
-        let avoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
-        let topPx = avoidArea.topRect.height;
-        let d = display.getDefaultDisplaySync();
-        let density = d.densityPixels;
-        this.topSafeHeight = topPx / density;
-        LogService.getInstance().info('App', `Status bar: ${topPx}px = ${this.topSafeHeight}vp (density=${density})`);
-      }).catch(() => {
-        this.topSafeHeight = 36;
-      });
-    } catch {
-      this.topSafeHeight = 36;
-    }
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
   }
 
   @Builder

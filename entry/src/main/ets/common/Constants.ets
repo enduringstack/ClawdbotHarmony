@@ -5,12 +5,18 @@ export class Constants {
   static readonly PREFS_GATEWAY: string = 'clawdbot_gateway';
   static readonly PREFS_DEVICE_IDENTITY: string = 'clawdbot_device_identity';
   static readonly PREFS_DEVICE_AUTH: string = 'clawdbot_device_auth';
+  static readonly PREFS_LOGIN: string = 'clawdbot_login';
 
   static readonly ANTHROPIC_URL: string = 'https://api.anthropic.com/v1/messages';
   static readonly OPENAI_URL: string = 'https://api.openai.com/v1/chat/completions';
+  static readonly OPENROUTER_URL: string = 'https://openrouter.ai/api/v1/chat/completions';
 
   static readonly DEFAULT_MODEL_ANTHROPIC: string = 'claude-sonnet-4-20250514';
   static readonly DEFAULT_MODEL_OPENAI: string = 'gpt-4o';
+  static readonly DEFAULT_MODEL_OPENROUTER: string = 'google/gemini-2.5-flash:free';
+
+  // Built-in OpenRouter API key for free models (replace with your own key)
+  static readonly OPENROUTER_DEFAULT_KEY: string = '';
 
   static readonly MAX_TOKENS: number = 4096;
   static readonly MAX_HISTORY: number = 50;

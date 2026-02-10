@@ -1,5 +1,6 @@
 import { ChatMessage } from '../model/Models';
 import { I18n } from '../common/I18n';
+import { MarkdownText } from './MarkdownText';
 
 @Component
 export struct MessageBubble {
@@ -51,17 +52,19 @@ export struct MessageBubble {
         .backgroundColor('#D2691E')
         .margin({ right: 8, top: 2 })
 
-      Text(this.message.content)
-        .fontSize(15)
-        .fontColor('#1A1A1A')
-        .lineHeight(22)
-        .padding(12)
-        .backgroundColor('#F0F0F0')
-        .borderRadius({
-          topLeft: 4, topRight: 16, bottomLeft: 16, bottomRight: 16
+      Column() {
+        MarkdownText({
+          content: this.message.content,
+          textColor: '#1A1A1A',
+          baseFontSize: 15
         })
-        .constraintSize({ maxWidth: '72%' })
-        .copyOption(CopyOptions.LocalDevice)
+      }
+      .padding(12)
+      .backgroundColor('#F0F0F0')
+      .borderRadius({
+        topLeft: 4, topRight: 16, bottomLeft: 16, bottomRight: 16
+      })
+      .constraintSize({ maxWidth: '72%' })
 
       Blank()
     }
