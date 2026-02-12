@@ -219,7 +219,7 @@ function parseMarkdown(text: string): MdBlock[] {
 
 @Component
 export struct MarkdownText {
-  content: string = '';
+  @Prop content: string = '';
   textColor: ResourceColor = '#1A1A1A';
   baseFontSize: number = 15;
 
@@ -300,7 +300,7 @@ export struct MarkdownText {
           .textAlign(TextAlign.Start)
           .wordBreak(WordBreak.BREAK_ALL)
                   }
-      }, (block: MdBlock): string => block.key)
+      }, (block: MdBlock): string => '' + this.content.length + '_' + block.key)
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')

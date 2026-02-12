@@ -36,7 +36,7 @@ import { LogService } from '../../common/LogService';
 import { Constants } from '../../common/Constants';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.2.2';
+const APP_VERSION = '2.8.18';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -53,9 +53,9 @@ export class NodeRuntime {
   private locationCapability: LocationCapability = new LocationCapability();
   private notificationCapability: NotificationCapability = new NotificationCapability();
   private cameraCapability: CameraCapability = new CameraCapability();
-  private canvasCapability: CanvasCapability = new CanvasCapability();
+  private canvasCapability: CanvasCapability = CanvasCapability.getInstance();
   private smsCapability: SmsCapability = new SmsCapability();
-  private screenCapability: ScreenCapability = new ScreenCapability();
+  private screenCapability: ScreenCapability = ScreenCapability.getInstance();
   private microphoneCapability: MicrophoneCapability = new MicrophoneCapability();
   private speakerCapability: SpeakerCapability = new SpeakerCapability();
   private emailCapability: EmailCapability = new EmailCapability();
@@ -102,6 +102,9 @@ export class NodeRuntime {
 
   // Media file listeners — notify ChatPage when a recording/photo is captured via gateway
   private _mediaListeners: Array<(type: string, path: string) => void> = [];
+
+  // Invoke listeners — notify ChatPage when a gateway invoke request is executed
+  private _invokeListeners: Array<(command: string, params: string, result: string, isError: boolean) => void> = [];
 
   static getInstance(): NodeRuntime {
     if (!NodeRuntime.instance) {
@@ -272,6 +275,26 @@ export class NodeRuntime {
     for (let listener of this._mediaListeners) {
       try {
         listener(type, path);
+      } catch { /* ignore */ }
+    }
+  }
+
+  addInvokeListener(listener: (command: string, params: string, result: string, isError: boolean) => void): void {
+    this._invokeListeners.push(listener);
+  }
+
+  removeInvokeListener(listener: (command: string, params: string, result: string, isError: boolean) => void): void {
+    let idx = this._invokeListeners.indexOf(listener);
+    if (idx >= 0) {
+      this._invokeListeners.splice(idx, 1);
+    }
+  }
+
+  private dispatchInvoke(command: string, params: string, result: string, isError: boolean): void {
+    this.log.info(TAG, `dispatchInvoke: command=${command} isError=${isError} resultLen=${result.length}`);
+    for (let listener of this._invokeListeners) {
+      try {
+        listener(command, params, result, isError);
       } catch { /* ignore */ }
     }
   }
@@ -557,30 +580,29 @@ export class NodeRuntime {
   private async handleInvoke(req: InvokeRequest): Promise<InvokeResult> {
     let command = req.command;
     let paramsJson = req.paramsJSON ?? (req.params ? JSON.stringify(req.params) : undefined);
+    let paramsStr = paramsJson ?? '';
 
-    this.log.info(TAG, `invoke: command=${command} params=${paramsJson ?? 'none'}`);
+    this.log.info(TAG, `invoke: command=${command} params=${paramsStr.substring(0, 200)}`);
 
     try {
+      let result = '';
       switch (command) {
         case Command.LOCATION_GET: {
           this.log.info(TAG, 'Executing location.get capability...');
-          let result = await this.locationCapability.execute(paramsJson);
-          this.log.info(TAG, `location.get result: ${result}`);
-          return InvokeResult.success(result);
+          result = await this.locationCapability.execute(paramsJson);
+          break;
         }
         case Command.NOTIFICATION_SHOW:
         case Command.SYSTEM_NOTIFY: {
           this.log.info(TAG, `Executing ${command} capability...`);
-          let result = await this.notificationCapability.execute(paramsJson);
-          this.log.info(TAG, `${command} result: ${result}`);
-          return InvokeResult.success(result);
+          result = await this.notificationCapability.execute(paramsJson);
+          break;
         }
         case Command.CAMERA_SNAP:
         case Command.CAMERA_CLIP: {
           this.log.info(TAG, `Executing ${command} capability...`);
-          let result = await this.cameraCapability.execute(command, paramsJson);
-          this.log.info(TAG, `${command} result: ${result.substring(0, 200)}`);
-          return InvokeResult.success(result);
+          result = await this.cameraCapability.execute(command, paramsJson);
+          break;
         }
         case Command.CANVAS_PRESENT:
         case Command.CANVAS_HIDE:
@@ -588,27 +610,23 @@ export class NodeRuntime {
         case Command.CANVAS_EVAL:
         case Command.CANVAS_SNAPSHOT: {
           this.log.info(TAG, `Executing ${command} capability...`);
-          let result = await this.canvasCapability.execute(command, paramsJson);
-          this.log.info(TAG, `${command} result: ${result.substring(0, 200)}`);
-          return InvokeResult.success(result);
+          result = await this.canvasCapability.execute(command, paramsJson);
+          break;
         }
         case Command.SMS_SEND: {
           this.log.info(TAG, 'Executing sms.send capability...');
-          let result = await this.smsCapability.execute(paramsJson);
-          this.log.info(TAG, `sms.send result: ${result}`);
-          return InvokeResult.success(result);
+          result = await this.smsCapability.execute(paramsJson);
+          break;
         }
         case Command.SCREEN_CAPTURE:
         case Command.SCREEN_RECORD: {
           this.log.info(TAG, `Executing ${command} capability...`);
-          let result = await this.screenCapability.execute(command, paramsJson);
-          this.log.info(TAG, `${command} result: ${result.substring(0, 200)}`);
-          return InvokeResult.success(result);
+          result = await this.screenCapability.execute(command, paramsJson);
+          break;
         }
         case Command.MIC_RECORD: {
           this.log.info(TAG, 'Executing mic.record capability...');
-          let result = await this.microphoneCapability.execute(paramsJson);
-          this.log.info(TAG, `mic.record result: ${result.substring(0, 200)}`);
+          result = await this.microphoneCapability.execute(paramsJson);
           // Extract filePath and notify ChatPage for playback button
           try {
             let parsed = JSON.parse(result) as Record<string, Object>;
@@ -617,41 +635,42 @@ export class NodeRuntime {
               this.dispatchMedia('audio', fp);
             }
           } catch { /* ignore */ }
-          return InvokeResult.success(result);
+          break;
         }
         case Command.SPEAKER_SPEAK:
         case Command.SPEAKER_PLAY:
         case Command.SPEAKER_STOP: {
           this.log.info(TAG, `Executing ${command} capability...`);
-          let result = await this.speakerCapability.execute(command, paramsJson);
-          this.log.info(TAG, `${command} result: ${result.substring(0, 200)}`);
-          return InvokeResult.success(result);
+          result = await this.speakerCapability.execute(command, paramsJson);
+          break;
         }
         case Command.EMAIL_SEND: {
           this.log.info(TAG, 'Executing email.send capability...');
-          let result = await this.emailCapability.execute(paramsJson);
-          this.log.info(TAG, `email.send result: ${result}`);
-          return InvokeResult.success(result);
+          result = await this.emailCapability.execute(paramsJson);
+          break;
         }
         case Command.CALENDAR_ADD: {
           this.log.info(TAG, 'Executing calendar.add capability...');
-          let result = await this.calendarCapability.execute(paramsJson);
-          this.log.info(TAG, `calendar.add result: ${result}`);
-          return InvokeResult.success(result);
+          result = await this.calendarCapability.execute(paramsJson);
+          break;
         }
         case Command.EXEC_RUN: {
           this.log.info(TAG, 'Executing exec.run capability...');
-          let result = await this.execCapability.execute(paramsJson);
-          this.log.info(TAG, `exec.run result: ${result.substring(0, 200)}`);
-          return InvokeResult.success(result);
+          result = await this.execCapability.execute(paramsJson);
+          break;
         }
         default:
           this.log.warn(TAG, `Unsupported invoke command: ${command}`);
+          this.dispatchInvoke(command, paramsStr, `unsupported command: ${command}`, true);
           return InvokeResult.error('INVALID_REQUEST', `unsupported command: ${command}`);
       }
+      this.log.info(TAG, `${command} result: ${result.substring(0, 200)}`);
+      this.dispatchInvoke(command, paramsStr, result, false);
+      return InvokeResult.success(result);
     } catch (err) {
       let message = (err as Error).message ?? 'invoke failed';
       this.log.error(TAG, `invoke error for ${command}: ${message}`);
+      this.dispatchInvoke(command, paramsStr, message, true);
       return InvokeResult.error('UNAVAILABLE', message);
     }
   }

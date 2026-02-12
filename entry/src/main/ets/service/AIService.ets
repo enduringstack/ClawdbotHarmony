@@ -1,7 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { preferences } from '@kit.ArkData';
 import { fileIo, picker } from '@kit.CoreFileKit';
-import { util } from '@kit.ArkTS';
+import { util, buffer } from '@kit.ArkTS';
 import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { camera, cameraPicker } from '@kit.CameraKit';
 import { media } from '@kit.MediaKit';
@@ -13,7 +13,11 @@ import { I18n } from '../common/I18n';
 import { calendarManager } from '@kit.CalendarKit';
 import { CalendarCapability } from './gateway/CalendarCapability';
 import { MemoryService } from './MemoryService';
+import { CanvasCapability } from './gateway/CanvasCapability';
+import { ScreenCapability } from './gateway/ScreenCapability';
+import { Command } from './gateway/GatewayProtocol';
 import { ImapService, EmailSummary, EmailBody } from './ImapService';
+import { EmailCapability } from './gateway/EmailCapability';
 
 /**
  * AI interaction service.
@@ -55,6 +59,16 @@ interface AnthropicToolSchemaDef {
   name: string;
   description: string;
   input_schema: object;
+}
+
+interface AutoDispatchResult {
+  tool: string;
+  input: string;
+}
+
+interface ImageSaveResult {
+  path: string;
+  summary: string;
 }
 
 interface ToolResultObj {
@@ -143,10 +157,12 @@ export class AIService {
       try {
         if (settings.provider === 'anthropic') {
           response = await this.callAnthropic(allMessages, settings, systemPrompt, tools);
-        } else if (settings.provider === 'openai' || settings.provider === 'openrouter') {
-          response = await this.callOpenAI(allMessages, settings, systemPrompt, tools);
-        } else {
+        } else if (settings.provider === 'local' && (!settings.apiKey || settings.apiKey.length === 0)) {
+          // Truly local model (Ollama) — no tool support
           response = await this.callLocal(allMessages, settings, systemPrompt);
+        } else {
+          // OpenAI-compatible providers (openai, openrouter, siliconflow, etc.) — full tool support
+          response = await this.callOpenAI(allMessages, settings, systemPrompt, tools);
         }
       } catch (e) {
         let errMsg = (e as Error).message ?? String(e);
@@ -183,13 +199,12 @@ export class AIService {
         // Auto-dispatch: if model failed to call a tool but user clearly wants one,
         // inject the tool call automatically (works around weak tool-calling models)
         if (loopCount === 1 && context) {
-          let autoTool = this.detectAutoDispatch(history);
-          if (autoTool.length > 0) {
-            this.log.info(this.TAG, `Auto-dispatch: ${autoTool}`);
-            let autoInput = autoTool === 'list_emails' ? '{"count":"10"}' : '{}';
+          let dispatch = this.detectAutoDispatch(history, textToShow);
+          if (dispatch.tool.length > 0) {
+            this.log.info(this.TAG, `Auto-dispatch: ${dispatch.tool} input=${dispatch.input}`);
             let autoOutput = '';
             try {
-              autoOutput = await this.executeTool(autoTool, autoInput, context);
+              autoOutput = await this.executeTool(dispatch.tool, dispatch.input, context);
             } catch (e) {
               autoOutput = JSON.stringify({ error: (e as Error).message });
             }
@@ -197,19 +212,32 @@ export class AIService {
             if (result.messages.length > 0) {
               result.messages = [];
             }
+
+            // For image-producing tools, save to file and strip base64 before sending to model
+            let summaryForModel = autoOutput;
+            let savedImagePath = '';
+            if (dispatch.tool === 'screen_capture' || dispatch.tool === 'capture_photo') {
+              let saveResult = this.saveImageToolResult(autoOutput, dispatch.tool, context);
+              summaryForModel = saveResult.summary;
+              savedImagePath = saveResult.path;
+            }
+
             // Show tool call + result
             let callMsg = new ChatMessage('assistant', '');
             callMsg.isToolCall = true;
-            callMsg.toolName = autoTool;
-            callMsg.toolInput = autoInput;
+            callMsg.toolName = dispatch.tool;
+            callMsg.toolInput = dispatch.input;
             result.messages.push(callMsg);
-            let resultMsg = new ChatMessage('tool', autoOutput);
-            resultMsg.toolName = autoTool;
-            resultMsg.toolOutput = autoOutput;
+            let resultMsg = new ChatMessage('tool', summaryForModel);
+            resultMsg.toolName = dispatch.tool;
+            resultMsg.toolOutput = summaryForModel;
+            if (savedImagePath.length > 0) {
+              resultMsg.imagePath = savedImagePath;
+            }
             result.messages.push(resultMsg);
             // Feed tool result back to AI for summarization
-            allMessages.push({ role: 'assistant', content: `Calling ${autoTool}...` });
-            allMessages.push({ role: 'user', content: `Tool ${autoTool} returned:\n${autoOutput}\n\nSummarize the result concisely in the user's language.` });
+            allMessages.push({ role: 'assistant', content: `Calling ${dispatch.tool}...` });
+            allMessages.push({ role: 'user', content: `Tool ${dispatch.tool} returned:\n${summaryForModel}\n\nSummarize the result concisely in the user's language.` });
             continue; // re-enter the loop for AI to summarize
           }
         }
@@ -233,14 +261,24 @@ export class AIService {
         } catch (toolErr) {
           output = JSON.stringify({ error: `Tool execution failed: ${(toolErr as Error).message ?? String(toolErr)}` });
         }
-        toolOutputs.push(output);
+        // For image-producing tools, save to file and strip base64 before sending to model
+        let outputForModel = output;
+        let imgPath = '';
+        if (tc.name === 'screen_capture' || tc.name === 'capture_photo') {
+          let saveResult = this.saveImageToolResult(output, tc.name, context);
+          outputForModel = saveResult.summary;
+          imgPath = saveResult.path;
+        }
+        toolOutputs.push(outputForModel);
 
         // Show the result in chat
-        let resultMsg = new ChatMessage('tool', output);
+        let resultMsg = new ChatMessage('tool', outputForModel);
         resultMsg.toolName = tc.name;
-        resultMsg.toolOutput = output;
+        resultMsg.toolOutput = outputForModel;
         // Extract media paths from tool results
-        if (tc.name === 'capture_photo') {
+        if (imgPath.length > 0) {
+          resultMsg.imagePath = imgPath;
+        } else if (tc.name === 'capture_photo') {
           try {
             let parsed = JSON.parse(output) as Record<string, string>;
             if (parsed['path'] && parsed['path'].length > 0) {
@@ -904,6 +942,82 @@ export class AIService {
             return JSON.stringify(r);
           }
         }
+        case 'open_webpage': {
+          let url = input['url'] ?? '';
+          if (url.length === 0) {
+            let r: ToolResultObj = { error: 'No URL provided' };
+            return JSON.stringify(r);
+          }
+          try {
+            let canvasCap = CanvasCapability.getInstance();
+            let result = await canvasCap.execute(Command.CANVAS_PRESENT, JSON.stringify({ url: url }));
+            return result;
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Open webpage failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
+        case 'close_webpage': {
+          try {
+            let canvasCap = CanvasCapability.getInstance();
+            let result = await canvasCap.execute(Command.CANVAS_HIDE, undefined);
+            return result;
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Close webpage failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
+        case 'navigate_webpage': {
+          let url = input['url'] ?? '';
+          if (url.length === 0) {
+            let r: ToolResultObj = { error: 'No URL provided' };
+            return JSON.stringify(r);
+          }
+          try {
+            let canvasCap = CanvasCapability.getInstance();
+            let result = await canvasCap.execute(Command.CANVAS_NAVIGATE, JSON.stringify({ url: url }));
+            return result;
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Navigate failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
+        case 'eval_webpage': {
+          let js = input['javascript'] ?? input['js'] ?? '';
+          if (js.length === 0) {
+            let r: ToolResultObj = { error: 'No JavaScript code provided' };
+            return JSON.stringify(r);
+          }
+          try {
+            let canvasCap = CanvasCapability.getInstance();
+            let result = await canvasCap.execute(Command.CANVAS_EVAL, JSON.stringify({ javaScript: js }));
+            return result;
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Eval failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
+        case 'snapshot_webpage': {
+          try {
+            let quality = input['quality'] ?? '80';
+            let canvasCap = CanvasCapability.getInstance();
+            let result = await canvasCap.execute(Command.CANVAS_SNAPSHOT, JSON.stringify({ quality: parseInt(quality) || 80 }));
+            return result;
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Snapshot failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
+        case 'screen_capture': {
+          try {
+            let screenCap = ScreenCapability.getInstance();
+            let result = await screenCap.execute(Command.SCREEN_CAPTURE, undefined);
+            return result;
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Screenshot failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
         case 'list_devices': {
           let d1: DeviceObj = { id: 'light1', name: 'Living Room Light', status: 'on' };
           let d2: DeviceObj = { id: 'thermo1', name: 'Thermostat', status: '22C' };
@@ -1158,6 +1272,13 @@ export class AIService {
         }
         case 'get_location': {
           try {
+            if (context) {
+              let atManager = abilityAccessCtrl.createAtManager();
+              await atManager.requestPermissionsFromUser(context, [
+                'ohos.permission.APPROXIMATELY_LOCATION',
+                'ohos.permission.LOCATION'
+              ]);
+            }
             let locRequest: geoLocationManager.SingleLocationRequest = {
               locatingPriority: geoLocationManager.LocatingPriority.PRIORITY_LOCATING_SPEED,
               locatingTimeoutMs: 10000,
@@ -1464,6 +1585,28 @@ export class AIService {
             return JSON.stringify(r);
           }
         }
+        case 'send_email': {
+          if (!context) {
+            let r: ToolResultObj = { error: 'No UI context available' };
+            return JSON.stringify(r);
+          }
+          try {
+            let emailCap = new EmailCapability();
+            emailCap.setContext(context);
+            let paramsJson = JSON.stringify({
+              to: input['to'] ?? '',
+              subject: input['subject'] ?? '',
+              body: input['body'] ?? '',
+              cc: input['cc'] ?? '',
+              bcc: input['bcc'] ?? ''
+            });
+            let result = await emailCap.execute(paramsJson);
+            return result;
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Send email failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
         default: {
           let r: ToolResultObj = { error: 'Unknown tool: ' + name };
           return JSON.stringify(r);
@@ -1516,8 +1659,41 @@ export class AIService {
     }
   }
 
+  // --------- image tool result: save base64 to file, return summary for model ---------
+
+  private saveImageToolResult(toolOutput: string, toolName: string, context?: common.UIAbilityContext): ImageSaveResult {
+    let empty: ImageSaveResult = { path: '', summary: toolOutput };
+    try {
+      let parsed = JSON.parse(toolOutput) as Record<string, Object>;
+      let base64Str = parsed['base64'] as string;
+      if (!base64Str || base64Str.length === 0) return empty;
+
+      let dir = (context?.filesDir ?? '') + '/screenshots';
+      try { fileIo.mkdirSync(dir); } catch { /* may exist */ }
+      let filePath = `${dir}/${toolName}_${Date.now()}.jpg`;
+
+      let decoded = buffer.from(base64Str, 'base64');
+      let file = fileIo.openSync(filePath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(file.fd, decoded.buffer);
+      fileIo.closeSync(file);
+
+      let width = parsed['width'] ?? '';
+      let height = parsed['height'] ?? '';
+      let size = parsed['size'] ?? decoded.length;
+      let summary = `{"ok":true,"format":"jpeg","width":${width},"height":${height},"size":${size},"note":"Screenshot saved and displayed to user"}`;
+      this.log.info(this.TAG, `saveImageToolResult: saved ${filePath} (${decoded.length} bytes)`);
+      let result: ImageSaveResult = { path: filePath, summary: summary };
+      return result;
+    } catch (e) {
+      this.log.error(this.TAG, `saveImageToolResult failed: ${(e as Error).message}`);
+      return empty;
+    }
+  }
+
   // --------- auto-dispatch: detect user intent when model fails to call tools ---------
-  private detectAutoDispatch(history: ChatMessage[]): string {
+  private detectAutoDispatch(history: ChatMessage[], modelText: string): AutoDispatchResult {
+    let empty: AutoDispatchResult = { tool: '', input: '{}' };
+
     // Find the last user message
     let lastUserMsg = '';
     for (let i = history.length - 1; i >= 0; i--) {
@@ -1526,14 +1702,105 @@ export class AIService {
         break;
       }
     }
-    if (lastUserMsg.length === 0) return '';
+    if (lastUserMsg.length === 0) return empty;
 
-    // Email keywords
+    // Location keywords
+    let locationKeywords = ['我在哪', '在哪里', '我的位置', '当前位置', '定位', '经纬度', '坐标',
+      'where am i', 'my location', 'current location', 'gps', 'coordinates'];
+    for (let kw of locationKeywords) {
+      if (lastUserMsg.includes(kw)) {
+        return { tool: 'get_location', input: '{}' };
+      }
+    }
+
+    // Webpage keywords — extract URL from model response or user message
+    let webKeywords = ['打开网页', '打开网站', '帮我打开', '打开一下', '浏览', '访问网站',
+      'open website', 'open webpage', 'open the page', 'browse to', 'visit'];
+    let hasWebIntent = false;
+    for (let kw of webKeywords) {
+      if (lastUserMsg.includes(kw)) {
+        hasWebIntent = true;
+        break;
+      }
+    }
+    // Also check if user message starts with "打开" + a site name
+    if (!hasWebIntent && lastUserMsg.startsWith('打开')) {
+      hasWebIntent = true;
+    }
+    if (hasWebIntent) {
+      // Try to extract URL from model text or user message
+      let url = this.extractUrl(modelText) || this.extractUrl(lastUserMsg);
+      if (url.length > 0) {
+        return { tool: 'open_webpage', input: JSON.stringify({ url: url }) };
+      }
+      // Try common site name mapping from user message
+      let siteUrl = this.mapSiteName(lastUserMsg);
+      if (siteUrl.length > 0) {
+        return { tool: 'open_webpage', input: JSON.stringify({ url: siteUrl }) };
+      }
+    }
+
+    // Screenshot keywords
+    let screenKeywords = ['截屏', '截图', '屏幕截图', '截个屏', '截个图', '拍屏幕', '屏幕快照',
+      'screenshot', 'screen capture', 'take a screenshot', 'capture screen'];
+    for (let kw of screenKeywords) {
+      if (lastUserMsg.includes(kw)) {
+        return { tool: 'screen_capture', input: '{}' };
+      }
+    }
+
+    // Send email keywords (check before list)
+    let sendEmailKeywords = ['发邮件', '写邮件', '发送邮件', '发一封', 'send email', 'send mail', 'compose email'];
+    for (let kw of sendEmailKeywords) {
+      if (lastUserMsg.includes(kw)) {
+        return empty; // Let model handle send_email with proper params
+      }
+    }
+
+    // Email keywords (read/list)
     let emailKeywords = ['邮件', '邮箱', '收件箱', '未读邮件', '新邮件', '查邮件', '看邮件',
       'email', 'inbox', 'mail', 'unread', 'check email', 'read email', 'list email'];
     for (let kw of emailKeywords) {
       if (lastUserMsg.includes(kw)) {
-        return 'list_emails';
+        return { tool: 'list_emails', input: '{"count":"10"}' };
+      }
+    }
+    return empty;
+  }
+
+  private extractUrl(text: string): string {
+    let match = /https?:\/\/[^\s"'<>\]）》]+/i.exec(text);
+    if (match) return match[0];
+    // Also match www. without protocol
+    let wwwMatch = /www\.[^\s"'<>\]）》]+/i.exec(text);
+    if (wwwMatch) return 'https://' + wwwMatch[0];
+    return '';
+  }
+
+  private mapSiteName(text: string): string {
+    let sites: Record<string, string> = {
+      '百度': 'https://www.baidu.com',
+      'baidu': 'https://www.baidu.com',
+      '谷歌': 'https://www.google.com',
+      'google': 'https://www.google.com',
+      '微博': 'https://m.weibo.cn',
+      'weibo': 'https://m.weibo.cn',
+      '知乎': 'https://www.zhihu.com',
+      'zhihu': 'https://www.zhihu.com',
+      'github': 'https://github.com',
+      '淘宝': 'https://m.taobao.com',
+      '京东': 'https://m.jd.com',
+      'bilibili': 'https://m.bilibili.com',
+      'b站': 'https://m.bilibili.com',
+      'youtube': 'https://m.youtube.com',
+      'twitter': 'https://x.com',
+      'reddit': 'https://www.reddit.com',
+    };
+    let lower = text.toLowerCase();
+    let keys = Object.keys(sites);
+    for (let key of keys) {
+      if (lower.includes(key)) {
+        return sites[key];
       }
     }
     return '';
@@ -1634,6 +1901,24 @@ export class AIService {
         out.push({ role: 'assistant', content: msg.content });
       }
     }
+
+    // Trim old messages to avoid exceeding token limits
+    // Rough estimate: 1 token ≈ 3 chars (conservative for Chinese)
+    const MAX_CHARS = 60000; // ~20k tokens, leaving room for system prompt + tools
+    let totalChars = 0;
+    for (let m of out) {
+      totalChars += m.content.length;
+    }
+    while (totalChars > MAX_CHARS && out.length > 4) {
+      let removed = out.splice(0, 1);
+      totalChars -= removed[0].content.length;
+    }
+    // Ensure first message is from user (required by Anthropic API)
+    while (out.length > 0 && out[0].role !== 'user') {
+      let removed = out.splice(0, 1);
+      totalChars -= removed[0].content.length;
+    }
+
     return out;
   }
 }

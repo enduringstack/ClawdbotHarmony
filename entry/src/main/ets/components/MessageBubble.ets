@@ -12,6 +12,7 @@ export struct MessageBubble {
   @ObjectLink message: ChatMessage;
   @Prop assistantAvatar: string = '';
   @Prop assistantName: string = '';
+  onImageClick: (path: string) => void = () => {};
   @State audioPlaying: boolean = false;
   private avPlayer: media.AVPlayer | undefined = undefined;
   private log: LogService = LogService.getInstance();
@@ -142,10 +143,22 @@ export struct MessageBubble {
 
         Column() {
           MarkdownText({
-            content: this.message.content,
+            content: this.message.imagePath.length > 0 ? this.stripImagePaths(this.message.content) : this.message.content,
             textColor: '#1A1A1A',
             baseFontSize: 15
           })
+
+          if (this.message.imagePath.length > 0) {
+            Image('file://' + this.message.imagePath)
+              .width('100%')
+              .constraintSize({ maxHeight: 280 })
+              .objectFit(ImageFit.Contain)
+              .borderRadius(8)
+              .margin({ top: 6 })
+              .onClick(() => {
+                this.onImageClick(this.message.imagePath);
+              })
+          }
         }
         .alignItems(HorizontalAlign.Start)
         .padding({ left: 14, right: 14, top: 12, bottom: 12 })
@@ -227,6 +240,9 @@ export struct MessageBubble {
             .objectFit(ImageFit.Contain)
             .borderRadius(8)
             .margin({ top: 6 })
+            .onClick(() => {
+              this.onImageClick(this.message.imagePath);
+            })
         } else if (this.message.audioPath.length > 0) {
           // Audio playback control
           Row({ space: 10 }) {
@@ -347,6 +363,17 @@ export struct MessageBubble {
       return this.assistantName.charAt(0).toUpperCase();
     }
     return 'C';
+  }
+
+  private stripImagePaths(text: string): string {
+    // Strip markdown image links: ![...](file:///data/...)
+    let cleaned = text.replace(/!\[[^\]]*\]\([^)]*\/(?:screenshots|camera_photos)\/[^)]+\)/g, '');
+    // Strip raw file paths: /data/storage/.../screenshots/xxx.jpg
+    cleaned = cleaned.replace(/\/data\/storage[^\s\n"'）》]*\.(?:jpg|jpeg|png)/gi, '');
+    // Strip "这是截图的链接：" and similar phrases
+    cleaned = cleaned.replace(/这是[^。]*链接[：:]\s*/g, '');
+    cleaned = cleaned.replace(/你可以查看[：:]\s*/g, '');
+    return cleaned.replace(/\n{3,}/g, '\n\n').trim();
   }
 
   private copyToClipboard(text: string): void {

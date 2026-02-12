@@ -1,6 +1,6 @@
 /**
  * Handles speaker.speak (TTS) and speaker.play (audio playback) commands from the gateway.
- * - speaker.speak: Uses textToSpeech engine to read text aloud.
+ * - speaker.speak: Uses textToSpeech engine to read text aloud via AudioRenderer (manual PCM playback).
  * - speaker.play: Plays audio from a URL or base64 data using AVPlayer.
  * - speaker.stop: Stops all audio playback.
  */
@@ -18,6 +18,7 @@ export class SpeakerCapability {
   private log: LogService = LogService.getInstance();
   private filesDir: string = '';
   private ttsEngine: textToSpeech.TextToSpeechEngine | undefined = undefined;
+  private ttsRenderer: audio.AudioRenderer | undefined = undefined;
   private player: media.AVPlayer | undefined = undefined;
   private playFdFile: fileIo.File | undefined = undefined;
 
@@ -38,7 +39,7 @@ export class SpeakerCapability {
     throw new Error(`Unsupported speaker command: ${command}`);
   }
 
-  // ---- speaker.speak: Text-to-Speech ----
+  // ---- speaker.speak: Text-to-Speech with AudioRenderer ----
 
   private async speak(paramsJson: string | undefined): Promise<string> {
     if (!paramsJson || paramsJson.length === 0) {
@@ -70,61 +71,111 @@ export class SpeakerCapability {
 
     this.log.info(TAG, `speak: textLen=${text.length} lang=${lang} speed=${speed} volume=${volume}`);
 
-    // Recreate TTS engine each time to ensure clean state and correct language
-    if (this.ttsEngine) {
-      try { this.ttsEngine.shutdown(); } catch { /* ignore */ }
-      this.ttsEngine = undefined;
-    }
+    // Stop any previous TTS
+    await this.stopTts();
 
     let ttsLang = lang.startsWith('en') ? 'en-US' : 'zh-CN';
     let initParams: textToSpeech.CreateEngineParams = {
       language: ttsLang,
       person: 0,
-      online: 0, // Use offline TTS first (more stable, no pitch drift)
+      online: 0,
       extraParams: { style: 'interaction-broadcast', locate: 'CN', name: 'EngineName' },
     };
 
+    let isOnline = false;
     try {
       this.ttsEngine = await textToSpeech.createEngine(initParams);
       this.log.info(TAG, `TTS engine created (offline, lang=${ttsLang})`);
     } catch (err) {
       this.log.warn(TAG, `Offline TTS failed, trying online: ${(err as Error).message}`);
-      // Fallback to online mode
       initParams.online = 1;
       this.ttsEngine = await textToSpeech.createEngine(initParams);
       this.log.info(TAG, `TTS engine created (online, lang=${ttsLang})`);
+      isOnline = true;
     }
 
-    // Speak the text
-    let speakParams: textToSpeech.SpeakParams = {
-      requestId: `tts_${Date.now()}`,
-      extraParams: {
-        speed: String(Math.round(speed * 100)),
-        volume: String(Math.round(volume * 100)),
-        voiceType: lang.startsWith('zh') ? 'zh' : 'en',
+    // Online engine doesn't output PCM via onData — use engine-internal playback instead
+    if (isOnline) {
+      this.log.info(TAG, 'Online engine: using internal playback (no PCM output)');
+      return await this.speakFallback(text, lang, speed, volume);
+    }
+
+    // Create AudioRenderer for manual PCM playback — gives us full volume control
+    let rendererOptions: audio.AudioRendererOptions = {
+      streamInfo: {
+        samplingRate: audio.AudioSamplingRate.SAMPLE_RATE_16000,
+        channels: audio.AudioChannel.CHANNEL_1,
+        sampleFormat: audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
+        encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW,
+      },
+      rendererInfo: {
+        usage: audio.StreamUsage.STREAM_USAGE_VOICE_ASSISTANT,
+        rendererFlags: 0,
       },
     };
 
-    // Use promise wrapper for speak callback
+    try {
+      this.ttsRenderer = await audio.createAudioRenderer(rendererOptions);
+      // Set interrupt mode to INDEPENDENT so our stream is not ducked
+      this.ttsRenderer.setInterruptMode(audio.InterruptMode.INDEPENDENT_MODE);
+      // Set volume (0.0-1.0)
+      await this.ttsRenderer.setVolume(volume);
+      await this.ttsRenderer.start();
+      this.log.info(TAG, `AudioRenderer created and started (volume=${volume})`);
+    } catch (err) {
+      this.log.error(TAG, `AudioRenderer creation failed: ${(err as Error).message}, falling back to engine playback`);
+      // Fall back to engine-internal playback
+      return await this.speakFallback(text, lang, speed, volume);
+    }
+
+    // Speak with PCM output via onData callback
+    let speakParams: textToSpeech.SpeakParams = {
+      requestId: `tts_${Date.now()}`,
+      extraParams: {
+        queueMode: 0,
+        speed: speed,
+        volume: 2,
+        pitch: 1,
+        languageContext: lang,
+        audioType: 'pcm',
+        soundChannel: 1,
+        playType: 1,
+      },
+    };
+
+    let renderer = this.ttsRenderer;
+    // Chain async writes so all PCM data reaches the AudioRenderer buffer before we drain
+    let writeQueue: Promise<void> = Promise.resolve();
+    let totalPcmBytes: number = 0;
     let speakPromise = new Promise<void>((resolve, reject) => {
       let listener: textToSpeech.SpeakListener = {
         onStart: (requestId: string, _response: textToSpeech.StartResponse) => {
           this.log.info(TAG, `TTS started: requestId=${requestId}`);
         },
         onComplete: (requestId: string, _response: textToSpeech.CompleteResponse) => {
-          this.log.info(TAG, `TTS completed: requestId=${requestId}`);
-          resolve();
+          this.log.info(TAG, `TTS synthesis done: requestId=${requestId} totalPcmBytes=${totalPcmBytes}`);
+          // Wait for all pending PCM writes to finish before resolving
+          writeQueue.then((): void => {
+            this.log.info(TAG, `All PCM writes flushed, resolving speak promise`);
+            resolve();
+          }).catch((): void => { resolve(); });
         },
         onStop: (requestId: string, _response: textToSpeech.StopResponse) => {
           this.log.info(TAG, `TTS stopped: requestId=${requestId}`);
-          resolve();
+          writeQueue.then((): void => { resolve(); }).catch((): void => { resolve(); });
         },
         onError: (requestId: string, errorCode: number, errorMessage: string) => {
           this.log.error(TAG, `TTS error: requestId=${requestId} code=${errorCode} msg=${errorMessage}`);
           reject(new Error(`TTS error: ${errorMessage} (code=${errorCode})`));
         },
-        onData: (_requestId: string, _audio: ArrayBuffer, _response: textToSpeech.SynthesisResponse) => {
-          // streaming audio data callback - TTS engine plays audio internally
+        onData: (_requestId: string, pcmAudio: ArrayBuffer, _response: textToSpeech.SynthesisResponse) => {
+          // Chain PCM writes to ensure ordered, complete playback
+          if (renderer && pcmAudio.byteLength > 0) {
+            totalPcmBytes += pcmAudio.byteLength;
+            writeQueue = writeQueue.then((): Promise<number> => {
+              return renderer.write(pcmAudio);
+            }).then((): void => {}).catch((): void => {});
+          }
         },
       };
       this.ttsEngine!.setListener(listener);
@@ -132,16 +183,109 @@ export class SpeakerCapability {
     });
 
     // Wait for TTS with timeout
-    let timeoutMs = Math.max(15000, text.length * 300); // generous estimate
+    let timeoutMs = Math.max(15000, text.length * 300);
+    try {
+      await Promise.race([
+        speakPromise,
+        this.delay(timeoutMs).then(() => {
+          this.log.warn(TAG, 'TTS timeout, stopping...');
+          try { this.ttsEngine!.stop(); } catch { /* ignore */ }
+        }),
+      ]);
+    } catch (err) {
+      this.log.error(TAG, `TTS speak error: ${(err as Error).message}`);
+    }
+
+    // Drain and release the renderer
+    await this.stopTtsRenderer();
+
+    return `{"ok":true,"textLength":${text.length},"lang":"${lang}"}`;
+  }
+
+  /** Fallback: let the TTS engine play audio internally (original behavior) */
+  private async speakFallback(text: string, lang: string, speed: number, volume: number): Promise<string> {
+    this.log.info(TAG, `Using fallback engine-internal playback, textLen=${text.length} text="${text.substring(0, 60)}"`);
+
+    let speakParams: textToSpeech.SpeakParams = {
+      requestId: `tts_${Date.now()}`,
+      extraParams: {
+        queueMode: 0,
+        speed: speed,
+        volume: volume * 2,
+        pitch: 1,
+        languageContext: lang,
+        playType: 1,
+      },
+    };
+
+    let speakPromise = new Promise<void>((resolve, reject) => {
+      let listener: textToSpeech.SpeakListener = {
+        onStart: (requestId: string, _response: textToSpeech.StartResponse) => {
+          this.log.info(TAG, `TTS(fb) started: requestId=${requestId}`);
+        },
+        onComplete: (requestId: string, _response: textToSpeech.CompleteResponse) => {
+          this.log.info(TAG, `TTS(fb) completed: requestId=${requestId}`);
+          resolve();
+        },
+        onStop: (requestId: string, _response: textToSpeech.StopResponse) => {
+          this.log.info(TAG, `TTS(fb) stopped: requestId=${requestId}`);
+          resolve();
+        },
+        onError: (requestId: string, errorCode: number, errorMessage: string) => {
+          this.log.error(TAG, `TTS(fb) error: code=${errorCode} msg=${errorMessage}`);
+          reject(new Error(`TTS error: ${errorMessage} (code=${errorCode})`));
+        },
+        onData: (_requestId: string, _audio: ArrayBuffer, _response: textToSpeech.SynthesisResponse) => {
+          // engine plays internally
+        },
+      };
+      this.ttsEngine!.setListener(listener);
+      this.ttsEngine!.speak(text, speakParams);
+    });
+
+    // Online engine's onComplete fires when synthesis is done, not when playback finishes.
+    // Wait for BOTH synthesis completion AND estimated playback duration.
+    let estimatedPlayMs = Math.max(2000, Math.round(text.length * 200 / speed));
+    let timeoutMs = Math.max(10000, text.length * 250);
+    this.log.info(TAG, `TTS(fb) waiting: estimatedPlay=${estimatedPlayMs}ms timeout=${timeoutMs}ms`);
+    let startedOk = false;
     await Promise.race([
-      speakPromise,
+      speakPromise.then(() => {
+        startedOk = true;
+        this.log.info(TAG, `TTS(fb) speakPromise resolved, waiting estimatedPlay=${estimatedPlayMs}ms`);
+        return this.delay(estimatedPlayMs);
+      }),
       this.delay(timeoutMs).then(() => {
-        this.log.warn(TAG, 'TTS timeout, stopping...');
+        if (!startedOk) {
+          this.log.warn(TAG, `TTS(fb) timeout (engine never completed in ${timeoutMs}ms)`);
+        } else {
+          this.log.info(TAG, 'TTS(fb) playback wait timeout (normal)');
+        }
         try { this.ttsEngine!.stop(); } catch { /* ignore */ }
       }),
     ]);
 
     return `{"ok":true,"textLength":${text.length},"lang":"${lang}"}`;
+  }
+
+  /** Stop TTS engine and AudioRenderer */
+  private async stopTts(): Promise<void> {
+    if (this.ttsEngine) {
+      try { this.ttsEngine.stop(); } catch { /* ignore */ }
+      try { this.ttsEngine.shutdown(); } catch { /* ignore */ }
+      this.ttsEngine = undefined;
+    }
+    await this.stopTtsRenderer();
+  }
+
+  /** Stop and release the TTS AudioRenderer */
+  private async stopTtsRenderer(): Promise<void> {
+    if (this.ttsRenderer) {
+      try { await this.ttsRenderer.drain(); } catch { /* ignore */ }
+      try { await this.ttsRenderer.stop(); } catch { /* ignore */ }
+      try { await this.ttsRenderer.release(); } catch { /* ignore */ }
+      this.ttsRenderer = undefined;
+    }
   }
 
   // ---- speaker.play: Play audio from URL or base64 ----
@@ -293,9 +437,7 @@ export class SpeakerCapability {
   private async stop(): Promise<string> {
     this.log.info(TAG, 'Stopping all audio...');
 
-    if (this.ttsEngine) {
-      try { this.ttsEngine.stop(); } catch { /* ignore */ }
-    }
+    await this.stopTts();
     await this.releasePlayer();
 
     return `{"ok":true,"stopped":true}`;
@@ -303,10 +445,7 @@ export class SpeakerCapability {
 
   /** Release resources when disconnecting */
   async release(): Promise<void> {
-    if (this.ttsEngine) {
-      try { this.ttsEngine.shutdown(); } catch { /* ignore */ }
-      this.ttsEngine = undefined;
-    }
+    await this.stopTts();
     await this.releasePlayer();
   }
 

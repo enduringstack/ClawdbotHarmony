@@ -6,7 +6,6 @@ import { webview } from '@kit.ArkWeb';
 import { router } from '@kit.ArkUI';
 import { LogService } from '../common/LogService';
 import { CanvasCapability } from '../service/gateway/CanvasCapability';
-import { NodeRuntime } from '../service/gateway/NodeRuntime';
 
 const TAG = 'CanvasPage';
 
@@ -22,22 +21,12 @@ struct CanvasPage {
   aboutToAppear(): void {
     this.url = CanvasCapability._pendingUrl;
     this.log.info(TAG, `aboutToAppear: url=${this.url}`);
-
-    // Register controller with the CanvasCapability in NodeRuntime
-    let runtime = NodeRuntime.getInstance();
-    let canvasCap = runtime.getCanvasCapability();
-    if (canvasCap) {
-      canvasCap.registerController(this.controller);
-    }
+    CanvasCapability.getInstance().registerController(this.controller);
   }
 
   aboutToDisappear(): void {
     this.log.info(TAG, 'aboutToDisappear');
-    let runtime = NodeRuntime.getInstance();
-    let canvasCap = runtime.getCanvasCapability();
-    if (canvasCap) {
-      canvasCap.unregisterController();
-    }
+    CanvasCapability.getInstance().unregisterController();
   }
 
   build() {

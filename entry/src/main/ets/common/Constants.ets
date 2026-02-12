@@ -8,14 +8,20 @@ export class Constants {
   static readonly PREFS_LOGIN: string = 'clawdbot_login';
   static readonly PREFS_CRON: string = 'clawdbot_cron';
   static readonly PREFS_EMAIL: string = 'clawdbot_email';
+  static readonly PREFS_FEISHU: string = 'clawdbot_feishu';
   static readonly CRON_POLL_INTERVAL_MS: number = 30000;
+
+  // Feishu Bot API
+  static readonly FEISHU_TOKEN_URL: string = 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/';
+  static readonly FEISHU_WS_ENDPOINT_URL: string = 'https://open.feishu.cn/callback/ws/endpoint';
+  static readonly FEISHU_MSG_API: string = 'https://open.feishu.cn/open-apis/im/v1/messages';
 
   static readonly ANTHROPIC_URL: string = 'https://api.anthropic.com/v1/messages';
   static readonly OPENAI_URL: string = 'https://api.siliconflow.cn/v1/chat/completions';
   static readonly OPENROUTER_URL: string = 'https://openrouter.ai/api/v1/chat/completions';
 
   static readonly DEFAULT_MODEL_ANTHROPIC: string = 'claude-sonnet-4-20250514';
-  static readonly DEFAULT_MODEL_OPENAI: string = 'Qwen/Qwen3-VL-30B-A3B-Instruct';
+  static readonly DEFAULT_MODEL_OPENAI: string = 'deepseek-ai/DeepSeek-V3.1';
   static readonly DEFAULT_MODEL_OPENROUTER: string = 'openrouter/free';
 
   // Built-in OpenRouter API key for free models (set via settings)

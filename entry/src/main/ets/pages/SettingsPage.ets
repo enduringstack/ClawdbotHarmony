@@ -7,6 +7,8 @@ import { NodeRuntime } from '../service/gateway/NodeRuntime';
 import { ConnectionState, GatewayEndpoint } from '../service/gateway/GatewayModels';
 import { I18n, LangCode } from '../common/I18n';
 import { ImapService } from '../service/ImapService';
+import { FeishuBotService } from '../service/FeishuBotService';
+import socket from '@ohos.net.socket';
 
 @Component
 export struct SettingsPage {
@@ -31,6 +33,7 @@ export struct SettingsPage {
   };
   @State showKey: boolean = false;
   @State @Watch('onLangChange') lang: string = 'zh';
+  @State settingsTab: string = 'standalone'; // 'standalone' | 'node' | 'service'
 
   // Assistant customization
   @State assistantName: string = '';
@@ -45,10 +48,19 @@ export struct SettingsPage {
   @State asrModel: string = 'FunAudioLLM/SenseVoiceSmall';
   @State showAsrKey: boolean = false;
 
-  // Email / IMAP
+  // Feishu Bot
+  @State feishuEnabled: boolean = false;
+  @State feishuAppId: string = '';
+  @State feishuAppSecret: string = '';
+  @State showFeishuSecret: boolean = false;
+  @State feishuTestStatus: string = '';
+
+  // Email / IMAP & SMTP
   @State emailEnabled: boolean = false;
   @State imapHost: string = 'imap.gmail.com';
   @State imapPort: string = '993';
+  @State smtpHost: string = 'smtp.gmail.com';
+  @State smtpPort: string = '465';
   @State imapUser: string = '';
   @State imapPass: string = '';
   @State showImapPass: boolean = false;
@@ -82,6 +94,7 @@ export struct SettingsPage {
     this.load();
     this.loadGateway();
     this.loadEmail();
+    this.loadFeishu();
     this.lang = I18n.lang;
     this.langListener = () => { this.lang = I18n.lang; };
     I18n.addListener(this.langListener);
@@ -119,6 +132,8 @@ export struct SettingsPage {
           .fontColor('#1A1A1A')
           .width('100%')
           .padding({ left: 20, top: 16, bottom: 16 })
+
+        // =============== Common Settings ===============
 
         // ---- Language ----
         this.SectionTitle(I18n.t('settings.language'))
@@ -164,7 +179,6 @@ export struct SettingsPage {
         // ---- AI Assistant ----
         this.SectionTitle(I18n.t('settings.assistant'))
         Column() {
-          // Avatar preview + change
           Column({ space: 8 }) {
             if (this.assistantAvatar.length > 0) {
               Image('file://' + this.assistantAvatar)
@@ -194,7 +208,6 @@ export struct SettingsPage {
 
           Divider().margin({ top: 8, bottom: 14 }).color('#F0F0F0')
 
-          // Assistant name
           Text(I18n.t('settings.assistantName'))
             .fontSize(14)
             .fontColor('#1A1A1A')
@@ -207,145 +220,6 @@ export struct SettingsPage {
             .onChange((v: string) => { this.assistantName = v; })
         }
         .width('100%')
-        .padding(16)
-        .margin({ left: 16, right: 16 })
-        .backgroundColor(Color.White)
-        .borderRadius(12)
-
-        // ---- AI Provider ----
-        this.SectionTitle(I18n.t('settings.aiProvider'))
-        Column() {
-          // provider selector
-          Text(I18n.t('settings.provider'))
-            .fontSize(14)
-            .fontColor('#666666')
-            .margin({ bottom: 8 })
-            .width('100%')
-          Scroll() {
-            Row({ space: 8 }) {
-            ForEach(['openrouter', 'anthropic', 'openai', 'local'] as string[], (p: string) => {
-              Text(this.providerLabel(p))
-                .fontSize(13)
-                .fontColor(this.provider === p ? Color.White : '#666666')
-                .backgroundColor(this.provider === p ? '#D2691E' : '#F0F0F0')
-                .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-                .borderRadius(8)
-                .onClick(() => {
-                  // Save current settings for current provider before switching
-                  this.savedModels[this.provider] = this.model;
-                  this.savedKeys[this.provider] = this.apiKey;
-                  this.savedUrls[this.provider] = this.baseUrl;
-                  this.provider = p;
-                  // Restore saved settings for the new provider
-                  this.model = this.savedModels[p] ?? this.defaultModelFor(p);
-                  this.apiKey = this.savedKeys[p] ?? '';
-                  this.baseUrl = this.savedUrls[p] ?? '';
-                })
-            }, (p: string): string => p)
-            }
-          }
-          .scrollable(ScrollDirection.Horizontal)
-          .scrollBar(BarState.Off)
-          .width('100%')
-
-          Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-          // API key
-          Text(I18n.t('settings.apiKey'))
-            .fontSize(14)
-            .fontColor('#1A1A1A')
-            .width('100%')
-          Row() {
-            TextInput({
-              text: this.apiKey,
-              placeholder: this.provider === 'local' ? I18n.t('settings.apiKeyNotRequired') : I18n.t('settings.apiKeyPlaceholder')
-            })
-              .layoutWeight(1)
-              .height(40)
-              .backgroundColor('#F5F5F5')
-              .borderRadius(8)
-              .type(this.showKey ? InputType.Normal : InputType.Password)
-              .onChange((v: string) => { this.apiKey = v; })
-
-            Button(this.showKey ? I18n.t('settings.hide') : I18n.t('settings.show'))
-              .fontSize(12)
-              .height(34)
-              .backgroundColor('#F0F0F0')
-              .fontColor('#666666')
-              .borderRadius(8)
-              .margin({ left: 8 })
-              .onClick(() => { this.showKey = !this.showKey; })
-          }
-          .margin({ top: 6 })
-          .width('100%')
-
-          Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-          // Model
-          Text(I18n.t('settings.model'))
-            .fontSize(14)
-            .fontColor('#1A1A1A')
-            .width('100%')
-          TextInput({ text: this.model, placeholder: I18n.t('settings.modelPlaceholder') })
-            .height(40)
-            .backgroundColor('#F5F5F5')
-            .borderRadius(8)
-            .margin({ top: 6 })
-            .onChange((v: string) => { this.model = v; })
-
-          // Base URL (all providers — allows proxy / custom endpoints)
-          Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-          Text(I18n.t('settings.baseUrl'))
-            .fontSize(14)
-            .fontColor('#1A1A1A')
-            .width('100%')
-          Text(I18n.t('settings.baseUrlDesc'))
-            .fontSize(11)
-            .fontColor('#999999')
-            .width('100%')
-            .margin({ top: 2 })
-          TextInput({
-            text: this.baseUrl,
-            placeholder: this.provider === 'openrouter'
-              ? 'https://openrouter.ai/api/v1/chat/completions'
-              : this.provider === 'anthropic'
-                ? 'https://api.anthropic.com/v1/messages'
-                : this.provider === 'openai'
-                  ? 'https://api.openai.com/v1/chat/completions'
-                  : 'http://localhost:11434/api/chat'
-          })
-            .height(40)
-            .backgroundColor('#F5F5F5')
-            .borderRadius(8)
-            .margin({ top: 6 })
-            .onChange((v: string) => { this.baseUrl = v; })
-        }
-        .width('100%')
-        .padding(16)
-        .margin({ left: 16, right: 16 })
-        .backgroundColor(Color.White)
-        .borderRadius(12)
-
-        // ---- Generation ----
-        this.SectionTitle(I18n.t('settings.generation'))
-        Column() {
-          Row() {
-            Text(I18n.t('settings.temperature'))
-              .fontSize(14)
-              .fontColor('#1A1A1A')
-              .layoutWeight(1)
-            Text(this.temperature.toFixed(1))
-              .fontSize(14)
-              .fontColor('#D2691E')
-              .fontWeight(FontWeight.Medium)
-          }
-          .width('100%')
-
-          Slider({ value: this.temperature * 10, min: 0, max: 10, step: 1 })
-            .selectedColor('#D2691E')
-            .onChange((v: number) => { this.temperature = v / 10; })
-            .width('100%')
-        }
         .padding(16)
         .margin({ left: 16, right: 16 })
         .backgroundColor(Color.White)
@@ -391,58 +265,36 @@ export struct SettingsPage {
         .backgroundColor(Color.White)
         .borderRadius(12)
 
-        // ---- ASR (Speech-to-Text) ----
-        this.SectionTitle('ASR')
+        // ---- Capabilities ----
+        this.SectionTitle(I18n.t('settings.caps'))
         Column() {
-          Text('API URL')
-            .fontSize(14)
-            .fontColor('#1A1A1A')
-            .width('100%')
-          TextInput({ text: this.asrApiUrl, placeholder: 'https://api.openai.com/v1/audio/transcriptions' })
-            .height(40)
-            .backgroundColor('#F5F5F5')
-            .borderRadius(8)
-            .margin({ top: 6 })
-            .onChange((v: string) => { this.asrApiUrl = v; })
+          this.CapToggle(I18n.t('settings.capLocation'), this.capLocation, (v: boolean) => { this.capLocation = v; })
+          this.CapToggle(I18n.t('settings.capCamera'), this.capCamera, (v: boolean) => { this.capCamera = v; })
+          this.CapToggle(I18n.t('settings.capCanvas'), this.capCanvas, (v: boolean) => { this.capCanvas = v; })
+          this.CapToggle(I18n.t('settings.capScreen'), this.capScreen, (v: boolean) => { this.capScreen = v; })
+          this.CapToggle(I18n.t('settings.capNotification'), this.capNotification, (v: boolean) => { this.capNotification = v; })
+          this.CapToggle(I18n.t('settings.capMicrophone'), this.capMicrophone, (v: boolean) => { this.capMicrophone = v; })
+          this.CapToggle(I18n.t('settings.capSpeaker'), this.capSpeaker, (v: boolean) => { this.capSpeaker = v; })
+          this.CapToggle(I18n.t('settings.capEmail'), this.capEmail, (v: boolean) => { this.capEmail = v; })
 
-          Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-          Text('API Key')
-            .fontSize(14)
-            .fontColor('#1A1A1A')
-            .width('100%')
+          Divider().margin({ top: 10, bottom: 10 }).color('#F0F0F0')
           Row() {
-            TextInput({ text: this.asrApiKey, placeholder: 'sk-...' })
-              .layoutWeight(1)
-              .height(40)
-              .backgroundColor('#F5F5F5')
-              .borderRadius(8)
-              .type(this.showAsrKey ? InputType.Normal : InputType.Password)
-              .onChange((v: string) => { this.asrApiKey = v; })
-            Button(this.showAsrKey ? I18n.t('settings.hide') : I18n.t('settings.show'))
-              .fontSize(12)
-              .height(34)
-              .backgroundColor('#F0F0F0')
-              .fontColor('#666666')
-              .borderRadius(8)
-              .margin({ left: 8 })
-              .onClick(() => { this.showAsrKey = !this.showAsrKey; })
+            Column({ space: 2 }) {
+              Text(I18n.t('settings.ttsAutoRead'))
+                .fontSize(13)
+                .fontColor('#1A1A1A')
+              Text(I18n.t('settings.ttsAutoReadDesc'))
+                .fontSize(11)
+                .fontColor('#999999')
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+            Toggle({ type: ToggleType.Switch, isOn: this.ttsAutoRead })
+              .selectedColor('#D2691E')
+              .onChange((v: boolean) => { this.ttsAutoRead = v; })
           }
-          .margin({ top: 6 })
           .width('100%')
-
-          Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-          Text('Model')
-            .fontSize(14)
-            .fontColor('#1A1A1A')
-            .width('100%')
-          TextInput({ text: this.asrModel, placeholder: 'whisper-1' })
-            .height(40)
-            .backgroundColor('#F5F5F5')
-            .borderRadius(8)
-            .margin({ top: 6 })
-            .onChange((v: string) => { this.asrModel = v; })
+          .height(50)
         }
         .width('100%')
         .padding(16)
@@ -453,7 +305,6 @@ export struct SettingsPage {
         // ---- Email / IMAP ----
         this.SectionTitle(I18n.t('settings.email'))
         Column() {
-          // Enable toggle
           Row() {
             Column({ space: 2 }) {
               Text(I18n.t('settings.emailEnabled'))
@@ -475,7 +326,6 @@ export struct SettingsPage {
           if (this.emailEnabled) {
             Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
-            // IMAP Host
             Text(I18n.t('settings.imapHost'))
               .fontSize(14)
               .fontColor('#1A1A1A')
@@ -489,7 +339,6 @@ export struct SettingsPage {
 
             Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
-            // Port
             Row() {
               Text(I18n.t('settings.imapPort'))
                 .fontSize(14)
@@ -507,7 +356,36 @@ export struct SettingsPage {
 
             Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
-            // Email address
+            Text(I18n.t('settings.smtpHost'))
+              .fontSize(14)
+              .fontColor('#1A1A1A')
+              .width('100%')
+            TextInput({ text: this.smtpHost, placeholder: 'smtp.gmail.com' })
+              .height(40)
+              .backgroundColor('#F5F5F5')
+              .borderRadius(8)
+              .margin({ top: 6 })
+              .onChange((v: string) => { this.smtpHost = v; })
+
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+            Row() {
+              Text(I18n.t('settings.smtpPort'))
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+                .layoutWeight(1)
+              TextInput({ text: this.smtpPort, placeholder: '465' })
+                .width(100)
+                .height(40)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .type(InputType.Number)
+                .onChange((v: string) => { this.smtpPort = v; })
+            }
+            .width('100%')
+
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
             Text(I18n.t('settings.imapUser'))
               .fontSize(14)
               .fontColor('#1A1A1A')
@@ -521,7 +399,6 @@ export struct SettingsPage {
 
             Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
-            // Password
             Text(I18n.t('settings.imapPass'))
               .fontSize(14)
               .fontColor('#1A1A1A')
@@ -548,7 +425,6 @@ export struct SettingsPage {
 
             Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
-            // Test Connection button + status
             Button(this.emailTestStatus === I18n.t('settings.emailTesting')
               ? I18n.t('settings.emailTesting')
               : I18n.t('settings.emailTest'))
@@ -576,197 +452,483 @@ export struct SettingsPage {
         .backgroundColor(Color.White)
         .borderRadius(12)
 
-        // ---- Gateway / Node Mode ----
-        this.SectionTitle(I18n.t('settings.gateway'))
-        Column() {
-          // Enable toggle
-          Row() {
-            Column({ space: 2 }) {
-              Text(I18n.t('settings.nodeMode'))
-                .fontSize(14)
-                .fontColor('#1A1A1A')
-              Text(I18n.t('settings.nodeModeDesc'))
-                .fontSize(11)
-                .fontColor('#999999')
-            }
+        // =============== Tab Bar ===============
+        Row({ space: 0 }) {
+          Text(I18n.t('settings.tabStandalone'))
+            .fontSize(14)
+            .fontWeight(this.settingsTab === 'standalone' ? FontWeight.Bold : FontWeight.Normal)
+            .fontColor(this.settingsTab === 'standalone' ? '#D2691E' : '#999999')
             .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
+            .textAlign(TextAlign.Center)
+            .padding({ top: 12, bottom: 12 })
+            .borderWidth({ bottom: this.settingsTab === 'standalone' ? 2 : 0 })
+            .borderColor('#D2691E')
+            .onClick(() => { this.settingsTab = 'standalone'; })
+          Text(I18n.t('settings.tabNode'))
+            .fontSize(14)
+            .fontWeight(this.settingsTab === 'node' ? FontWeight.Bold : FontWeight.Normal)
+            .fontColor(this.settingsTab === 'node' ? '#D2691E' : '#999999')
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: 12, bottom: 12 })
+            .borderWidth({ bottom: this.settingsTab === 'node' ? 2 : 0 })
+            .borderColor('#D2691E')
+            .onClick(() => { this.settingsTab = 'node'; })
+          Text(I18n.t('settings.tabService'))
+            .fontSize(14)
+            .fontWeight(this.settingsTab === 'service' ? FontWeight.Bold : FontWeight.Normal)
+            .fontColor(this.settingsTab === 'service' ? '#D2691E' : '#999999')
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: 12, bottom: 12 })
+            .borderWidth({ bottom: this.settingsTab === 'service' ? 2 : 0 })
+            .borderColor('#D2691E')
+            .onClick(() => { this.settingsTab = 'service'; })
+        }
+        .width('100%')
+        .margin({ left: 16, right: 16, top: 20 })
+        .backgroundColor(Color.White)
+        .borderRadius({ topLeft: 12, topRight: 12 })
 
-            Toggle({ type: ToggleType.Switch, isOn: this.gwEnabled })
-              .selectedColor('#D2691E')
-              .onChange((isOn: boolean) => {
-                this.gwEnabled = isOn;
-                if (!isOn) {
-                  NodeRuntime.getInstance().disconnect();
-                }
-              })
-          }
-          .width('100%')
+        // =============== Standalone Tab ===============
+        if (this.settingsTab === 'standalone') {
+          // ---- AI Provider ----
+          this.SectionTitle(I18n.t('settings.aiProvider'))
+          Column() {
+            Text(I18n.t('settings.provider'))
+              .fontSize(14)
+              .fontColor('#666666')
+              .margin({ bottom: 8 })
+              .width('100%')
+            Scroll() {
+              Row({ space: 8 }) {
+              ForEach(['openrouter', 'anthropic', 'openai', 'local'] as string[], (p: string) => {
+                Text(this.providerLabel(p))
+                  .fontSize(13)
+                  .fontColor(this.provider === p ? Color.White : '#666666')
+                  .backgroundColor(this.provider === p ? '#D2691E' : '#F0F0F0')
+                  .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+                  .borderRadius(8)
+                  .onClick(() => {
+                    this.savedModels[this.provider] = this.model;
+                    this.savedKeys[this.provider] = this.apiKey;
+                    this.savedUrls[this.provider] = this.baseUrl;
+                    this.provider = p;
+                    this.model = this.savedModels[p] ?? this.defaultModelFor(p);
+                    this.apiKey = this.savedKeys[p] ?? '';
+                    this.baseUrl = this.savedUrls[p] ?? '';
+                  })
+              }, (p: string): string => p)
+              }
+            }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .width('100%')
 
-          if (this.gwEnabled) {
             Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
-            // Gateway Host
-            Text(I18n.t('settings.gatewayHost'))
+            Text(I18n.t('settings.apiKey'))
               .fontSize(14)
               .fontColor('#1A1A1A')
               .width('100%')
-            TextInput({ text: this.gwHost, placeholder: I18n.t('settings.gatewayHostPlaceholder') })
+            Row() {
+              TextInput({
+                text: this.apiKey,
+                placeholder: this.provider === 'local' ? I18n.t('settings.apiKeyNotRequired') : I18n.t('settings.apiKeyPlaceholder')
+              })
+                .layoutWeight(1)
+                .height(40)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .type(this.showKey ? InputType.Normal : InputType.Password)
+                .onChange((v: string) => { this.apiKey = v; })
+
+              Button(this.showKey ? I18n.t('settings.hide') : I18n.t('settings.show'))
+                .fontSize(12)
+                .height(34)
+                .backgroundColor('#F0F0F0')
+                .fontColor('#666666')
+                .borderRadius(8)
+                .margin({ left: 8 })
+                .onClick(() => { this.showKey = !this.showKey; })
+            }
+            .margin({ top: 6 })
+            .width('100%')
+
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+            Text(I18n.t('settings.model'))
+              .fontSize(14)
+              .fontColor('#1A1A1A')
+              .width('100%')
+            TextInput({ text: this.model, placeholder: I18n.t('settings.modelPlaceholder') })
               .height(40)
               .backgroundColor('#F5F5F5')
               .borderRadius(8)
               .margin({ top: 6 })
-              .onChange((v: string) => { this.gwHost = v; })
+              .onChange((v: string) => { this.model = v; })
 
             Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-            // Port
-            Row() {
-              Text(I18n.t('settings.port'))
-                .fontSize(14)
-                .fontColor('#1A1A1A')
-                .layoutWeight(1)
-              TextInput({ text: this.gwPort, placeholder: '9315' })
-                .width(100)
-                .height(40)
-                .backgroundColor('#F5F5F5')
-                .borderRadius(8)
-                .type(InputType.Number)
-                .onChange((v: string) => { this.gwPort = v; })
-            }
-            .width('100%')
-
-            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-            // TLS toggle
-            Row() {
-              Text(I18n.t('settings.useTls'))
-                .fontSize(14)
-                .fontColor('#1A1A1A')
-                .layoutWeight(1)
-              Toggle({ type: ToggleType.Switch, isOn: this.gwUseTls })
-                .selectedColor('#D2691E')
-                .onChange((isOn: boolean) => { this.gwUseTls = isOn; })
-            }
-            .width('100%')
-
-            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-            // Shared Token
-            Text(I18n.t('settings.token'))
+            Text(I18n.t('settings.baseUrl'))
               .fontSize(14)
               .fontColor('#1A1A1A')
               .width('100%')
-            Text(I18n.t('settings.tokenDesc'))
+            Text(I18n.t('settings.baseUrlDesc'))
               .fontSize(11)
               .fontColor('#999999')
               .width('100%')
               .margin({ top: 2 })
-            TextInput({ text: this.gwToken, placeholder: I18n.t('settings.tokenPlaceholder') })
+            TextInput({
+              text: this.baseUrl,
+              placeholder: this.provider === 'openrouter'
+                ? 'https://openrouter.ai/api/v1/chat/completions'
+                : this.provider === 'anthropic'
+                  ? 'https://api.anthropic.com/v1/messages'
+                  : this.provider === 'openai'
+                    ? 'https://api.openai.com/v1/chat/completions'
+                    : 'http://localhost:11434/api/chat'
+            })
               .height(40)
               .backgroundColor('#F5F5F5')
               .borderRadius(8)
-              .type(InputType.Password)
               .margin({ top: 6 })
-              .onChange((v: string) => { this.gwToken = v; })
+              .onChange((v: string) => { this.baseUrl = v; })
+          }
+          .width('100%')
+          .padding(16)
+          .margin({ left: 16, right: 16 })
+          .backgroundColor(Color.White)
+          .borderRadius(12)
 
-            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-            // Password (alternative auth)
-            Text(I18n.t('settings.password'))
-              .fontSize(14)
-              .fontColor('#666666')
-              .width('100%')
-            TextInput({ text: this.gwPassword, placeholder: I18n.t('settings.passwordPlaceholder') })
-              .height(40)
-              .backgroundColor('#F5F5F5')
-              .borderRadius(8)
-              .type(InputType.Password)
-              .margin({ top: 6 })
-              .onChange((v: string) => { this.gwPassword = v; })
-
-            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-            // Connection status
+          // ---- Generation ----
+          this.SectionTitle(I18n.t('settings.generation'))
+          Column() {
             Row() {
-              Text(I18n.t('settings.status'))
+              Text(I18n.t('settings.temperature'))
                 .fontSize(14)
                 .fontColor('#1A1A1A')
                 .layoutWeight(1)
-              Circle({ width: 10, height: 10 })
-                .fill(this.gwStateColor())
-                .margin({ right: 6 })
-              Text(this.gwStatusText)
-                .fontSize(13)
-                .fontColor(this.gwStateColor())
+              Text(this.temperature.toFixed(1))
+                .fontSize(14)
+                .fontColor('#D2691E')
                 .fontWeight(FontWeight.Medium)
             }
             .width('100%')
-            .height(40)
 
-            // Connect / Disconnect button
-            Button(this.gwIsConnected() ? I18n.t('settings.disconnect') : I18n.t('settings.connect'))
+            Slider({ value: this.temperature * 10, min: 0, max: 10, step: 1 })
+              .selectedColor('#D2691E')
+              .onChange((v: number) => { this.temperature = v / 10; })
               .width('100%')
-              .height(44)
-              .backgroundColor(this.gwIsConnected() ? '#D32F2F' : '#4CAF50')
-              .fontColor(Color.White)
-              .fontSize(15)
-              .fontWeight(FontWeight.Medium)
-              .borderRadius(10)
-              .margin({ top: 8 })
-              .onClick(() => { this.toggleGateway(); })
+          }
+          .padding(16)
+          .margin({ left: 16, right: 16 })
+          .backgroundColor(Color.White)
+          .borderRadius(12)
 
-            // Capabilities toggles
-            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-            Text(I18n.t('settings.caps'))
+          // ---- ASR (Speech-to-Text) ----
+          this.SectionTitle('ASR')
+          Column() {
+            Text('API URL')
               .fontSize(14)
               .fontColor('#1A1A1A')
-              .fontWeight(FontWeight.Medium)
               .width('100%')
-              .margin({ bottom: 10 })
+            TextInput({ text: this.asrApiUrl, placeholder: 'https://api.openai.com/v1/audio/transcriptions' })
+              .height(40)
+              .backgroundColor('#F5F5F5')
+              .borderRadius(8)
+              .margin({ top: 6 })
+              .onChange((v: string) => { this.asrApiUrl = v; })
 
-            this.CapToggle(I18n.t('settings.capLocation'), this.capLocation, (v: boolean) => { this.capLocation = v; })
-            this.CapToggle(I18n.t('settings.capCamera'), this.capCamera, (v: boolean) => { this.capCamera = v; })
-            this.CapToggle(I18n.t('settings.capCanvas'), this.capCanvas, (v: boolean) => { this.capCanvas = v; })
-            this.CapToggle(I18n.t('settings.capScreen'), this.capScreen, (v: boolean) => { this.capScreen = v; })
-            this.CapToggle(I18n.t('settings.capNotification'), this.capNotification, (v: boolean) => { this.capNotification = v; })
-            this.CapToggle(I18n.t('settings.capMicrophone'), this.capMicrophone, (v: boolean) => { this.capMicrophone = v; })
-            this.CapToggle(I18n.t('settings.capSpeaker'), this.capSpeaker, (v: boolean) => { this.capSpeaker = v; })
-            this.CapToggle(I18n.t('settings.capEmail'), this.capEmail, (v: boolean) => { this.capEmail = v; })
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
-            // TTS auto-read
-            Divider().margin({ top: 10, bottom: 10 }).color('#F0F0F0')
+            Text('API Key')
+              .fontSize(14)
+              .fontColor('#1A1A1A')
+              .width('100%')
+            Row() {
+              TextInput({ text: this.asrApiKey, placeholder: 'sk-...' })
+                .layoutWeight(1)
+                .height(40)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .type(this.showAsrKey ? InputType.Normal : InputType.Password)
+                .onChange((v: string) => { this.asrApiKey = v; })
+              Button(this.showAsrKey ? I18n.t('settings.hide') : I18n.t('settings.show'))
+                .fontSize(12)
+                .height(34)
+                .backgroundColor('#F0F0F0')
+                .fontColor('#666666')
+                .borderRadius(8)
+                .margin({ left: 8 })
+                .onClick(() => { this.showAsrKey = !this.showAsrKey; })
+            }
+            .margin({ top: 6 })
+            .width('100%')
+
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+            Text('Model')
+              .fontSize(14)
+              .fontColor('#1A1A1A')
+              .width('100%')
+            TextInput({ text: this.asrModel, placeholder: 'whisper-1' })
+              .height(40)
+              .backgroundColor('#F5F5F5')
+              .borderRadius(8)
+              .margin({ top: 6 })
+              .onChange((v: string) => { this.asrModel = v; })
+          }
+          .width('100%')
+          .padding(16)
+          .margin({ left: 16, right: 16 })
+          .backgroundColor(Color.White)
+          .borderRadius(12)
+
+        }
+
+        // =============== Node Tab ===============
+        if (this.settingsTab === 'node') {
+          // ---- Gateway / Node Mode ----
+          this.SectionTitle(I18n.t('settings.gateway'))
+          Column() {
             Row() {
               Column({ space: 2 }) {
-                Text(I18n.t('settings.ttsAutoRead'))
-                  .fontSize(13)
+                Text(I18n.t('settings.nodeMode'))
+                  .fontSize(14)
                   .fontColor('#1A1A1A')
-                Text(I18n.t('settings.ttsAutoReadDesc'))
+                Text(I18n.t('settings.nodeModeDesc'))
                   .fontSize(11)
                   .fontColor('#999999')
               }
               .layoutWeight(1)
               .alignItems(HorizontalAlign.Start)
-              Toggle({ type: ToggleType.Switch, isOn: this.ttsAutoRead })
+
+              Toggle({ type: ToggleType.Switch, isOn: this.gwEnabled })
                 .selectedColor('#D2691E')
-                .onChange((v: boolean) => { this.ttsAutoRead = v; })
+                .onChange((isOn: boolean) => {
+                  this.gwEnabled = isOn;
+                  if (!isOn) {
+                    NodeRuntime.getInstance().disconnect();
+                  }
+                })
             }
             .width('100%')
-            .height(50)
+
+            if (this.gwEnabled) {
+              Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+              Text(I18n.t('settings.gatewayHost'))
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+                .width('100%')
+              TextInput({ text: this.gwHost, placeholder: I18n.t('settings.gatewayHostPlaceholder') })
+                .height(40)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .margin({ top: 6 })
+                .onChange((v: string) => { this.gwHost = v; })
+
+              Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+              Row() {
+                Text(I18n.t('settings.port'))
+                  .fontSize(14)
+                  .fontColor('#1A1A1A')
+                  .layoutWeight(1)
+                TextInput({ text: this.gwPort, placeholder: '9315' })
+                  .width(100)
+                  .height(40)
+                  .backgroundColor('#F5F5F5')
+                  .borderRadius(8)
+                  .type(InputType.Number)
+                  .onChange((v: string) => { this.gwPort = v; })
+              }
+              .width('100%')
+
+              Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+              Row() {
+                Text(I18n.t('settings.useTls'))
+                  .fontSize(14)
+                  .fontColor('#1A1A1A')
+                  .layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.gwUseTls })
+                  .selectedColor('#D2691E')
+                  .onChange((isOn: boolean) => { this.gwUseTls = isOn; })
+              }
+              .width('100%')
+
+              Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+              Text(I18n.t('settings.token'))
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+                .width('100%')
+              Text(I18n.t('settings.tokenDesc'))
+                .fontSize(11)
+                .fontColor('#999999')
+                .width('100%')
+                .margin({ top: 2 })
+              TextInput({ text: this.gwToken, placeholder: I18n.t('settings.tokenPlaceholder') })
+                .height(40)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .type(InputType.Password)
+                .margin({ top: 6 })
+                .onChange((v: string) => { this.gwToken = v; })
+
+              Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+              Text(I18n.t('settings.password'))
+                .fontSize(14)
+                .fontColor('#666666')
+                .width('100%')
+              TextInput({ text: this.gwPassword, placeholder: I18n.t('settings.passwordPlaceholder') })
+                .height(40)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .type(InputType.Password)
+                .margin({ top: 6 })
+                .onChange((v: string) => { this.gwPassword = v; })
+
+              Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+              Row() {
+                Text(I18n.t('settings.status'))
+                  .fontSize(14)
+                  .fontColor('#1A1A1A')
+                  .layoutWeight(1)
+                Circle({ width: 10, height: 10 })
+                  .fill(this.gwStateColor())
+                  .margin({ right: 6 })
+                Text(this.gwStatusText)
+                  .fontSize(13)
+                  .fontColor(this.gwStateColor())
+                  .fontWeight(FontWeight.Medium)
+              }
+              .width('100%')
+              .height(40)
+
+              Button(this.gwIsConnected() ? I18n.t('settings.disconnect') : I18n.t('settings.connect'))
+                .width('100%')
+                .height(44)
+                .backgroundColor(this.gwIsConnected() ? '#D32F2F' : '#4CAF50')
+                .fontColor(Color.White)
+                .fontSize(15)
+                .fontWeight(FontWeight.Medium)
+                .borderRadius(10)
+                .margin({ top: 8 })
+                .onClick(() => { this.toggleGateway(); })
+            }
           }
+          .width('100%')
+          .padding(16)
+          .margin({ left: 16, right: 16 })
+          .backgroundColor(Color.White)
+          .borderRadius(12)
         }
-        .width('100%')
-        .padding(16)
-        .margin({ left: 16, right: 16 })
-        .backgroundColor(Color.White)
-        .borderRadius(12)
+
+        // =============== Service Tab ===============
+        if (this.settingsTab === 'service') {
+          // ---- Feishu Bot ----
+          this.SectionTitle(I18n.t('settings.feishu'))
+          Column() {
+            Row() {
+              Column({ space: 2 }) {
+                Text(I18n.t('settings.feishuEnabled'))
+                  .fontSize(14)
+                  .fontColor('#1A1A1A')
+                Text(I18n.t('settings.feishuEnabledDesc'))
+                  .fontSize(11)
+                  .fontColor('#999999')
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+
+              Toggle({ type: ToggleType.Switch, isOn: this.feishuEnabled })
+                .selectedColor('#D2691E')
+                .onChange((isOn: boolean) => { this.feishuEnabled = isOn; })
+            }
+            .width('100%')
+
+            if (this.feishuEnabled) {
+              Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+              Text(I18n.t('settings.feishuAppId'))
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+                .width('100%')
+              TextInput({ text: this.feishuAppId, placeholder: 'cli_xxxxxxxx' })
+                .height(40)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .margin({ top: 6 })
+                .onChange((v: string) => { this.feishuAppId = v; })
+
+              Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+              Text(I18n.t('settings.feishuAppSecret'))
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+                .width('100%')
+              Row() {
+                TextInput({ text: this.feishuAppSecret, placeholder: '••••••••' })
+                  .layoutWeight(1)
+                  .height(40)
+                  .backgroundColor('#F5F5F5')
+                  .borderRadius(8)
+                  .type(this.showFeishuSecret ? InputType.Normal : InputType.Password)
+                  .onChange((v: string) => { this.feishuAppSecret = v; })
+                Button(this.showFeishuSecret ? I18n.t('settings.hide') : I18n.t('settings.show'))
+                  .fontSize(12)
+                  .height(34)
+                  .backgroundColor('#F0F0F0')
+                  .fontColor('#666666')
+                  .borderRadius(8)
+                  .margin({ left: 8 })
+                  .onClick(() => { this.showFeishuSecret = !this.showFeishuSecret; })
+              }
+              .margin({ top: 6 })
+              .width('100%')
+
+              Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+              Button(this.feishuTestStatus === I18n.t('settings.feishuTesting')
+                ? I18n.t('settings.feishuTesting')
+                : I18n.t('settings.feishuTest'))
+                .width('100%')
+                .height(44)
+                .backgroundColor('#4CAF50')
+                .fontColor(Color.White)
+                .fontSize(15)
+                .fontWeight(FontWeight.Medium)
+                .borderRadius(10)
+                .onClick(() => { this.testFeishuConnection(); })
+
+              if (this.feishuTestStatus.length > 0) {
+                Text(this.feishuTestStatus)
+                  .fontSize(12)
+                  .fontColor(this.feishuTestStatus.includes(I18n.t('settings.feishuTestOk')) ? '#4CAF50' : '#D32F2F')
+                  .margin({ top: 8 })
+                  .width('100%')
+              }
+            }
+          }
+          .width('100%')
+          .padding(16)
+          .margin({ left: 16, right: 16 })
+          .backgroundColor(Color.White)
+          .borderRadius(12)
+        }
+
+        // =============== Bottom (always visible) ===============
 
         // ---- About ----
         this.SectionTitle(I18n.t('settings.about'))
         Column() {
           this.InfoRow(I18n.t('settings.app'), I18n.t('settings.appValue'))
           Divider().color('#F0F0F0')
-          this.InfoRow(I18n.t('settings.version'), '1.0.0')
+          this.InfoRow(I18n.t('settings.version'), '2.8.18')
           Divider().color('#F0F0F0')
           this.InfoRow(I18n.t('settings.basedOn'), 'OpenClaw / ClawdBot')
           Divider().color('#F0F0F0')
@@ -791,7 +953,6 @@ export struct SettingsPage {
 
         // ---- Logout ----
         Column({ space: 8 }) {
-          // Show connected gateway address
           if (this.gwHost.length > 0) {
             Text(`${I18n.t('settings.gatewayAddress')}: ${this.gwHost}:${this.gwPort}`)
               .fontSize(12)
@@ -1054,13 +1215,42 @@ export struct SettingsPage {
       if (savedHost.length > 0) this.imapHost = savedHost;
       let savedPort = (await store.get('imapPort', '')) as string;
       if (savedPort.length > 0) this.imapPort = savedPort;
+      let savedSmtpHost = (await store.get('smtpHost', '')) as string;
+      if (savedSmtpHost.length > 0) this.smtpHost = savedSmtpHost;
+      let savedSmtpPort = (await store.get('smtpPort', '')) as string;
+      if (savedSmtpPort.length > 0) this.smtpPort = savedSmtpPort;
       this.imapUser = (await store.get('imapUser', '')) as string;
       this.imapPass = (await store.get('imapPass', '')) as string;
     } catch { /* first launch defaults */ }
   }
 
+  private async loadFeishu(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let store = await preferences.getPreferences(ctx, Constants.PREFS_FEISHU);
+      this.feishuEnabled = (await store.get('enabled', false)) as boolean;
+      this.feishuAppId = (await store.get('appId', '')) as string;
+      this.feishuAppSecret = (await store.get('appSecret', '')) as string;
+    } catch { /* first launch defaults */ }
+  }
+
+  private async testFeishuConnection(): Promise<void> {
+    this.feishuTestStatus = I18n.t('settings.feishuTesting');
+    try {
+      let wssUrl = await FeishuBotService.getInstance().testConnection(
+        this.feishuAppId.trim(), this.feishuAppSecret.trim()
+      );
+      this.feishuTestStatus = `${I18n.t('settings.feishuTestOk')} (${wssUrl.substring(0, 40)}...)`;
+    } catch (e) {
+      this.feishuTestStatus = I18n.t('settings.feishuTestFail') + (e as Error).message;
+    }
+  }
+
   private async testEmailConnection(): Promise<void> {
     this.emailTestStatus = I18n.t('settings.emailTesting');
+
+    // Test IMAP
+    let imapResult = '';
     let imap = new ImapService();
     try {
       let port = parseInt(this.imapPort) || 993;
@@ -1068,11 +1258,146 @@ export struct SettingsPage {
       await imap.login(this.imapUser.trim(), this.imapPass);
       let count = await imap.selectMailbox('INBOX');
       await imap.logout();
-      this.emailTestStatus = `${I18n.t('settings.emailTestOk')} (${count} messages)`;
+      imapResult = `IMAP OK (${count})`;
     } catch (e) {
-      this.emailTestStatus = I18n.t('settings.emailTestFail') + (e as Error).message;
+      imapResult = `IMAP FAIL: ${(e as Error).message}`;
       try { await imap.logout(); } catch { /* ignore */ }
     }
+
+    // Test SMTP
+    let smtpResult = '';
+    try {
+      let smtpPort = parseInt(this.smtpPort) || 465;
+      let tlsSocket = socket.constructTLSSocketInstance();
+      let smtpBuf = '';
+      let smtpQueue: string[] = [];
+      let smtpResolve: ((line: string) => void) | null = null;
+
+      // Set up persistent message handler with queue (avoids race condition)
+      tlsSocket.on('message', (value: socket.SocketMessageInfo) => {
+        let view = new Uint8Array(value.message);
+        for (let i = 0; i < view.length; i++) {
+          smtpBuf += String.fromCharCode(view[i]);
+        }
+        let nlIdx = smtpBuf.indexOf('\r\n');
+        while (nlIdx >= 0) {
+          let line = smtpBuf.substring(0, nlIdx);
+          smtpBuf = smtpBuf.substring(nlIdx + 2);
+          if (line.length >= 4 && line[3] === '-') {
+            nlIdx = smtpBuf.indexOf('\r\n');
+            continue;
+          }
+          if (smtpResolve) {
+            let resolve = smtpResolve;
+            smtpResolve = null;
+            resolve(line);
+          } else {
+            smtpQueue.push(line);
+          }
+          nlIdx = smtpBuf.indexOf('\r\n');
+        }
+      });
+
+      let smtpWait = (timeoutMs: number): Promise<string> => {
+        return new Promise<string>((resolve, reject) => {
+          if (smtpQueue.length > 0) {
+            resolve(smtpQueue.shift() as string);
+            return;
+          }
+          smtpResolve = resolve;
+          let timer = setTimeout(() => {
+            if (smtpResolve) {
+              smtpResolve = null;
+              reject(new Error('SMTP timeout'));
+            }
+          }, timeoutMs);
+          let origResolve = smtpResolve;
+          smtpResolve = (line: string) => {
+            clearTimeout(timer);
+            origResolve(line);
+          };
+        });
+      };
+
+      let smtpExpect = async (expected: string, cmd?: string): Promise<string> => {
+        if (cmd) {
+          await tlsSocket.send(this.strToBuf(cmd));
+        }
+        let line = await smtpWait(10000);
+        if (!line.startsWith(expected)) {
+          throw new Error(`expected ${expected}, got: ${line}`);
+        }
+        return line;
+      };
+
+      await tlsSocket.bind({ address: '0.0.0.0' });
+      let tlsOptions: socket.TLSConnectOptions = {
+        address: { address: this.smtpHost.trim(), port: smtpPort, family: 1 },
+        secureOptions: { protocols: [socket.Protocol.TLSv12] },
+      };
+      let connectTimeout = new Promise<void>((_r, reject) => {
+        setTimeout(() => { reject(new Error('SMTP connect timeout')); }, 15000);
+      });
+      await Promise.race([tlsSocket.connect(tlsOptions), connectTimeout]);
+
+      // 220 greeting (may already be in queue)
+      await smtpExpect('220');
+      await smtpExpect('250', 'EHLO clawdbot\r\n');
+      await smtpExpect('334', 'AUTH LOGIN\r\n');
+      await smtpExpect('334', this.simpleBase64(this.imapUser.trim()) + '\r\n');
+      await smtpExpect('235', this.simpleBase64(this.imapPass) + '\r\n');
+
+      smtpResult = 'SMTP OK';
+
+      try { await tlsSocket.send(this.strToBuf('QUIT\r\n')); } catch { /* ignore */ }
+      try { await tlsSocket.close(); } catch { /* ignore */ }
+    } catch (e) {
+      smtpResult = `SMTP FAIL: ${(e as Error).message}`;
+    }
+
+    // Combine results
+    let allOk = imapResult.startsWith('IMAP OK') && smtpResult.startsWith('SMTP OK');
+    this.emailTestStatus = allOk
+      ? `${I18n.t('settings.emailTestOk')} — ${imapResult}, ${smtpResult}`
+      : `${imapResult} | ${smtpResult}`;
+  }
+
+  private simpleBase64(input: string): string {
+    let chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let bytes: number[] = [];
+    for (let i = 0; i < input.length; i++) {
+      let code = input.charCodeAt(i);
+      if (code < 0x80) {
+        bytes.push(code);
+      } else if (code < 0x800) {
+        bytes.push(0xC0 | (code >> 6));
+        bytes.push(0x80 | (code & 0x3F));
+      } else {
+        bytes.push(0xE0 | (code >> 12));
+        bytes.push(0x80 | ((code >> 6) & 0x3F));
+        bytes.push(0x80 | (code & 0x3F));
+      }
+    }
+    let result = '';
+    for (let i = 0; i < bytes.length; i += 3) {
+      let b1 = bytes[i];
+      let b2 = i + 1 < bytes.length ? bytes[i + 1] : 0;
+      let b3 = i + 2 < bytes.length ? bytes[i + 2] : 0;
+      result += chars[(b1 >> 2) & 0x3F];
+      result += chars[((b1 & 3) << 4) | ((b2 >> 4) & 0xF)];
+      result += i + 1 < bytes.length ? chars[((b2 & 0xF) << 2) | ((b3 >> 6) & 3)] : '=';
+      result += i + 2 < bytes.length ? chars[b3 & 0x3F] : '=';
+    }
+    return result;
+  }
+
+  private strToBuf(str: string): ArrayBuffer {
+    let buf = new ArrayBuffer(str.length);
+    let view = new Uint8Array(buf);
+    for (let i = 0; i < str.length; i++) {
+      view[i] = str.charCodeAt(i) & 0xFF;
+    }
+    return buf;
   }
 
   private async save(): Promise<void> {
@@ -1129,11 +1454,20 @@ export struct SettingsPage {
       await gwStore.put('ttsAutoRead', this.ttsAutoRead);
       await gwStore.flush();
 
+      // Save feishu settings
+      let feishuStore = await preferences.getPreferences(ctx, Constants.PREFS_FEISHU);
+      await feishuStore.put('enabled', this.feishuEnabled);
+      await feishuStore.put('appId', this.feishuAppId);
+      await feishuStore.put('appSecret', this.feishuAppSecret);
+      await feishuStore.flush();
+
       // Save email settings
       let emailStore = await preferences.getPreferences(ctx, Constants.PREFS_EMAIL);
       await emailStore.put('enabled', this.emailEnabled);
       await emailStore.put('imapHost', this.imapHost);
       await emailStore.put('imapPort', this.imapPort);
+      await emailStore.put('smtpHost', this.smtpHost);
+      await emailStore.put('smtpPort', this.smtpPort);
       await emailStore.put('imapUser', this.imapUser);
       await emailStore.put('imapPass', this.imapPass);
       await emailStore.flush();

@@ -100,9 +100,9 @@ function makeTool(name: string, description: string, schema: JsonSchemaObj): Too
 
 const SKILL_PROMPTS: Map<string, string> = new Map([
   ['skill_system',
-    'You can execute commands, manage files, and get device location via system tools. This is a HarmonyOS device. File paths are sandbox-based — use list_files with empty path first to discover available directories. Do NOT use Linux paths like /home/. You can get the user\'s current GPS location using get_location.'],
+    'You can execute commands, manage files, get device location, and take screenshots via system tools. This is a HarmonyOS device. File paths are sandbox-based — use list_files with empty path first to discover available directories. Do NOT use Linux paths like /home/. You can get the user\'s current GPS location using get_location. You can take a screenshot of the app screen using screen_capture.'],
   ['skill_web',
-    'You can search the web and fetch page contents for up-to-date information.'],
+    'You can search the web and fetch page contents. You have a full WebView browser on the device:\n- open_webpage: open a URL in full-screen WebView\n- navigate_webpage: go to a new URL in the open WebView\n- eval_webpage: run JavaScript (click buttons, fill forms, extract text via document.body.innerText, etc.)\n- snapshot_webpage: screenshot the current page (returns base64 JPEG)\n- close_webpage: close the WebView\nUse open_webpage when the user wants to browse. Use eval_webpage to interact with or extract content from the page. Use snapshot_webpage to see what the page looks like.'],
   ['skill_smart_home',
     'You can list and control smart home devices connected via HarmonyOS distributed capabilities.'],
   ['skill_calendar',
@@ -112,7 +112,7 @@ const SKILL_PROMPTS: Map<string, string> = new Map([
   ['skill_scheduler',
     'You can create, list, and cancel scheduled tasks. Tasks can be one-shot (run once at a specific time) or recurring (run periodically). Schedule formats: "every 30m", "every 2h", "daily 09:00", or ISO 8601 datetime for one-shot. When the user says things like "remind me every 30 minutes to drink water" or "check the weather every morning at 9", use create_scheduled_task.'],
   ['skill_email',
-    'You have access to the user\'s email inbox via IMAP. When the user mentions 邮件/邮箱/email/inbox/mail, use these email tools:\n- list_emails: list recent emails (NOT calendar events)\n- read_email: read email body by sequence number\n- search_emails: search emails by subject\nIMPORTANT: Do NOT use list_events for email requests. list_events is for calendar only.'],
+    'You have access to the user\'s email via IMAP and SMTP. When the user mentions 邮件/邮箱/email/inbox/mail, use these email tools:\n- list_emails: list recent emails (NOT calendar events)\n- read_email: read email body by sequence number\n- search_emails: search emails by subject\n- send_email: send an email (发邮件/写邮件)\nIMPORTANT: Do NOT use list_events for email requests. list_events is for calendar only.'],
 ]);
 
 function buildSystemToolSchemas(): ToolSchema[] {
@@ -149,6 +149,8 @@ function buildSystemToolSchemas(): ToolSchema[] {
       makeSchema(pickProps)),
     makeTool('get_location', 'Get the device current GPS location (latitude, longitude, accuracy). Use this when the user asks where they are or needs location info.',
       makeSchema(locationProps)),
+    makeTool('screen_capture', 'Take a screenshot of the current app screen and return it as a base64 JPEG image. Use this when the user asks you to take a screenshot (截屏/截图/screenshot).',
+      makeSchema(locationProps)),
   ];
 }
 
@@ -159,9 +161,33 @@ function buildWebToolSchemas(): ToolSchema[] {
   let fetchProps: Record<string, JsonSchemaProperty> = {};
   fetchProps['url'] = { type: 'string', description: 'URL to fetch' };
 
+  let openProps: Record<string, JsonSchemaProperty> = {};
+  openProps['url'] = { type: 'string', description: 'URL to open in the WebView' };
+
+  let closeProps: Record<string, JsonSchemaProperty> = {};
+
+  let navProps: Record<string, JsonSchemaProperty> = {};
+  navProps['url'] = { type: 'string', description: 'New URL to navigate to in the already-open WebView' };
+
+  let evalProps: Record<string, JsonSchemaProperty> = {};
+  evalProps['javascript'] = { type: 'string', description: 'JavaScript code to execute in the WebView. Returns the evaluation result as a string.' };
+
+  let snapProps: Record<string, JsonSchemaProperty> = {};
+  snapProps['quality'] = { type: 'string', description: 'JPEG quality 1-100. Default 80.' };
+
   return [
     makeTool('web_search', 'Search the web', makeSchema(searchProps, ['query'])),
     makeTool('web_fetch', 'Fetch and extract content from a URL', makeSchema(fetchProps, ['url'])),
+    makeTool('open_webpage', 'Open a URL in a full-screen WebView on the device. Use this when the user wants to view a website, read an article, or interact with a web page visually.',
+      makeSchema(openProps, ['url'])),
+    makeTool('close_webpage', 'Close the currently open WebView page.',
+      makeSchema(closeProps)),
+    makeTool('navigate_webpage', 'Navigate the already-open WebView to a new URL. The WebView must be open first via open_webpage.',
+      makeSchema(navProps, ['url'])),
+    makeTool('eval_webpage', 'Execute JavaScript code in the currently open WebView and return the result. Use this to interact with web pages: click buttons, fill forms, extract text content, scroll, etc. The WebView must be open first via open_webpage.',
+      makeSchema(evalProps, ['javascript'])),
+    makeTool('snapshot_webpage', 'Take a screenshot of the currently open WebView and return it as a base64 JPEG image. Use this to see what the webpage looks like. The WebView must be open first via open_webpage.',
+      makeSchema(snapProps)),
   ];
 }
 
@@ -264,6 +290,12 @@ function buildEmailToolSchemas(): ToolSchema[] {
   let searchProps: Record<string, JsonSchemaProperty> = {};
   searchProps['query'] = { type: 'string', description: 'Search keyword (matches subject)' };
 
+  let sendProps: Record<string, JsonSchemaProperty> = {};
+  sendProps['to'] = { type: 'string', description: 'Recipient email address (comma-separated for multiple)' };
+  sendProps['subject'] = { type: 'string', description: 'Email subject' };
+  sendProps['body'] = { type: 'string', description: 'Email body text' };
+  sendProps['cc'] = { type: 'string', description: 'CC recipients (optional, comma-separated)' };
+
   return [
     makeTool('list_emails', 'List recent emails from the user email inbox (IMAP). Use this when user asks about 邮件/邮箱/email/mail. Returns sender, subject, and date.',
       makeSchema(listProps)),
@@ -271,6 +303,8 @@ function buildEmailToolSchemas(): ToolSchema[] {
       makeSchema(readProps, ['id'])),
     makeTool('search_emails', 'Search emails by subject keyword. Returns matching email summaries.',
       makeSchema(searchProps, ['query'])),
+    makeTool('send_email', 'Send an email via SMTP. Use this when user asks to send/write/compose an email (发邮件/写邮件/发送邮件).',
+      makeSchema(sendProps, ['to', 'subject', 'body'])),
   ];
 }
 

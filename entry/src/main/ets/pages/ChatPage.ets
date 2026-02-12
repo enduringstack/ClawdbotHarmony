@@ -16,8 +16,10 @@ import { promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { audio } from '@kit.AudioKit';
 import { fileIo } from '@kit.CoreFileKit';
+import { geoLocationManager } from '@kit.LocationKit';
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
+import { FeishuBotService } from '../service/FeishuBotService';
 
 @Component
 export struct ChatPage {
@@ -37,6 +39,9 @@ export struct ChatPage {
   @State historyFilename: string = '';
   @State isTalkMode: boolean = false;
   @State talkStatus: string = '';
+  @State previewImagePath: string = '';
+  @State showWaveform: boolean = false;
+  @State waveBars: number[] = [0, 0, 0, 0, 0, 0, 0];
   private dotTimer: number = -1;
   private audioCapturer: audio.AudioCapturer | undefined = undefined;
   private asrReading: boolean = false;
@@ -54,6 +59,12 @@ export struct ChatPage {
   private notifListener: ((info: NotificationInfo) => void) | undefined = undefined;
   private langListener: (() => void) | undefined = undefined;
   private mediaListener: ((type: string, path: string) => void) | undefined = undefined;
+  private invokeListener: ((command: string, params: string, result: string, isError: boolean) => void) | undefined = undefined;
+  private feishuConnected: boolean = false;
+  private feishuSettings: SettingsData | undefined = undefined;
+  // Track unsolicited agent events (from other channels like WhatsApp)
+  private unsolicitedRuns: Map<string, string> = new Map<string, string>(); // runId → msgId
+  private unsolicitedTexts: Map<string, string> = new Map<string, string>(); // runId → accumulated text
   private soulText: string = Constants.DEFAULT_SOUL;
   // Track the current gateway chat run
   private gwRunId: string = '';
@@ -93,10 +104,16 @@ export struct ChatPage {
       this.handleMediaCaptured(type, path);
     };
     NodeRuntime.getInstance().addMediaListener(this.mediaListener);
+    // Register invoke listener to show gateway tool calls in chat
+    this.invokeListener = (command: string, params: string, result: string, isError: boolean) => {
+      this.handleInvokeInChat(command, params, result, isError);
+    };
+    NodeRuntime.getInstance().addInvokeListener(this.invokeListener);
     this.lang = I18n.lang;
     this.langListener = () => { this.lang = I18n.lang; this.loadAssistantSettings(); };
     I18n.addListener(this.langListener);
     this.startCronTimer();
+    this.initFeishuBot();
   }
 
   aboutToDisappear(): void {
@@ -125,6 +142,10 @@ export struct ChatPage {
       NodeRuntime.getInstance().removeMediaListener(this.mediaListener);
       this.mediaListener = undefined;
     }
+    if (this.invokeListener) {
+      NodeRuntime.getInstance().removeInvokeListener(this.invokeListener);
+      this.invokeListener = undefined;
+    }
     if (this.langListener) {
       I18n.removeListener(this.langListener);
       this.langListener = undefined;
@@ -133,6 +154,12 @@ export struct ChatPage {
     this.asrReading = false;
     this.cleanupAsr();
     this.stopTalkMode();
+    // Disconnect feishu bot
+    if (this.feishuConnected) {
+      FeishuBotService.getInstance().onMessageReceived = undefined;
+      FeishuBotService.getInstance().disconnect();
+      this.feishuConnected = false;
+    }
     if (this.cronTimer !== -1) {
       clearInterval(this.cronTimer);
       this.cronTimer = -1;
@@ -144,6 +171,7 @@ export struct ChatPage {
   }
 
   build() {
+    Stack() {
     Column() {
       // -- header --
       Row() {
@@ -206,7 +234,7 @@ export struct ChatPage {
                 .fontSize(18)
                 .fontWeight(FontWeight.Bold)
                 .fontColor('#1A1A1A')
-              Text('v2.5')
+              Text('v2.8.18')
                 .fontSize(11)
                 .fontColor('#999999')
                 .margin({ top: 4 })
@@ -335,7 +363,12 @@ export struct ChatPage {
         List({ scroller: this.scroller }) {
           ForEach(this.messages, (msg: ChatMessage) => {
             ListItem() {
-              MessageBubble({ message: msg, assistantAvatar: this.assistantAvatar, assistantName: this.assistantName })
+              MessageBubble({
+                message: msg,
+                assistantAvatar: this.assistantAvatar,
+                assistantName: this.assistantName,
+                onImageClick: (path: string): void => { this.previewImagePath = path; }
+              })
             }
           }, (msg: ChatMessage): string => msg.id)
 
@@ -425,16 +458,31 @@ export struct ChatPage {
           )
         )
 
-        TextInput({ text: this.inputText,
-          placeholder: this.isTalkMode ? this.talkStatus : (this.isRecording ? I18n.t('chat.recording') : I18n.t('chat.placeholder')) })
+        if (this.showWaveform && this.isTalkMode) {
+          Row({ space: 8 }) {
+            this.WaveformBar()
+            Text(this.talkStatus)
+              .fontSize(13)
+              .fontColor('#4CAF50')
+          }
           .layoutWeight(1)
           .height(42)
           .borderRadius(21)
           .backgroundColor('#F0F0F0')
           .padding({ left: 16, right: 16 })
-          .fontSize(15)
-          .onChange((v: string) => { this.inputText = v; })
-          .onSubmit(() => { this.send(); })
+          .justifyContent(FlexAlign.Center)
+        } else {
+          TextInput({ text: this.inputText,
+            placeholder: this.isTalkMode ? this.talkStatus : (this.isRecording ? I18n.t('chat.recording') : I18n.t('chat.placeholder')) })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(21)
+            .backgroundColor('#F0F0F0')
+            .padding({ left: 16, right: 16 })
+            .fontSize(15)
+            .onChange((v: string) => { this.inputText = v; })
+            .onSubmit(() => { this.send(); })
+        }
 
         Button() {
           Text('\u27A4').fontSize(18).fontColor(Color.White)
@@ -455,6 +503,41 @@ export struct ChatPage {
     .width('100%')
     .height('100%')
     .backgroundColor('#F5F5F5')
+    .id('appRoot')
+
+    // Full-screen image preview overlay
+    if (this.previewImagePath.length > 0) {
+      Column() {
+        Image('file://' + this.previewImagePath)
+          .objectFit(ImageFit.Contain)
+          .width('100%')
+          .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#000000')
+      .onClick(() => {
+        this.previewImagePath = '';
+      })
+    }
+    } // end Stack
+  }
+
+  @Builder
+  WaveformBar() {
+    Row({ space: 4 }) {
+      ForEach(this.waveBars, (level: number, _index: number) => {
+        Column()
+          .width(4)
+          .height(8 + level * 24)
+          .borderRadius(2)
+          .backgroundColor('#4CAF50')
+          .animation({ duration: 150, curve: Curve.EaseInOut })
+      })
+    }
+    .height(40)
+    .alignItems(VerticalAlign.Center)
+    .justifyContent(FlexAlign.Center)
   }
 
   @Builder
@@ -802,12 +885,15 @@ Keep it short but preserve all important information. Use the same language as t
     this.isLoading = true;
     this.startDotAnimation();
 
+    // Auto-enrich with location for weather queries
+    let enrichedText = await this.enrichWithLocation(text);
+
     if (this.gwConnected) {
       // ---- Gateway path: send via operator session ----
-      await this.sendViaGateway(text);
+      await this.sendViaGateway(enrichedText);
     } else {
       // ---- Local AI path: direct HTTP API ----
-      await this.sendViaLocalAI(text);
+      await this.sendViaLocalAI(enrichedText);
     }
 
     this.scrollToEnd();
@@ -948,8 +1034,14 @@ Keep it short but preserve all important information. Use the same language as t
     let runIdMatch = this.gwRunId.length === 0 || event.runId === this.gwRunId;
 
     if (!isWaiting) {
-      // Not waiting for any response — ignore
-      this.log.info('ChatPage', `Ignoring chat event: not waiting for response`);
+      // Not waiting for a local response — this is an unsolicited event
+      // (e.g. AI response to WhatsApp or other channel). Show it in chat.
+      if (text.length > 0 && event.state !== 'error') {
+        this.log.info('ChatPage', `Unsolicited agent event: runId=${event.runId} state=${event.state} textLen=${text.length}`);
+        this.handleUnsolicitedAgentEvent(event, text);
+      } else {
+        this.log.info('ChatPage', `Ignoring unsolicited event: no text or error state`);
+      }
       return;
     }
 
@@ -1081,6 +1173,17 @@ Keep it short but preserve all important information. Use the same language as t
       return;
     }
 
+    // Check if the response contains an image file path (from camera.snap or screen.capture)
+    let imgMatch = /(\/data\/storage[^\s\n"'）》]+\.(?:jpg|jpeg|png))/i.exec(accText);
+    if (imgMatch && imgMatch[1]) {
+      let imgFilePath = imgMatch[1];
+      this.log.info('ChatPage', `Detected image path in gateway response: ${imgFilePath}`);
+      let idx = this.findGwAssistantIndex();
+      if (idx >= 0) {
+        this.messages[idx].imagePath = imgFilePath;
+      }
+    }
+
     // Check if the response contains a MEDIA: reference (server-side TTS audio)
     // The text may contain additional text like "MEDIA:/tmp/tts-xxx/voice.mp3\n\n其他文字"
     // Use regex to extract the MEDIA path
@@ -1124,6 +1227,66 @@ Keep it short but preserve all important information. Use the same language as t
       this.gwEarlyFinish = true;
     }
     this.saveHistory();
+  }
+
+  /**
+   * Handle unsolicited agent events (from WhatsApp/other channels).
+   * Creates or updates an assistant message for the remote conversation.
+   */
+  private handleUnsolicitedAgentEvent(event: GatewayChatEvent, text: string): void {
+    let runId = event.runId;
+    if (runId.length === 0) {
+      runId = `unsolicited_${Date.now()}`;
+    }
+
+    let existingMsgId = this.unsolicitedRuns.get(runId);
+
+    if (event.state === 'delta') {
+      if (existingMsgId) {
+        // Accumulate text for existing message
+        let accText = (this.unsolicitedTexts.get(runId) ?? '') + text;
+        this.unsolicitedTexts.set(runId, accText);
+        // Update the message
+        for (let i = this.messages.length - 1; i >= 0; i--) {
+          if (this.messages[i].id === existingMsgId) {
+            this.messages[i].content = '\uD83C\uDF10 ' + accText;  // 🌐 prefix for remote events
+            break;
+          }
+        }
+      } else {
+        // First delta for this runId — create new message
+        let msg = new ChatMessage('assistant', '\uD83C\uDF10 ' + text);
+        this.unsolicitedRuns.set(runId, msg.id);
+        this.unsolicitedTexts.set(runId, text);
+        this.messages.push(msg);
+      }
+      this.scrollToEnd();
+    } else if (event.state === 'final') {
+      if (existingMsgId) {
+        // Final with text — update existing message
+        let accText = this.unsolicitedTexts.get(runId) ?? '';
+        if (text.length > accText.length) {
+          accText = text; // final has complete text
+        } else if (text.length > 0) {
+          accText += text; // final has last chunk
+        }
+        for (let i = this.messages.length - 1; i >= 0; i--) {
+          if (this.messages[i].id === existingMsgId) {
+            this.messages[i].content = '\uD83C\uDF10 ' + accText;
+            break;
+          }
+        }
+      } else if (text.length > 0) {
+        // Single final event with text — create message directly
+        let msg = new ChatMessage('assistant', '\uD83C\uDF10 ' + text);
+        this.messages.push(msg);
+      }
+      // Cleanup tracking for this runId
+      this.unsolicitedRuns.delete(runId);
+      this.unsolicitedTexts.delete(runId);
+      this.scrollToEnd();
+      this.saveHistory();
+    }
   }
 
   /**
@@ -1209,6 +1372,41 @@ Keep it short but preserve all important information. Use the same language as t
     this.saveHistory();
   }
 
+  /** Handle gateway invoke requests: show them as tool call messages in chat. */
+  private handleInvokeInChat(command: string, params: string, result: string, isError: boolean): void {
+    this.log.info('ChatPage', `Invoke in chat: command=${command} isError=${isError} resultLen=${result.length}`);
+
+    // Create a tool call message
+    let msg = new ChatMessage('tool', '');
+    msg.isToolCall = true;
+    msg.toolName = command;
+    // Show a short version of params (strip base64 data)
+    let shortParams = params.length > 300 ? params.substring(0, 300) + '...' : params;
+    msg.toolInput = shortParams;
+    // Show result (truncate very large results like base64 images)
+    let shortResult = result.length > 500 ? result.substring(0, 500) + '...' : result;
+    msg.toolOutput = isError ? `Error: ${shortResult}` : shortResult;
+
+    // Extract image/audio from result for display
+    if (!isError) {
+      try {
+        let parsed = JSON.parse(result) as Record<string, Object>;
+        let fp = parsed['filePath'] as string;
+        if (fp && fp.length > 0) {
+          if (command === 'mic.record') {
+            msg.audioPath = fp;
+          } else if (command === 'camera.snap' || command === 'screen.capture') {
+            msg.imagePath = fp;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    this.messages.push(msg);
+    this.scrollToEnd();
+    this.saveHistory();
+  }
+
   private handleNotificationInChat(info: NotificationInfo): void {
     this.log.info('ChatPage', `Notification received: title="${info.title}" sender="${info.sender}" body="${info.body.substring(0, 80)}"`);
 
@@ -1255,7 +1453,7 @@ Keep it short but preserve all important information. Use the same language as t
       let memItems = await this.memSvc.loadAll(ctx);
       let skills = getDefaultSkills();
 
-      let systemPrompt = this.buildSystemPrompt(memItems, skills);
+      let systemPrompt = this.buildSystemPrompt(memItems, skills, settings.model);
       let tools = getEnabledToolSchemas(skills);
 
       let result: AIResult = await this.ai.chat(this.messages, settings, systemPrompt, tools, ctx);
@@ -1490,10 +1688,11 @@ Keep it short but preserve all important information. Use the same language as t
     this.startDotAnimation();
 
     try {
+      let enrichedText = await this.enrichWithLocation(text);
       if (this.gwConnected) {
-        await this.sendViaGateway(text);
+        await this.sendViaGateway(enrichedText);
       } else {
-        await this.sendViaLocalAI(text);
+        await this.sendViaLocalAI(enrichedText);
       }
     } catch (e) {
       this.messages.push(new ChatMessage('assistant',
@@ -1586,7 +1785,7 @@ Keep it short but preserve all important information. Use the same language as t
     }
   }
 
-  private buildSystemPrompt(memItems: MemoryItem[], skills: import('../model/Models').SkillItem[]): string {
+  private buildSystemPrompt(memItems: MemoryItem[], skills: import('../model/Models').SkillItem[], modelName?: string): string {
     let d = new Date();
     let tz = -(d.getTimezoneOffset() / 60);
     let tzStr = `UTC${tz >= 0 ? '+' : ''}${tz}`;
@@ -1611,6 +1810,25 @@ CRITICAL: Do NOT announce tool usage. Never say "好的，我来查询..." or "�
 Current time: ${now}
 Timezone: ${tzStr}
 Platform: HarmonyOS
+Work mode: ${this.gwConnected ? 'Online (connected to OpenClaw Gateway server)' : 'Local AI (direct API call, no gateway)'}
+AI Model: ${modelName && modelName.length > 0 ? modelName : 'unknown (server-controlled)'}
+
+## Available Features
+- 📍 Location: Get GPS coordinates (auto-included for weather queries)
+- 🌤 Weather: Ask about weather (location auto-detected)
+- 📸 Camera: Take photos (front/back)
+- 📱 Screenshot: Capture app screen
+- 🔍 Web search: Search the internet
+- 🌐 Browser: Open and interact with web pages
+- 📅 Calendar: Create events and reminders
+- ⏰ Scheduler: Recurring/one-shot scheduled tasks
+- 📝 Memory: Persistent memory across conversations
+- 📧 Email: Read inbox via IMAP
+- 📂 Files: Read/write/search sandbox files
+- 🔊 TTS: Auto-read responses aloud (if enabled)
+- 🎙 Voice input: Speech-to-text via ASR
+- 🏠 Smart Home: Control IoT devices
+When user asks what you can do, briefly list these features.
 
 ## Memory System
 You have persistent memory that survives across conversations. Use it proactively:
@@ -1670,6 +1888,125 @@ You have persistent memory that survives across conversations. Use it proactivel
       baseUrl: baseUrl,
       temperature: (await store.get('temperature', 0.7)) as number,
     };
+  }
+
+  // ---- Feishu Bot integration ----
+
+  private async initFeishuBot(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let store = await preferences.getPreferences(ctx, Constants.PREFS_FEISHU);
+      let enabled = (await store.get('enabled', false)) as boolean;
+      if (!enabled) return;
+      let appId = (await store.get('appId', '')) as string;
+      let appSecret = (await store.get('appSecret', '')) as string;
+      if (appId.length === 0 || appSecret.length === 0) return;
+
+      this.log.info('Feishu', 'Initializing Feishu bot...');
+      // Pre-cache settings for fast Feishu message handling
+      this.feishuSettings = await this.loadSettings(ctx);
+      let feishu = FeishuBotService.getInstance();
+      feishu.onMessageReceived = (sender: string, text: string, messageId: string, chatId: string) => {
+        this.handleFeishuMessage(sender, text, messageId, chatId);
+      };
+      feishu.onStateChanged = (state: string) => {
+        this.log.info('Feishu', `State: ${state}`);
+      };
+      await feishu.connect(appId, appSecret);
+      this.feishuConnected = true;
+    } catch (e) {
+      this.log.error('Feishu', `Init failed: ${(e as Error).message ?? String(e)}`);
+    }
+  }
+
+  private handleFeishuMessage(sender: string, text: string, messageId: string, _chatId: string): void {
+    let tStart = Date.now();
+    this.log.info('Feishu', `[TIMING] handleFeishuMessage start at ${tStart}, from ${sender}: ${text.substring(0, 100)}`);
+
+    // Add user message to chat
+    let userMsg = new ChatMessage('user', `[${I18n.t('chat.feishuMessage')}] ${text}`);
+    this.messages.push(userMsg);
+    this.scrollToEnd();
+
+    let ctx: common.UIAbilityContext;
+    try {
+      ctx = getContext(this) as common.UIAbilityContext;
+    } catch { return; }
+
+    // Use cached settings (fall back to loading if not cached)
+    let settingsPromise: Promise<SettingsData>;
+    if (this.feishuSettings) {
+      settingsPromise = Promise.resolve(this.feishuSettings);
+    } else {
+      settingsPromise = this.loadSettings(ctx);
+    }
+
+    settingsPromise.then(async (settings: SettingsData) => {
+      this.log.info('Feishu', `[TIMING] AI call start, settingsLoad=${Date.now() - tStart}ms`);
+
+      // Use full AI chat with tools (so Feishu can trigger camera, screen, etc.)
+      let memItems = await this.memSvc.loadAll(ctx);
+      let skills = getDefaultSkills();
+      let systemPrompt = this.buildSystemPrompt(memItems, skills, settings.model);
+      let tools = getEnabledToolSchemas(skills);
+
+      // Use a fresh message list — avoids history contamination from previous responses
+      let feishuMessages: ChatMessage[] = [];
+      feishuMessages.push(new ChatMessage('user', text));
+
+      let result: AIResult = await this.ai.chat(feishuMessages, settings, systemPrompt, tools, ctx);
+      let tAiDone = Date.now();
+      this.log.info('Feishu', `[TIMING] AI done in ${tAiDone - tStart}ms, sending reply...`);
+
+      // Collect reply text and image paths from result messages
+      let replyText = '';
+      let replyImagePath = '';
+      if (result.error.length > 0) {
+        this.messages.push(new ChatMessage('assistant', `[${I18n.t('chat.feishuReply')}] ${result.error}`));
+        replyText = result.error;
+      } else {
+        for (let msg of result.messages) {
+          // Collect image path from tool results (screenshot/photo)
+          if (msg.imagePath && msg.imagePath.length > 0) {
+            replyImagePath = msg.imagePath;
+          }
+          // Prefix text-only assistant messages with [飞书回复] for display
+          if (msg.role === 'assistant' && !msg.isToolCall && msg.content.length > 0) {
+            replyText = msg.content;
+            msg.content = `[${I18n.t('chat.feishuReply')}] ${msg.content}`;
+          }
+          this.messages.push(msg);
+        }
+      }
+      this.scrollToEnd();
+      this.saveHistory();
+
+      // Send reply back to Feishu (image + text)
+      let feishu = FeishuBotService.getInstance();
+      if (replyImagePath.length > 0) {
+        // Upload image to Feishu and reply with image
+        feishu.replyWithImage(messageId, replyImagePath, replyText).then(() => {
+          this.log.info('Feishu', `[TIMING] Image reply sent, total=${Date.now() - tStart}ms`);
+        }).catch((e: Error) => {
+          this.log.error('Feishu', `Feishu image reply failed: ${e.message ?? ''}`);
+          // Fallback to text reply
+          if (replyText.length > 0) {
+            feishu.replyMessage(messageId, replyText);
+          }
+        });
+      } else if (replyText.length > 0) {
+        feishu.replyMessage(messageId, replyText).then(() => {
+          this.log.info('Feishu', `[TIMING] Reply sent, total=${Date.now() - tStart}ms`);
+        }).catch((e: Error) => {
+          this.log.error('Feishu', `Feishu reply send failed: ${e.message ?? ''}`);
+        });
+      }
+    }).catch((e: Error) => {
+      this.log.error('Feishu', `Reply failed: ${e.message ?? String(e)}`);
+      let errMsg = new ChatMessage('assistant', `[${I18n.t('chat.feishuReply')}] Error: ${e.message ?? ''}`);
+      this.messages.push(errMsg);
+      this.scrollToEnd();
+    });
   }
 
   private scrollToEnd(): void {
@@ -1771,6 +2108,41 @@ You have persistent memory that survives across conversations. Use it proactivel
    * Called after the gateway or local AI response is finalized.
    * Strips MEDIA: references and other non-text content before reading.
    */
+  // ---- Auto-enrich: append GPS location for weather/location queries ----
+
+  private async enrichWithLocation(text: string): Promise<string> {
+    let lower = text.toLowerCase();
+    let weatherKw = ['天气', '气温', '温度', '下雨', '下雪', '刮风', '空气质量', 'weather', 'temperature', 'forecast', 'rain', 'snow'];
+    let needsLocation = false;
+    for (let kw of weatherKw) {
+      if (lower.includes(kw)) {
+        needsLocation = true;
+        break;
+      }
+    }
+    if (!needsLocation) return text;
+
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let atManager = abilityAccessCtrl.createAtManager();
+      await atManager.requestPermissionsFromUser(ctx, [
+        'ohos.permission.APPROXIMATELY_LOCATION',
+        'ohos.permission.LOCATION'
+      ]);
+      let locRequest: geoLocationManager.SingleLocationRequest = {
+        locatingPriority: geoLocationManager.LocatingPriority.PRIORITY_LOCATING_SPEED,
+        locatingTimeoutMs: 5000,
+      };
+      let loc = await geoLocationManager.getCurrentLocation(locRequest);
+      let locInfo = `(User location: lat=${loc.latitude.toFixed(4)}, lon=${loc.longitude.toFixed(4)})`;
+      this.log.info('ChatPage', `enrichWithLocation: ${locInfo}`);
+      return text + ' ' + locInfo;
+    } catch (e) {
+      this.log.warn('ChatPage', `enrichWithLocation failed: ${(e as Error).message ?? ''}`);
+      return text;
+    }
+  }
+
   private autoReadAloud(text: string): void {
     if (!this.ttsAutoRead) return;
     if (text.length === 0) return;
@@ -2076,12 +2448,26 @@ You have persistent memory that survives across conversations. Use it proactivel
     await this.talkCycle();
   }
 
+  private updateWaveBars(level: number): void {
+    let bars: number[] = [0, 0, 0, 0, 0, 0, 0];
+    bars[3] = level;
+    bars[2] = level * 0.7 + this.waveBars[3] * 0.3;
+    bars[4] = level * 0.7 + this.waveBars[3] * 0.3;
+    bars[1] = level * 0.4 + this.waveBars[2] * 0.3;
+    bars[5] = level * 0.4 + this.waveBars[4] * 0.3;
+    bars[0] = level * 0.2 + this.waveBars[1] * 0.3;
+    bars[6] = level * 0.2 + this.waveBars[5] * 0.3;
+    this.waveBars = bars;
+  }
+
   private stopTalkMode(): void {
     if (!this.talkModeActive && !this.isTalkMode) return;
     this.talkModeActive = false;
     this.isTalkMode = false;
     this.talkStatus = '';
     this.asrReading = false;
+    this.showWaveform = false;
+    this.waveBars = [0, 0, 0, 0, 0, 0, 0];
 
     // Stop any in-progress TTS
     NodeRuntime.getInstance().stopSpeaker().catch(() => { /* ignore */ });
@@ -2154,10 +2540,11 @@ You have persistent memory that survives across conversations. Use it proactivel
       this.startDotAnimation();
       this.talkStatus = I18n.t('chat.talkThinking');
 
+      let enrichedText = await this.enrichWithLocation(recognizedText);
       if (this.gwConnected) {
-        await this.sendViaGateway(recognizedText);
+        await this.sendViaGateway(enrichedText);
       } else {
-        await this.sendViaLocalAI(recognizedText);
+        await this.sendViaLocalAI(enrichedText);
       }
 
       this.scrollToEnd();
@@ -2214,6 +2601,7 @@ You have persistent memory that survives across conversations. Use it proactivel
       this.audioCapturer = await audio.createAudioCapturer(capturerOptions);
       await this.audioCapturer.start();
       this.isRecording = true;
+      this.showWaveform = true;
 
       let bufSize = await this.audioCapturer.getBufferSize();
       let speechDetected = false;
@@ -2241,6 +2629,10 @@ You have persistent memory that survives across conversations. Use it proactivel
         }
         let rms = Math.sqrt(sumSq / samples.length);
 
+        // Update waveform visualization
+        let normalized = Math.min(1.0, rms / 8000);
+        this.updateWaveBars(normalized);
+
         if (rms > rmsThreshold) {
           speechDetected = true;
           silenceStart = 0; // reset silence timer
@@ -2258,12 +2650,16 @@ You have persistent memory that survives across conversations. Use it proactivel
         if (!speechDetected && (Date.now() - recordStart > noSpeechTimeoutMs)) {
           this.log.info('ChatPage', 'Talk mode: no speech timeout');
           this.isRecording = false;
+          this.showWaveform = false;
+          this.waveBars = [0, 0, 0, 0, 0, 0, 0];
           await this.cleanupAsr();
           return ''; // signals silence timeout
         }
       }
 
       this.isRecording = false;
+      this.showWaveform = false;
+      this.waveBars = [0, 0, 0, 0, 0, 0, 0];
       if (this.audioCapturer) {
         try { await this.audioCapturer.stop(); } catch { /* ignore */ }
       }
@@ -2289,6 +2685,8 @@ You have persistent memory that survives across conversations. Use it proactivel
     } catch (err) {
       this.log.error('ChatPage', `talkRecord error: ${(err as Error).message ?? ''}`);
       this.isRecording = false;
+      this.showWaveform = false;
+      this.waveBars = [0, 0, 0, 0, 0, 0, 0];
       await this.cleanupAsr();
       return '';
     }

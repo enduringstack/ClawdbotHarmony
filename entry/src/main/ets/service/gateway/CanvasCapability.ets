@@ -14,6 +14,15 @@ import { Command } from './GatewayProtocol';
 const TAG = 'CanvasCap';
 
 export class CanvasCapability {
+  private static instance: CanvasCapability | undefined = undefined;
+
+  static getInstance(): CanvasCapability {
+    if (!CanvasCapability.instance) {
+      CanvasCapability.instance = new CanvasCapability();
+    }
+    return CanvasCapability.instance;
+  }
+
   private log: LogService = LogService.getInstance();
   private controller: webview.WebviewController | undefined = undefined;
   private _isPresented: boolean = false;

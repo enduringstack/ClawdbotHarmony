@@ -130,7 +130,7 @@ function buildZh(): Map<string, string> {
   m.set('settings.status', '状态');
   m.set('settings.connect', '连接');
   m.set('settings.disconnect', '断开');
-  m.set('settings.caps', '节点能力');
+  m.set('settings.caps', '本机能力');
   m.set('settings.capLocation', '定位 (GPS)');
   m.set('settings.capCamera', '相机 (拍照/录像)');
   m.set('settings.capCanvas', '画布 (WebView)');
@@ -229,17 +229,37 @@ function buildZh(): Map<string, string> {
   m.set('chat.talkSilence', '静默超时，对话模式已关闭');
 
   // Email / IMAP
-  m.set('settings.email', '邮箱 / IMAP');
+  m.set('settings.email', '邮箱 / IMAP & SMTP');
   m.set('settings.emailEnabled', '启用邮箱');
-  m.set('settings.emailEnabledDesc', '通过 IMAP 直连读取邮件');
+  m.set('settings.emailEnabledDesc', '通过 IMAP 读取邮件，SMTP 发送邮件');
   m.set('settings.imapHost', 'IMAP 服务器');
   m.set('settings.imapPort', '端口');
   m.set('settings.imapUser', '邮箱地址');
   m.set('settings.imapPass', '密码 / 应用专用密码');
+  m.set('settings.smtpHost', 'SMTP 服务器');
+  m.set('settings.smtpPort', '端口');
   m.set('settings.emailTest', '测试连接');
   m.set('settings.emailTesting', '连接中...');
   m.set('settings.emailTestOk', '连接成功');
   m.set('settings.emailTestFail', '连接失败：');
+
+  // Settings tabs
+  m.set('settings.tabStandalone', '单机模式');
+  m.set('settings.tabNode', '节点模式');
+  m.set('settings.tabService', '服务模式');
+
+  // Feishu Bot
+  m.set('settings.feishu', '飞书机器人');
+  m.set('settings.feishuEnabled', '启用飞书机器人');
+  m.set('settings.feishuEnabledDesc', '通过WebSocket接收飞书消息并自动回复');
+  m.set('settings.feishuAppId', 'App ID');
+  m.set('settings.feishuAppSecret', 'App Secret');
+  m.set('settings.feishuTest', '测试连接');
+  m.set('settings.feishuTesting', '正在连接...');
+  m.set('settings.feishuTestOk', '连接成功');
+  m.set('settings.feishuTestFail', '连接失败：');
+  m.set('chat.feishuMessage', '飞书消息');
+  m.set('chat.feishuReply', '飞书回复');
 
   // Connection states
   m.set('state.offline', '离线');
@@ -474,17 +494,37 @@ function buildEn(): Map<string, string> {
   m.set('chat.talkSilence', 'Silence timeout, talk mode ended');
 
   // Email / IMAP
-  m.set('settings.email', 'EMAIL / IMAP');
+  m.set('settings.email', 'EMAIL / IMAP & SMTP');
   m.set('settings.emailEnabled', 'Enable Email');
-  m.set('settings.emailEnabledDesc', 'Read emails via IMAP direct connection');
+  m.set('settings.emailEnabledDesc', 'Read emails via IMAP, send via SMTP');
   m.set('settings.imapHost', 'IMAP Server');
   m.set('settings.imapPort', 'Port');
   m.set('settings.imapUser', 'Email Address');
   m.set('settings.imapPass', 'Password / App Password');
+  m.set('settings.smtpHost', 'SMTP Server');
+  m.set('settings.smtpPort', 'Port');
   m.set('settings.emailTest', 'Test Connection');
   m.set('settings.emailTesting', 'Connecting...');
   m.set('settings.emailTestOk', 'Connection successful');
   m.set('settings.emailTestFail', 'Connection failed: ');
+
+  // Settings tabs
+  m.set('settings.tabStandalone', 'Standalone');
+  m.set('settings.tabNode', 'Node Mode');
+  m.set('settings.tabService', 'Service Mode');
+
+  // Feishu Bot
+  m.set('settings.feishu', 'FEISHU BOT');
+  m.set('settings.feishuEnabled', 'Enable Feishu Bot');
+  m.set('settings.feishuEnabledDesc', 'Receive Feishu messages via WebSocket and auto-reply');
+  m.set('settings.feishuAppId', 'App ID');
+  m.set('settings.feishuAppSecret', 'App Secret');
+  m.set('settings.feishuTest', 'Test Connection');
+  m.set('settings.feishuTesting', 'Connecting...');
+  m.set('settings.feishuTestOk', 'Connected');
+  m.set('settings.feishuTestFail', 'Connection failed: ');
+  m.set('chat.feishuMessage', 'Feishu Message');
+  m.set('chat.feishuReply', 'Feishu Reply');
 
   // Connection states
   m.set('state.offline', 'Offline');
