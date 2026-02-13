@@ -228,6 +228,13 @@ function buildZh(): Map<string, string> {
   m.set('chat.talkSpeaking', '正在说话...');
   m.set('chat.talkSilence', '静默超时，对话模式已关闭');
 
+  // Custom Skills
+  m.set('skills.custom', '自定义');
+  m.set('skills.customSkill', '自定义技能');
+  m.set('skills.created', '技能已创建');
+  m.set('skills.updated', '技能已更新');
+  m.set('skills.deleted', '技能已删除');
+
   // Email / IMAP
   m.set('settings.email', '邮箱 / IMAP & SMTP');
   m.set('settings.emailEnabled', '启用邮箱');
@@ -492,6 +499,13 @@ function buildEn(): Map<string, string> {
   m.set('chat.talkThinking', 'Thinking...');
   m.set('chat.talkSpeaking', 'Speaking...');
   m.set('chat.talkSilence', 'Silence timeout, talk mode ended');
+
+  // Custom Skills
+  m.set('skills.custom', 'Custom');
+  m.set('skills.customSkill', 'Custom Skill');
+  m.set('skills.created', 'Skill created');
+  m.set('skills.updated', 'Skill updated');
+  m.set('skills.deleted', 'Skill deleted');
 
   // Email / IMAP
   m.set('settings.email', 'EMAIL / IMAP & SMTP');

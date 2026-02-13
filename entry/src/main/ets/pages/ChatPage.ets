@@ -5,6 +5,8 @@ import { ChatMessage, SettingsData, MemoryItem, ConversationFile, CronTask } fro
 import { AIService, AIResult } from '../service/AIService';
 import { MemoryService } from '../service/MemoryService';
 import { getEnabledToolSchemas, getSkillSystemPrompt, getDefaultSkills } from '../service/SkillData';
+import { CustomSkillService } from '../service/CustomSkillService';
+import { CustomSkillDef } from '../model/Models';
 import { Constants } from '../common/Constants';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
 import { ConnectionState, GatewayChatEvent } from '../service/gateway/GatewayModels';
@@ -49,6 +51,7 @@ export struct ChatPage {
   private cronTimer: number = -1;
   private talkModeActive: boolean = false;
   private ttsCompletionResolve: (() => void) | undefined = undefined;
+  private ttsPlaying: boolean = false;
 
   private scroller: Scroller = new Scroller();
   private ai: AIService = AIService.getInstance();
@@ -62,6 +65,7 @@ export struct ChatPage {
   private invokeListener: ((command: string, params: string, result: string, isError: boolean) => void) | undefined = undefined;
   private feishuConnected: boolean = false;
   private feishuSettings: SettingsData | undefined = undefined;
+  private feishuHistory: ChatMessage[] = []; // Separate conversation history for Feishu
   // Track unsolicited agent events (from other channels like WhatsApp)
   private unsolicitedRuns: Map<string, string> = new Map<string, string>(); // runId → msgId
   private unsolicitedTexts: Map<string, string> = new Map<string, string>(); // runId → accumulated text
@@ -234,7 +238,7 @@ export struct ChatPage {
                 .fontSize(18)
                 .fontWeight(FontWeight.Bold)
                 .fontColor('#1A1A1A')
-              Text('v2.8.18')
+              Text('v2.9.0')
                 .fontSize(11)
                 .fontColor('#999999')
                 .margin({ top: 4 })
@@ -449,6 +453,19 @@ export struct ChatPage {
             TapGesture({ count: 1 })
               .onAction(() => {
                 if (this.isRecording) return;
+                // If TTS is playing, stop it first
+                if (this.ttsPlaying) {
+                  this.log.info('ChatPage', 'User tapped during TTS, stopping playback');
+                  NodeRuntime.getInstance().stopSpeaker().catch(() => { /* ignore */ });
+                  this.ttsPlaying = false;
+                  if (this.ttsCompletionResolve) {
+                    this.ttsCompletionResolve();
+                    this.ttsCompletionResolve = undefined;
+                  }
+                  // In talk mode: cycle continues to next recording
+                  // Not in talk mode: just stop TTS, don't start talk mode
+                  return;
+                }
                 if (this.isTalkMode) {
                   this.stopTalkMode();
                 } else {
@@ -1452,8 +1469,9 @@ Keep it short but preserve all important information. Use the same language as t
       let settings = await this.loadSettings(ctx);
       let memItems = await this.memSvc.loadAll(ctx);
       let skills = getDefaultSkills();
+      let customSkills = await CustomSkillService.getInstance().loadAll(ctx);
 
-      let systemPrompt = this.buildSystemPrompt(memItems, skills, settings.model);
+      let systemPrompt = this.buildSystemPrompt(memItems, skills, settings.model, customSkills);
       let tools = getEnabledToolSchemas(skills);
 
       let result: AIResult = await this.ai.chat(this.messages, settings, systemPrompt, tools, ctx);
@@ -1785,7 +1803,7 @@ Keep it short but preserve all important information. Use the same language as t
     }
   }
 
-  private buildSystemPrompt(memItems: MemoryItem[], skills: import('../model/Models').SkillItem[], modelName?: string): string {
+  private buildSystemPrompt(memItems: MemoryItem[], skills: import('../model/Models').SkillItem[], modelName?: string, customSkills?: CustomSkillDef[]): string {
     let d = new Date();
     let tz = -(d.getTimezoneOffset() / 60);
     let tzStr = `UTC${tz >= 0 ? '+' : ''}${tz}`;
@@ -1851,7 +1869,7 @@ You have persistent memory that survives across conversations. Use it proactivel
 - Also include [已记住: <content>] in your response text when saving memory
 `;
     let memBlock = this.memSvc.buildPromptBlock(memItems);
-    let skillBlock = getSkillSystemPrompt(skills);
+    let skillBlock = getSkillSystemPrompt(skills, customSkills);
     return base + (memBlock ? '\n' + memBlock + '\n' : '') + (skillBlock ? '\n' + skillBlock : '');
   }
 
@@ -1947,14 +1965,18 @@ You have persistent memory that survives across conversations. Use it proactivel
       // Use full AI chat with tools (so Feishu can trigger camera, screen, etc.)
       let memItems = await this.memSvc.loadAll(ctx);
       let skills = getDefaultSkills();
-      let systemPrompt = this.buildSystemPrompt(memItems, skills, settings.model);
+      let customSkills = await CustomSkillService.getInstance().loadAll(ctx);
+      let systemPrompt = this.buildSystemPrompt(memItems, skills, settings.model, customSkills);
       let tools = getEnabledToolSchemas(skills);
 
-      // Use a fresh message list — avoids history contamination from previous responses
-      let feishuMessages: ChatMessage[] = [];
-      feishuMessages.push(new ChatMessage('user', text));
+      // Maintain separate Feishu conversation history for multi-turn context
+      this.feishuHistory.push(new ChatMessage('user', text));
+      // Trim to last 20 messages to prevent token overflow
+      while (this.feishuHistory.length > 20) {
+        this.feishuHistory.splice(0, 1);
+      }
 
-      let result: AIResult = await this.ai.chat(feishuMessages, settings, systemPrompt, tools, ctx);
+      let result: AIResult = await this.ai.chat(this.feishuHistory, settings, systemPrompt, tools, ctx);
       let tAiDone = Date.now();
       this.log.info('Feishu', `[TIMING] AI done in ${tAiDone - tStart}ms, sending reply...`);
 
@@ -1963,6 +1985,7 @@ You have persistent memory that survives across conversations. Use it proactivel
       let replyImagePath = '';
       if (result.error.length > 0) {
         this.messages.push(new ChatMessage('assistant', `[${I18n.t('chat.feishuReply')}] ${result.error}`));
+        this.feishuHistory.push(new ChatMessage('assistant', result.error));
         replyText = result.error;
       } else {
         for (let msg of result.messages) {
@@ -1970,9 +1993,11 @@ You have persistent memory that survives across conversations. Use it proactivel
           if (msg.imagePath && msg.imagePath.length > 0) {
             replyImagePath = msg.imagePath;
           }
-          // Prefix text-only assistant messages with [飞书回复] for display
+          // Add assistant text to Feishu history (without prefix)
           if (msg.role === 'assistant' && !msg.isToolCall && msg.content.length > 0) {
             replyText = msg.content;
+            this.feishuHistory.push(new ChatMessage('assistant', msg.content));
+            // Prefix for display in main chat
             msg.content = `[${I18n.t('chat.feishuReply')}] ${msg.content}`;
           }
           this.messages.push(msg);
@@ -2193,14 +2218,17 @@ You have persistent memory that survives across conversations. Use it proactivel
 
     let runtime = NodeRuntime.getInstance();
     let speakParams = `{"text":${JSON.stringify(cleanText)},"lang":"${lang}"}`;
+    this.ttsPlaying = true;
     runtime.speakLocal(speakParams).then(() => {
       this.log.info('ChatPage', 'TTS auto-read completed');
+      this.ttsPlaying = false;
       if (this.ttsCompletionResolve) {
         this.ttsCompletionResolve();
         this.ttsCompletionResolve = undefined;
       }
     }).catch((err: Error) => {
       this.log.warn('ChatPage', `TTS auto-read failed: ${err.message ?? ''}`);
+      this.ttsPlaying = false;
       if (this.ttsCompletionResolve) {
         this.ttsCompletionResolve();
         this.ttsCompletionResolve = undefined;
@@ -2468,6 +2496,7 @@ You have persistent memory that survives across conversations. Use it proactivel
     this.asrReading = false;
     this.showWaveform = false;
     this.waveBars = [0, 0, 0, 0, 0, 0, 0];
+    this.ttsPlaying = false;
 
     // Stop any in-progress TTS
     NodeRuntime.getInstance().stopSpeaker().catch(() => { /* ignore */ });
@@ -2560,8 +2589,8 @@ You have persistent memory that survives across conversations. Use it proactivel
 
       if (!this.talkModeActive) break;
 
-      // Small pause before next recording cycle
-      await new Promise<void>((resolve) => { setTimeout(resolve, 500); });
+      // Pause before next recording to let speaker audio die down (avoid mic picking up TTS echo)
+      await new Promise<void>((resolve) => { setTimeout(resolve, 1000); });
     }
   }
 

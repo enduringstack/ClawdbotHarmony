@@ -96,18 +96,8 @@ export class CalendarCapability {
       event.reminderTime = reminderTime;
     }
 
-    // Strategy 1: Use editEvent() which opens the system calendar creation UI
-    // This guarantees the event appears in the system Calendar app
-    try {
-      this.log.info(TAG, 'Trying editEvent() to open system calendar UI...');
-      let eventId: number = await this.calendarMgr.editEvent(event);
-      this.log.info(TAG, `editEvent() succeeded: eventId=${eventId}`);
-      return `{"ok":true,"eventId":${eventId},"title":${JSON.stringify(title)},"startTime":${startTime},"endTime":${endTime},"method":"editEvent"}`;
-    } catch (editErr) {
-      this.log.warn(TAG, `editEvent() failed: ${(editErr as Error).message ?? ''}, trying programmatic approach...`);
-    }
-
-    // Strategy 2: Find a LOCAL calendar from getAllCalendars()
+    // Auto-confirm: use programmatic addEvent() directly (no system calendar UI)
+    // Find a LOCAL calendar from getAllCalendars()
     let calendar: calendarManager.Calendar | undefined = undefined;
     try {
       let allCalendars: calendarManager.Calendar[] = await this.calendarMgr.getAllCalendars();

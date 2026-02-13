@@ -1,12 +1,13 @@
 /**
  * Handles camera.snap and camera.clip commands from the gateway.
- * Uses HarmonyOS cameraPicker (system camera UI) for reliable photo/video capture.
+ * Uses Camera Kit API for auto-capture (no user interaction required).
  */
 import { camera } from '@kit.CameraKit';
 import { cameraPicker } from '@kit.CameraKit';
 import { image } from '@kit.ImageKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
+import { abilityAccessCtrl, common } from '@kit.AbilityKit';
 import { LogService } from '../../common/LogService';
 import { Command } from './GatewayProtocol';
 
@@ -37,7 +38,7 @@ export class CameraCapability {
     throw new Error(`Unsupported camera command: ${command}`);
   }
 
-  // ---- camera.snap ----
+  // ---- camera.snap (auto-capture, no UI) ----
 
   private async snap(paramsJson: string | undefined): Promise<string> {
     if (!this.appContext) {
@@ -52,35 +53,149 @@ export class CameraCapability {
       } catch { /* defaults */ }
     }
 
-    // Use cacheDir directly — guaranteed to exist, no subdirectory needed
-    let savePath = `${this.appContext.cacheDir}/snap_${Date.now()}.jpg`;
-    let saveUri = `file://${savePath}`;
-
-    this.log.info(TAG, `snap: facing=${facing} saveUri=${saveUri}`);
-    this.log.info(TAG, `cacheDir=${this.appContext.cacheDir}`);
-
-    let pickerProfile: cameraPicker.PickerProfile = {
-      cameraPosition: facing === 'front'
-        ? camera.CameraPosition.CAMERA_POSITION_FRONT
-        : camera.CameraPosition.CAMERA_POSITION_BACK,
-      saveUri: saveUri,
-    };
-
-    let result: cameraPicker.PickerResult =
-      await cameraPicker.pick(this.appContext,
-        [cameraPicker.PickerMediaType.PHOTO], pickerProfile);
-
-    this.log.info(TAG, `Picker done: code=${result.resultCode} uri="${result.resultUri}" type=${result.mediaType}`);
-
-    if (result.resultCode !== 0) {
-      throw new Error(`Camera picker cancelled (code=${result.resultCode})`);
-    }
+    let savePath = await this.autoCapture(facing, `${this.appContext.cacheDir}/snap_${Date.now()}.jpg`);
 
     // Compress image to avoid WebSocket frame size limit (code 1009)
-    let readResult = await this.compressAndEncode(result.resultUri, savePath);
+    let readResult = await this.compressAndEncode('', savePath);
     this.log.info(TAG, `Photo: ${readResult.size} bytes (base64: ${readResult.base64.length})`);
 
     return `{"format":"jpg","base64":${JSON.stringify(readResult.base64)},"width":${readResult.width},"height":${readResult.height}}`;
+  }
+
+  /**
+   * Auto-capture photo using Camera Kit API directly (no system camera UI).
+   * Flow: open camera → start session → wait for AE → capture → readLatestImage → save JPEG.
+   */
+  async autoCapture(facing: string, destPath: string): Promise<string> {
+    let ctx = this.appContext!;
+
+    // Request camera permission (direct Camera Kit API doesn't auto-prompt)
+    let atManager = abilityAccessCtrl.createAtManager();
+    let permResult = await atManager.requestPermissionsFromUser(
+      ctx as common.UIAbilityContext, ['ohos.permission.CAMERA']);
+    if (permResult.authResults[0] !== 0) {
+      throw new Error('Camera permission denied');
+    }
+
+    let mgr = camera.getCameraManager(ctx);
+    let cameras: camera.CameraDevice[] = mgr.getSupportedCameras();
+    if (cameras.length === 0) {
+      throw new Error('No camera available');
+    }
+
+    // Select camera by facing direction
+    let targetPos: camera.CameraPosition = facing === 'front'
+      ? camera.CameraPosition.CAMERA_POSITION_FRONT
+      : camera.CameraPosition.CAMERA_POSITION_BACK;
+    let dev: camera.CameraDevice = cameras[0];
+    for (let c of cameras) {
+      if (c.cameraPosition === targetPos) { dev = c; break; }
+    }
+    this.log.info(TAG, `autoCapture: camera=${dev.cameraId} facing=${facing}`);
+
+    let cap: camera.CameraOutputCapability =
+      mgr.getSupportedOutputCapability(dev, camera.SceneMode.NORMAL_PHOTO);
+
+    // Pick the largest photo profile with max dimension <= 2560 (reasonable for ImageReceiver)
+    // Falls back to the overall largest if none in range
+    let photoProfile: camera.Profile = cap.photoProfiles[0];
+    let bestInRange: camera.Profile | null = null;
+    let largest: camera.Profile = cap.photoProfiles[0];
+    for (let p of cap.photoProfiles) {
+      let maxDim = Math.max(p.size.width, p.size.height);
+      let area = p.size.width * p.size.height;
+      // Track overall largest
+      if (area > largest.size.width * largest.size.height) {
+        largest = p;
+      }
+      // Track best in range [1280, 2560]
+      if (maxDim >= 1280 && maxDim <= 2560) {
+        if (!bestInRange || area > bestInRange.size.width * bestInRange.size.height) {
+          bestInRange = p;
+        }
+      }
+    }
+    photoProfile = bestInRange ?? largest;
+
+    // Pick a matching preview profile (closest to 1080p)
+    let previewProfile: camera.Profile = cap.previewProfiles[0];
+    for (let p of cap.previewProfiles) {
+      let curDiff = Math.abs(previewProfile.size.width - 1920);
+      let newDiff = Math.abs(p.size.width - 1920);
+      if (newDiff < curDiff) {
+        previewProfile = p;
+      }
+    }
+    this.log.info(TAG, `autoCapture: photo=${photoProfile.size.width}x${photoProfile.size.height} preview=${previewProfile.size.width}x${previewProfile.size.height}`);
+
+    // Create preview surface (required by camera session, use JPEG format for ImageReceiver)
+    let previewReceiver: image.ImageReceiver = image.createImageReceiver(
+      previewProfile.size.width, previewProfile.size.height, 2000, 8);
+    let previewSurfaceId: string = await previewReceiver.getReceivingSurfaceId();
+    let previewOutput: camera.PreviewOutput = mgr.createPreviewOutput(previewProfile, previewSurfaceId);
+
+    // Create photo receiver + output
+    let photoReceiver: image.ImageReceiver = image.createImageReceiver(
+      photoProfile.size.width, photoProfile.size.height, 2000, 8);
+    let photoSurfaceId: string = await photoReceiver.getReceivingSurfaceId();
+    let photoOutput: camera.PhotoOutput = mgr.createPhotoOutput(photoProfile, photoSurfaceId);
+
+    // Open camera input
+    let cameraInput: camera.CameraInput = mgr.createCameraInput(dev);
+    await cameraInput.open();
+
+    // Configure and start session
+    let session: camera.PhotoSession = mgr.createSession(camera.SceneMode.NORMAL_PHOTO) as camera.PhotoSession;
+    session.beginConfig();
+    session.addInput(cameraInput);
+    session.addOutput(previewOutput);
+    session.addOutput(photoOutput);
+    await session.commitConfig();
+    await session.start();
+    this.log.info(TAG, 'autoCapture: session started, waiting for AE...');
+
+    // Wait for auto-exposure/focus to settle
+    await new Promise<void>((r) => { setTimeout(r, 2000); });
+
+    // Trigger capture
+    let captureSettings: camera.PhotoCaptureSetting = {
+      quality: camera.QualityLevel.QUALITY_LEVEL_HIGH,
+      rotation: camera.ImageRotation.ROTATION_0,
+    };
+    await photoOutput.capture(captureSettings);
+    this.log.info(TAG, 'autoCapture: capture triggered');
+
+    // Wait for photo processing then read from receiver
+    // (imageArrival callback doesn't fire in API 12, but readLatestImage works)
+    await new Promise<void>((r) => { setTimeout(r, 3000); });
+
+    let img: image.Image = await photoReceiver.readLatestImage();
+    let comp: image.Component = await img.getComponent(image.ComponentType.JPEG);
+    this.log.info(TAG, `autoCapture: JPEG ${comp.byteBuffer.byteLength} bytes`);
+
+    if (comp.byteBuffer.byteLength === 0) {
+      img.release();
+      throw new Error('Auto-capture: empty JPEG data');
+    }
+
+    let f: fileIo.File = fileIo.openSync(destPath,
+      fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
+    fileIo.writeSync(f.fd, comp.byteBuffer);
+    fileIo.closeSync(f);
+    img.release();
+
+    this.log.info(TAG, `autoCapture: saved ${comp.byteBuffer.byteLength} bytes to ${destPath}`);
+
+    // Cleanup camera resources
+    try { await session.stop(); } catch { /* ignore */ }
+    try { session.release(); } catch { /* ignore */ }
+    try { await cameraInput.close(); } catch { /* ignore */ }
+    try { photoOutput.release(); } catch { /* ignore */ }
+    try { previewOutput.release(); } catch { /* ignore */ }
+    try { previewReceiver.release(); } catch { /* ignore */ }
+    try { photoReceiver.release(); } catch { /* ignore */ }
+
+    return destPath;
   }
 
   // ---- camera.clip ----

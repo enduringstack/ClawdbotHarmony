@@ -1,7 +1,9 @@
 import { SkillCard } from '../components/SkillCard';
-import { SkillItem } from '../model/Models';
+import { SkillItem, CustomSkillDef } from '../model/Models';
 import { getDefaultSkills } from '../service/SkillData';
+import { CustomSkillService } from '../service/CustomSkillService';
 import { I18n } from '../common/I18n';
+import { common } from '@kit.AbilityKit';
 
 @Component
 export struct SkillsPage {
@@ -9,14 +11,16 @@ export struct SkillsPage {
   @State filterCategory: string = 'all';
   @State @Watch('onLangChange') lang: string = 'zh';
 
-  private categories: string[] = ['all', 'automation', 'productivity', 'smart_home', 'media'];
+  private categories: string[] = ['all', 'automation', 'productivity', 'smart_home', 'media', 'custom'];
   private langListener: (() => void) | undefined = undefined;
+  private customSkillIds: string[] = []; // track which skill IDs are custom
 
   aboutToAppear(): void {
     this.skills = getDefaultSkills();
     this.lang = I18n.lang;
     this.langListener = () => { this.lang = I18n.lang; };
     I18n.addListener(this.langListener);
+    this.loadCustomSkills();
   }
 
   aboutToDisappear(): void {
@@ -28,6 +32,23 @@ export struct SkillsPage {
 
   onLangChange(): void {
     // triggers re-render
+  }
+
+  private loadCustomSkills(): void {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      CustomSkillService.getInstance().loadAll(ctx).then((customs: CustomSkillDef[]) => {
+        // Remove old custom skills from list
+        this.skills = this.skills.filter((s: SkillItem): boolean => !this.customSkillIds.includes(s.id));
+        this.customSkillIds = [];
+        // Add current custom skills
+        for (let cs of customs) {
+          let item = new SkillItem(cs.id, cs.name, cs.description, 'custom', cs.enabled, false, 0);
+          this.skills.push(item);
+          this.customSkillIds.push(cs.id);
+        }
+      }).catch(() => { /* ignore */ });
+    } catch { /* ignore */ }
   }
 
   build() {
@@ -84,6 +105,9 @@ export struct SkillsPage {
               skill: skill,
               onToggle: (id: string, on: boolean): void => {
                 this.toggleSkill(id, on);
+              },
+              onDelete: (id: string): void => {
+                this.deleteCustomSkill(id);
               }
             })
           }
@@ -121,6 +145,24 @@ export struct SkillsPage {
         break;
       }
     }
+    // Persist toggle for custom skills
+    if (this.customSkillIds.includes(id)) {
+      try {
+        let ctx = getContext(this) as common.UIAbilityContext;
+        let svc = CustomSkillService.getInstance();
+        svc.update(ctx, { id: id, enabled: on }).catch(() => { /* ignore */ });
+      } catch { /* ignore */ }
+    }
+  }
+
+  private deleteCustomSkill(id: string): void {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      CustomSkillService.getInstance().delete(ctx, id).then(() => {
+        this.skills = this.skills.filter((s: SkillItem): boolean => s.id !== id);
+        this.customSkillIds = this.customSkillIds.filter((cid: string): boolean => cid !== id);
+      }).catch(() => { /* ignore */ });
+    } catch { /* ignore */ }
   }
 
   private catLabel(cat: string): string {
@@ -128,6 +170,7 @@ export struct SkillsPage {
     if (cat === 'productivity') return I18n.t('skills.productivity');
     if (cat === 'smart_home') return I18n.t('skills.smartHome');
     if (cat === 'media') return I18n.t('skills.media');
+    if (cat === 'custom') return I18n.t('skills.custom');
     return cat;
   }
 }

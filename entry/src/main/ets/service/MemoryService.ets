@@ -191,6 +191,7 @@ export class MemoryService {
       let type: string = types[i];
       let match = lower.match(re);
       if (match && match[1]) {
+        this.log.info(this.TAG, `autoExtract: type=${type} content="${match[1].trim().substring(0, 80)}"`);
         await this.addIfNew(context, type, match[1].trim(), 0.8);
       }
     }

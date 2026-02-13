@@ -82,6 +82,17 @@ export class SkillItem {
   }
 }
 
+// Custom skill definition (user-created via AI)
+export interface CustomSkillDef {
+  id: string;           // 'custom_' + timestamp
+  name: string;         // display name
+  description: string;  // skill description
+  category: string;     // category (default 'custom')
+  enabled: boolean;     // whether enabled
+  prompt: string;       // AI execution instructions (core)
+  createdAt: number;    // creation timestamp
+}
+
 // Plain data interfaces for serialization (non-observed)
 export interface ApiMessage {
   role: string;

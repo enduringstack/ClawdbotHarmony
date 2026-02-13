@@ -1,4 +1,4 @@
-import { SkillItem, ToolSchema } from '../model/Models';
+import { SkillItem, ToolSchema, CustomSkillDef } from '../model/Models';
 
 /**
  * Static skill catalogue + tool schema definitions.
@@ -38,15 +38,34 @@ export function getEnabledToolSchemas(skills: SkillItem[]): ToolSchema[] {
       schemas.push(d);
     }
   }
+  // always add skill management tools
+  let skillMgmtDefs = TOOL_SCHEMAS.get('skill_management');
+  if (skillMgmtDefs) {
+    for (let d of skillMgmtDefs) {
+      schemas.push(d);
+    }
+  }
   return schemas;
 }
 
-export function getSkillSystemPrompt(skills: SkillItem[]): string {
+export function getSkillSystemPrompt(skills: SkillItem[], customSkills?: CustomSkillDef[]): string {
   let parts: string[] = [];
   for (let skill of skills) {
     if (!skill.enabled) continue;
     let prompt = SKILL_PROMPTS.get(skill.id);
     if (prompt) parts.push(prompt);
+  }
+  // Append custom skill prompts
+  if (customSkills && customSkills.length > 0) {
+    let customParts: string[] = [];
+    for (let cs of customSkills) {
+      if (cs.enabled) {
+        customParts.push(`[Custom Skill: ${cs.name}]\n${cs.prompt}`);
+      }
+    }
+    if (customParts.length > 0) {
+      parts.push('\n## Custom Skills\nThe user has created the following custom skills. When the user references a skill by name or describes a matching task, follow its prompt instructions.\n' + customParts.join('\n\n'));
+    }
   }
   return parts.join('\n');
 }
@@ -113,6 +132,8 @@ const SKILL_PROMPTS: Map<string, string> = new Map([
     'You can create, list, and cancel scheduled tasks. Tasks can be one-shot (run once at a specific time) or recurring (run periodically). Schedule formats: "every 30m", "every 2h", "daily 09:00", or ISO 8601 datetime for one-shot. When the user says things like "remind me every 30 minutes to drink water" or "check the weather every morning at 9", use create_scheduled_task.'],
   ['skill_email',
     'You have access to the user\'s email via IMAP and SMTP. When the user mentions 邮件/邮箱/email/inbox/mail, use these email tools:\n- list_emails: list recent emails (NOT calendar events)\n- read_email: read email body by sequence number\n- search_emails: search emails by subject\n- send_email: send an email (发邮件/写邮件)\nIMPORTANT: Do NOT use list_events for email requests. list_events is for calendar only.'],
+  ['skill_management',
+    'You can create, list, update, and delete custom skills for the user. A custom skill is a saved prompt workflow that tells you how to combine existing tools to accomplish a specific task.\nWhen creating a skill, write a detailed prompt that explains HOW to accomplish the task using existing tools (web_search, create_event, screen_capture, speaker.speak, etc). Be specific about the workflow steps.\nExample: A "Morning Briefing" skill prompt might be: "1. Use web_search to find today\'s weather for the user\'s location. 2. Use list_events with days=1 to get today\'s calendar events. 3. Compose a brief morning summary combining weather and schedule. 4. Return the summary to the user."\nWhen the user says 创建技能/create skill/添加技能, use create_skill. When they say 我的技能/list skills/技能列表, use list_custom_skills.'],
 ]);
 
 function buildSystemToolSchemas(): ToolSchema[] {
@@ -308,6 +329,36 @@ function buildEmailToolSchemas(): ToolSchema[] {
   ];
 }
 
+function buildSkillManagementToolSchemas(): ToolSchema[] {
+  let createProps: Record<string, JsonSchemaProperty> = {};
+  createProps['name'] = { type: 'string', description: 'Skill display name (unique)' };
+  createProps['description'] = { type: 'string', description: 'Brief description of what this skill does' };
+  createProps['prompt'] = { type: 'string', description: 'Detailed instructions for how to accomplish the task using existing tools (web_search, create_event, screen_capture, etc). Be specific about workflow steps.' };
+
+  let listProps: Record<string, JsonSchemaProperty> = {};
+
+  let updateProps: Record<string, JsonSchemaProperty> = {};
+  updateProps['id'] = { type: 'string', description: 'Skill ID (from list_custom_skills)' };
+  updateProps['name'] = { type: 'string', description: 'New name (optional)' };
+  updateProps['description'] = { type: 'string', description: 'New description (optional)' };
+  updateProps['prompt'] = { type: 'string', description: 'New prompt instructions (optional)' };
+  updateProps['enabled'] = { type: 'string', description: 'true or false (optional)' };
+
+  let deleteProps: Record<string, JsonSchemaProperty> = {};
+  deleteProps['id'] = { type: 'string', description: 'Skill ID to delete (from list_custom_skills)' };
+
+  return [
+    makeTool('create_skill', 'Create a custom skill. A skill is a saved workflow that combines existing tools to accomplish a specific task. Write a detailed prompt explaining HOW to do it step by step using available tools.',
+      makeSchema(createProps, ['name', 'description', 'prompt'])),
+    makeTool('list_custom_skills', 'List all user-created custom skills with their IDs, names, and status.',
+      makeSchema(listProps)),
+    makeTool('update_skill', 'Update an existing custom skill (name, description, prompt, or enabled status).',
+      makeSchema(updateProps, ['id'])),
+    makeTool('delete_skill', 'Delete a custom skill by its ID.',
+      makeSchema(deleteProps, ['id'])),
+  ];
+}
+
 const TOOL_SCHEMAS: Map<string, ToolSchema[]> = new Map([
   ['skill_system', buildSystemToolSchemas()],
   ['skill_web', buildWebToolSchemas()],
@@ -317,4 +368,5 @@ const TOOL_SCHEMAS: Map<string, ToolSchema[]> = new Map([
   ['skill_memory', buildMemoryToolSchemas()],
   ['skill_scheduler', buildSchedulerToolSchemas()],
   ['skill_email', buildEmailToolSchemas()],
+  ['skill_management', buildSkillManagementToolSchemas()],
 ]);

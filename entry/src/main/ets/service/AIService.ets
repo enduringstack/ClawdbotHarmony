@@ -3,7 +3,7 @@ import { preferences } from '@kit.ArkData';
 import { fileIo, picker } from '@kit.CoreFileKit';
 import { util, buffer } from '@kit.ArkTS';
 import { common, abilityAccessCtrl } from '@kit.AbilityKit';
-import { camera, cameraPicker } from '@kit.CameraKit';
+// camera, cameraPicker no longer used — auto-capture is in CameraCapability
 import { media } from '@kit.MediaKit';
 import { geoLocationManager } from '@kit.LocationKit';
 import { ChatMessage, ApiMessage, ToolSchema, SettingsData, CronTask, CronParseResult } from '../model/Models';
@@ -18,6 +18,9 @@ import { ScreenCapability } from './gateway/ScreenCapability';
 import { Command } from './gateway/GatewayProtocol';
 import { ImapService, EmailSummary, EmailBody } from './ImapService';
 import { EmailCapability } from './gateway/EmailCapability';
+import { CameraCapability } from './gateway/CameraCapability';
+import { CustomSkillService, CreateSkillInput, UpdateSkillInput } from './CustomSkillService';
+import { CustomSkillDef } from '../model/Models';
 
 /**
  * AI interaction service.
@@ -644,6 +647,7 @@ export class AIService {
 
   // --------- Tool execution ---------
   private async executeTool(name: string, inputJson: string, context?: common.UIAbilityContext): Promise<string> {
+    this.log.info(this.TAG, `executeTool: ${name} input=${inputJson.substring(0, 200)}`);
     try {
       let input = JSON.parse(inputJson) as Record<string, string>;
       switch (name) {
@@ -1154,65 +1158,19 @@ export class AIService {
             let r: ToolResultObj = { error: 'No UI context available for camera' };
             return JSON.stringify(r);
           }
-          let camFacing = input['camera'] ?? 'back';
+          let camFacing: string = (input['camera'] ?? 'back') as string;
           // Save to persistent filesDir/photos (not cacheDir which gets cleaned up)
           let photoDir = context.filesDir + '/photos';
           try { fileIo.mkdirSync(photoDir); } catch { /* may already exist */ }
           let camSavePath = `${photoDir}/snap_${Date.now()}.jpg`;
-          let camSaveUri = `file://${camSavePath}`;
-          let camPos: camera.CameraPosition = camFacing === 'front'
-            ? camera.CameraPosition.CAMERA_POSITION_FRONT
-            : camera.CameraPosition.CAMERA_POSITION_BACK;
-          let pickerProfile: cameraPicker.PickerProfile = {
-            cameraPosition: camPos,
-            saveUri: camSaveUri,
-          };
           try {
-            let camResult: cameraPicker.PickerResult =
-              await cameraPicker.pick(context,
-                [cameraPicker.PickerMediaType.PHOTO], pickerProfile);
-            if (camResult.resultCode !== 0) {
-              let r: ToolResultObj = { error: `Camera cancelled (code=${camResult.resultCode})` };
-              return JSON.stringify(r);
-            }
-            // Find the photo using multiple strategies (same as CameraCapability)
-            let foundPath = '';
-            let tryPaths: string[] = [camSavePath];
-            if (camResult.resultUri.length > 0) {
-              tryPaths.push(camResult.resultUri);
-              if (camResult.resultUri.startsWith('file://')) {
-                tryPaths.push(camResult.resultUri.substring(7));
-              }
-            }
-            for (let p of tryPaths) {
-              try {
-                fileIo.statSync(p);
-                foundPath = p;
-                break;
-              } catch { /* try next */ }
-            }
-            if (foundPath.length === 0) {
-              let r: ToolResultObj = { error: 'Photo file not found after capture' };
-              return JSON.stringify(r);
-            }
-            // Copy to our persistent path if needed
-            if (foundPath !== camSavePath) {
-              try {
-                let srcFile = fileIo.openSync(foundPath, fileIo.OpenMode.READ_ONLY);
-                let dstFile = fileIo.openSync(camSavePath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
-                let stat = fileIo.statSync(foundPath);
-                let buf = new ArrayBuffer(stat.size);
-                fileIo.readSync(srcFile.fd, buf);
-                fileIo.writeSync(dstFile.fd, buf);
-                fileIo.closeSync(srcFile);
-                fileIo.closeSync(dstFile);
-                foundPath = camSavePath;
-              } catch { /* use original path */ }
-            }
-            let camStat = fileIo.statSync(foundPath);
+            let cameraCap = new CameraCapability();
+            cameraCap.setContext(context);
+            await cameraCap.autoCapture(camFacing, camSavePath);
+            let camStat = fileIo.statSync(camSavePath);
             let r: ToolResultObj = {
               note: `Photo captured (${camStat.size} bytes)`,
-              path: foundPath,
+              path: camSavePath,
             };
             return JSON.stringify(r);
           } catch (e) {
@@ -1607,6 +1565,98 @@ export class AIService {
             return JSON.stringify(r);
           }
         }
+        case 'create_skill': {
+          if (!context) {
+            let r: ToolResultObj = { error: 'No UI context available' };
+            return JSON.stringify(r);
+          }
+          let skillName = input['name'] ?? '';
+          let skillDesc = input['description'] ?? '';
+          let skillPrompt = input['prompt'] ?? '';
+          if (skillName.length === 0 || skillPrompt.length === 0) {
+            let r: ToolResultObj = { error: 'name and prompt are required' };
+            return JSON.stringify(r);
+          }
+          try {
+            let svc = CustomSkillService.getInstance();
+            let createInput: CreateSkillInput = { name: skillName, description: skillDesc, prompt: skillPrompt };
+            let skill: CustomSkillDef = await svc.create(context, createInput);
+            return JSON.stringify({ created: true, id: skill.id, name: skill.name });
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Create skill failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
+        case 'list_custom_skills': {
+          if (!context) {
+            let r: ToolResultObj = { error: 'No UI context available' };
+            return JSON.stringify(r);
+          }
+          try {
+            let svc = CustomSkillService.getInstance();
+            let skills: CustomSkillDef[] = await svc.loadAll(context);
+            if (skills.length === 0) {
+              return JSON.stringify({ count: 0, message: 'No custom skills yet' });
+            }
+            interface SkillSummary { id: string; name: string; description: string; enabled: boolean; }
+            let summaries: SkillSummary[] = skills.map((s: CustomSkillDef): SkillSummary => {
+              let summary: SkillSummary = {
+                id: s.id,
+                name: s.name,
+                description: s.description,
+                enabled: s.enabled
+              };
+              return summary;
+            });
+            return JSON.stringify({ count: skills.length, skills: summaries });
+          } catch (e) {
+            let r: ToolResultObj = { error: 'List skills failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
+        case 'update_skill': {
+          if (!context) {
+            let r: ToolResultObj = { error: 'No UI context available' };
+            return JSON.stringify(r);
+          }
+          let updateId = input['id'] ?? '';
+          if (updateId.length === 0) {
+            let r: ToolResultObj = { error: 'id is required' };
+            return JSON.stringify(r);
+          }
+          try {
+            let svc = CustomSkillService.getInstance();
+            let updateInput: UpdateSkillInput = { id: updateId };
+            if (input['name'] && input['name'].length > 0) updateInput.name = input['name'];
+            if (input['description'] && input['description'].length > 0) updateInput.description = input['description'];
+            if (input['prompt'] && input['prompt'].length > 0) updateInput.prompt = input['prompt'];
+            if (input['enabled'] && input['enabled'].length > 0) updateInput.enabled = input['enabled'] === 'true';
+            let skill: CustomSkillDef = await svc.update(context, updateInput);
+            return JSON.stringify({ updated: true, id: skill.id, name: skill.name });
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Update skill failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
+        case 'delete_skill': {
+          if (!context) {
+            let r: ToolResultObj = { error: 'No UI context available' };
+            return JSON.stringify(r);
+          }
+          let deleteId = input['id'] ?? '';
+          if (deleteId.length === 0) {
+            let r: ToolResultObj = { error: 'id is required' };
+            return JSON.stringify(r);
+          }
+          try {
+            let svc = CustomSkillService.getInstance();
+            await svc.delete(context, deleteId);
+            return JSON.stringify({ deleted: true, id: deleteId });
+          } catch (e) {
+            let r: ToolResultObj = { error: 'Delete skill failed: ' + (e as Error).message };
+            return JSON.stringify(r);
+          }
+        }
         default: {
           let r: ToolResultObj = { error: 'Unknown tool: ' + name };
           return JSON.stringify(r);
@@ -1765,6 +1815,80 @@ export class AIService {
         return { tool: 'list_emails', input: '{"count":"10"}' };
       }
     }
+
+    // Camera keywords
+    let cameraKeywords = ['拍照', '拍张照', '照相', '拍个照', '自拍', '拍一张',
+      'take photo', 'take a photo', 'capture photo', 'take picture', 'take a picture', 'selfie'];
+    for (let kw of cameraKeywords) {
+      if (lastUserMsg.includes(kw)) {
+        let cam = lastUserMsg.includes('前置') || lastUserMsg.includes('自拍') ||
+          lastUserMsg.includes('front') || lastUserMsg.includes('selfie') ? 'front' : 'back';
+        return { tool: 'capture_photo', input: JSON.stringify({ camera: cam }) };
+      }
+    }
+
+    // Close webpage keywords
+    let closeWebKeywords = ['关闭网页', '关掉网页', '关闭页面', '关掉页面',
+      'close webpage', 'close the page', 'close website', 'hide webpage'];
+    for (let kw of closeWebKeywords) {
+      if (lastUserMsg.includes(kw)) {
+        return { tool: 'close_webpage', input: '{}' };
+      }
+    }
+
+    // Record audio keywords
+    let recordKeywords = ['录音', '录一段', '录个音', '录制', '录5秒', '录10秒',
+      'record audio', 'record sound', 'start recording'];
+    for (let kw of recordKeywords) {
+      if (lastUserMsg.includes(kw)) {
+        let seconds = '5';
+        let secMatch = /(\d+)\s*[秒s]/i.exec(lastUserMsg);
+        if (secMatch) seconds = secMatch[1];
+        return { tool: 'record_audio', input: JSON.stringify({ seconds: seconds }) };
+      }
+    }
+
+    // Smart device keywords
+    let deviceKeywords = ['设备列表', '智能设备', '智能家居', '家电',
+      'list devices', 'smart devices', 'smart home', 'iot devices'];
+    for (let kw of deviceKeywords) {
+      if (lastUserMsg.includes(kw)) {
+        return { tool: 'list_devices', input: '{}' };
+      }
+    }
+
+    // Calendar keywords — create event with best-effort time parsing
+    let calendarKeywords = ['开会', '会议', '日程', '创建日历', '添加日历', '日历事件',
+      'create event', 'add event', 'schedule meeting', 'add to calendar'];
+    for (let kw of calendarKeywords) {
+      if (lastUserMsg.includes(kw)) {
+        let title = lastUserMsg;
+        // Extract start time — best effort
+        let start = new Date();
+        if (lastUserMsg.includes('明天')) {
+          start.setDate(start.getDate() + 1);
+        } else if (lastUserMsg.includes('后天')) {
+          start.setDate(start.getDate() + 2);
+        }
+        let hourMatch = /(\d{1,2})\s*[点时:：]/i.exec(lastUserMsg);
+        if (hourMatch) {
+          let h = parseInt(hourMatch[1]);
+          if (lastUserMsg.includes('下午') || lastUserMsg.includes('晚上')) {
+            if (h < 12) h += 12;
+          }
+          start.setHours(h, 0, 0, 0);
+        } else {
+          // Default: next hour
+          start.setHours(start.getHours() + 1, 0, 0, 0);
+        }
+        let end = new Date(start.getTime() + 60 * 60 * 1000);
+        return {
+          tool: 'create_event',
+          input: JSON.stringify({ title: title, start: start.toISOString(), end: end.toISOString() })
+        };
+      }
+    }
+
     return empty;
   }
 

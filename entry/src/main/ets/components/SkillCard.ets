@@ -5,6 +5,7 @@ import { I18n } from '../common/I18n';
 export struct SkillCard {
   @ObjectLink skill: SkillItem;
   onToggle: (id: string, on: boolean) => void = () => {};
+  onDelete: (id: string) => void = () => {};
 
   build() {
     Row() {
@@ -32,6 +33,14 @@ export struct SkillCard {
               .borderRadius(4)
               .padding({ left: 4, right: 4, top: 1, bottom: 1 })
           }
+          if (!this.skill.isBuiltin) {
+            Text(I18n.t('skills.custom'))
+              .fontSize(9)
+              .fontColor(Color.White)
+              .backgroundColor('#D2691E')
+              .borderRadius(4)
+              .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+          }
         }
 
         Text(this.skill.description)
@@ -41,14 +50,38 @@ export struct SkillCard {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 2 })
 
-        Text(this.skill.toolCount + ' ' + I18n.t('skills.countTools'))
-          .fontSize(11)
-          .fontColor('#999999')
-          .margin({ top: 2 })
+        if (this.skill.isBuiltin) {
+          Text(this.skill.toolCount + ' ' + I18n.t('skills.countTools'))
+            .fontSize(11)
+            .fontColor('#999999')
+            .margin({ top: 2 })
+        }
+        if (!this.skill.isBuiltin) {
+          Text(I18n.t('skills.customSkill'))
+            .fontSize(11)
+            .fontColor('#999999')
+            .margin({ top: 2 })
+        }
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
       .margin({ left: 12 })
+
+      // delete button for custom skills
+      if (!this.skill.isBuiltin) {
+        Text('\u2716')
+          .fontSize(16)
+          .fontColor('#CC0000')
+          .width(32)
+          .height(32)
+          .textAlign(TextAlign.Center)
+          .borderRadius(16)
+          .backgroundColor('#FFF0F0')
+          .margin({ right: 8 })
+          .onClick(() => {
+            this.onDelete(this.skill.id);
+          })
+      }
 
       // toggle
       Toggle({ type: ToggleType.Switch, isOn: this.skill.enabled })
@@ -69,6 +102,7 @@ export struct SkillCard {
     if (cat === 'productivity') return '\uD83D\uDCCB';
     if (cat === 'smart_home') return '\uD83C\uDFE0';
     if (cat === 'media') return '\uD83C\uDFA5';
+    if (cat === 'custom') return '\uD83D\uDCA1';
     return '\uD83D\uDD27';
   }
 }

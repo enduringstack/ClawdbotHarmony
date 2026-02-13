@@ -9,6 +9,7 @@ export class Constants {
   static readonly PREFS_CRON: string = 'clawdbot_cron';
   static readonly PREFS_EMAIL: string = 'clawdbot_email';
   static readonly PREFS_FEISHU: string = 'clawdbot_feishu';
+  static readonly PREFS_CUSTOM_SKILLS: string = 'clawdbot_custom_skills';
   static readonly CRON_POLL_INTERVAL_MS: number = 30000;
 
   // Feishu Bot API
