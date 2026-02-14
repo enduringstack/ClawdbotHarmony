@@ -36,7 +36,7 @@ import { LogService } from '../../common/LogService';
 import { Constants } from '../../common/Constants';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.9.1';
+const APP_VERSION = '2.9.2';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;

@@ -147,6 +147,13 @@ export interface CronParseResult {
   error: string;
 }
 
+export interface SettingsProfile {
+  name: string;
+  mode: string;        // 'standalone' | 'node'
+  data: string;        // JSON-serialized settings
+  createdAt: number;
+}
+
 export interface CronTask {
   id: string;
   prompt: string;

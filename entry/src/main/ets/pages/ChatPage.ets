@@ -251,7 +251,7 @@ export struct ChatPage {
                 .fontSize(18)
                 .fontWeight(FontWeight.Bold)
                 .fontColor('#1A1A1A')
-              Text('v2.9.1')
+              Text('v2.9.2')
                 .fontSize(11)
                 .fontColor('#999999')
                 .margin({ top: 4 })
@@ -439,14 +439,14 @@ export struct ChatPage {
       // -- input bar (hidden in history mode) --
       if (!this.showHistory) {
       Row({ space: 8 }) {
-        // Mic button: tap = toggle Talk Mode, long press = single voice input
+        // Mic button: tap = toggle Talk Mode (phone call style), long press = single voice input
         Column() {
-          Text(this.isTalkMode ? '\uD83D\uDDE3' : '\uD83C\uDFA4').fontSize(18)
+          Text(this.isTalkMode ? '\uD83D\uDCF5' : '\uD83D\uDCDE').fontSize(18)
         }
         .width(42)
         .height(42)
         .borderRadius(21)
-        .backgroundColor(this.isTalkMode ? '#4CAF50' : (this.isRecording ? '#F44336' : '#F0F0F0'))
+        .backgroundColor(this.isTalkMode ? '#F44336' : (this.isRecording ? '#F44336' : '#F0F0F0'))
         .justifyContent(FlexAlign.Center)
         .gesture(
           GestureGroup(GestureMode.Exclusive,
@@ -1962,7 +1962,8 @@ You have persistent memory that survives across conversations. Use it proactivel
     }
     let defaultModel = provider === 'openrouter' ? Constants.DEFAULT_MODEL_OPENROUTER
       : provider === 'anthropic' ? Constants.DEFAULT_MODEL_ANTHROPIC
-        : provider === 'openai' ? Constants.DEFAULT_MODEL_OPENAI : 'llama3';
+        : provider === 'openai' ? Constants.DEFAULT_MODEL_OPENAI
+          : provider === 'custom' ? '' : 'llama3';
     let model = (await store.get(modelPref, defaultModel)) as string;
     // Use built-in keys as fallback
     if (apiKey.length === 0 && provider === 'openrouter' && Constants.OPENROUTER_DEFAULT_KEY.length > 0) {
@@ -2594,7 +2595,6 @@ You have persistent memory that survives across conversations. Use it proactivel
   }
 
   private async talkCycle(): Promise<void> {
-    let emptyAsrCount = 0;
     while (this.talkModeActive) {
       // Step 1: Record with silence detection
       this.talkStatus = I18n.t('chat.talkListening');
@@ -2603,13 +2603,8 @@ You have persistent memory that survives across conversations. Use it proactivel
       if (!this.talkModeActive) break;
 
       if (wavPath.length === 0) {
-        // Silence timeout — no speech detected
-        this.talkStatus = I18n.t('chat.talkSilence');
-        let silenceMsg = new ChatMessage('assistant', '\uD83D\uDDE3 ' + I18n.t('chat.talkSilence'));
-        this.messages.push(silenceMsg);
-        this.scrollToEnd();
-        this.stopTalkMode();
-        break;
+        // No speech detected — keep listening (phone call mode)
+        continue;
       }
 
       // Step 2: ASR
@@ -2622,22 +2617,9 @@ You have persistent memory that survives across conversations. Use it proactivel
       if (!this.talkModeActive) break;
 
       if (recognizedText.length === 0) {
-        emptyAsrCount++;
-        this.log.info('ChatPage', `Talk mode: ASR returned empty (${emptyAsrCount}/3)`);
-        if (emptyAsrCount >= 3) {
-          this.log.info('ChatPage', 'Talk mode: too many empty ASR results, exiting');
-          this.talkStatus = I18n.t('chat.talkSilence');
-          let silenceMsg = new ChatMessage('assistant', '\uD83D\uDDE3 ' + I18n.t('chat.talkSilence'));
-          this.messages.push(silenceMsg);
-          this.scrollToEnd();
-          this.stopTalkMode();
-          break;
-        }
+        // ASR returned empty — keep listening (phone call mode)
         continue;
       }
-
-      // Reset empty counter on successful recognition
-      emptyAsrCount = 0;
 
       // Step 3: Add user message + send to AI
       let userMsg = new ChatMessage('user', recognizedText);
@@ -2718,7 +2700,6 @@ You have persistent memory that survives across conversations. Use it proactivel
       let recordStart = Date.now();
       let rmsThreshold = 1500;
       let silenceTimeoutMs = 1500;  // 1.5s silence after speech
-      let noSpeechTimeoutMs = 8000; // 8s no speech at all
 
       while (this.talkModeActive && this.audioCapturer) {
         let buf: ArrayBuffer;
@@ -2755,15 +2736,8 @@ You have persistent memory that survives across conversations. Use it proactivel
           }
         }
 
-        // No speech timeout
-        if (!speechDetected && (Date.now() - recordStart > noSpeechTimeoutMs)) {
-          this.log.info('ChatPage', 'Talk mode: no speech timeout');
-          this.isRecording = false;
-          this.showWaveform = false;
-          this.waveBars = [0, 0, 0, 0, 0, 0, 0];
-          await this.cleanupAsr();
-          return ''; // signals silence timeout
-        }
+        // No speech: just keep listening (phone call mode — no timeout)
+        // Recording continues until user taps hang-up
       }
 
       this.isRecording = false;

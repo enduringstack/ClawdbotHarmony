@@ -12,6 +12,11 @@ export class Constants {
   static readonly PREFS_CUSTOM_SKILLS: string = 'clawdbot_custom_skills';
   static readonly CRON_POLL_INTERVAL_MS: number = 30000;
 
+  // Settings mode configuration
+  // To enable all modes, change to: ['standalone', 'node', 'service']
+  static readonly ENABLED_MODES: string[] = ['standalone', 'node'];
+  static readonly DEFAULT_MODE: string = 'node';
+
   // Feishu Bot API
   static readonly FEISHU_TOKEN_URL: string = 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/';
   static readonly FEISHU_WS_ENDPOINT_URL: string = 'https://open.feishu.cn/callback/ws/endpoint';

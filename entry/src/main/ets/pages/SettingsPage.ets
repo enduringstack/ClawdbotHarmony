@@ -6,6 +6,7 @@ import { Constants } from '../common/Constants';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
 import { ConnectionState, GatewayEndpoint } from '../service/gateway/GatewayModels';
 import { I18n, LangCode } from '../common/I18n';
+import { SettingsProfile } from '../model/Models';
 import { ImapService } from '../service/ImapService';
 import { FeishuBotService } from '../service/FeishuBotService';
 import socket from '@ohos.net.socket';
@@ -23,17 +24,19 @@ export struct SettingsPage {
     'openrouter': Constants.DEFAULT_MODEL_OPENROUTER,
     'anthropic': Constants.DEFAULT_MODEL_ANTHROPIC,
     'openai': Constants.DEFAULT_MODEL_OPENAI,
-    'local': 'llama3'
+    'local': 'llama3',
+    'custom': ''
   };
   private savedKeys: Record<string, string> = {
-    'openrouter': '', 'anthropic': '', 'openai': '', 'local': ''
+    'openrouter': '', 'anthropic': '', 'openai': '', 'local': '', 'custom': ''
   };
   private savedUrls: Record<string, string> = {
-    'openrouter': '', 'anthropic': '', 'openai': '', 'local': ''
+    'openrouter': '', 'anthropic': '', 'openai': '', 'local': '', 'custom': ''
   };
+  @State asrEnabled: boolean = false;
   @State showKey: boolean = false;
   @State @Watch('onLangChange') lang: string = 'zh';
-  @State settingsTab: string = 'standalone'; // 'standalone' | 'node' | 'service'
+  @State settingsTab: string = Constants.DEFAULT_MODE; // 'standalone' | 'node' | 'service'
 
   // Assistant customization
   @State assistantName: string = '';
@@ -87,6 +90,11 @@ export struct SettingsPage {
   @State capEmail: boolean = true;
   @State ttsAutoRead: boolean = false;
 
+  // Profiles
+  @State profiles: SettingsProfile[] = [];
+  @State profileNameInput: string = '';
+  @State showProfileSave: boolean = false;
+
   private gwListener: ((state: ConnectionState, text: string) => void) | undefined = undefined;
   private langListener: (() => void) | undefined = undefined;
 
@@ -95,6 +103,7 @@ export struct SettingsPage {
     this.loadGateway();
     this.loadEmail();
     this.loadFeishu();
+    this.loadProfiles();
     this.lang = I18n.lang;
     this.langListener = () => { this.lang = I18n.lang; };
     I18n.addListener(this.langListener);
@@ -132,6 +141,120 @@ export struct SettingsPage {
           .fontColor('#1A1A1A')
           .width('100%')
           .padding({ left: 20, top: 16, bottom: 16 })
+
+        // =============== Gateway Connection (top section in node mode) ===============
+        if (this.modesInclude('node') && !this.showTabs()) {
+          this.SectionTitle(I18n.t('settings.gateway'))
+          Column() {
+            Text(I18n.t('settings.gatewayHost'))
+              .fontSize(14)
+              .fontColor('#1A1A1A')
+              .width('100%')
+            TextInput({ text: this.gwHost, placeholder: I18n.t('settings.gatewayHostPlaceholder') })
+              .height(40)
+              .backgroundColor('#F5F5F5')
+              .borderRadius(8)
+              .margin({ top: 6 })
+              .onChange((v: string) => { this.gwHost = v; })
+
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+            Row() {
+              Text(I18n.t('settings.port'))
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+                .layoutWeight(1)
+              TextInput({ text: this.gwPort, placeholder: '9315' })
+                .width(100)
+                .height(40)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .type(InputType.Number)
+                .onChange((v: string) => { this.gwPort = v; })
+            }
+            .width('100%')
+
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+            Row() {
+              Text(I18n.t('settings.useTls'))
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+                .layoutWeight(1)
+              Toggle({ type: ToggleType.Switch, isOn: this.gwUseTls })
+                .selectedColor('#D2691E')
+                .onChange((isOn: boolean) => { this.gwUseTls = isOn; })
+            }
+            .width('100%')
+
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+            Text(I18n.t('settings.token'))
+              .fontSize(14)
+              .fontColor('#1A1A1A')
+              .width('100%')
+            Text(I18n.t('settings.tokenDesc'))
+              .fontSize(11)
+              .fontColor('#999999')
+              .width('100%')
+              .margin({ top: 2 })
+            TextInput({ text: this.gwToken, placeholder: I18n.t('settings.tokenPlaceholder') })
+              .height(40)
+              .backgroundColor('#F5F5F5')
+              .borderRadius(8)
+              .type(InputType.Password)
+              .margin({ top: 6 })
+              .onChange((v: string) => { this.gwToken = v; })
+
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+            Text(I18n.t('settings.password'))
+              .fontSize(14)
+              .fontColor('#666666')
+              .width('100%')
+            TextInput({ text: this.gwPassword, placeholder: I18n.t('settings.passwordPlaceholder') })
+              .height(40)
+              .backgroundColor('#F5F5F5')
+              .borderRadius(8)
+              .type(InputType.Password)
+              .margin({ top: 6 })
+              .onChange((v: string) => { this.gwPassword = v; })
+
+            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+            Row() {
+              Text(I18n.t('settings.status'))
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+                .layoutWeight(1)
+              Circle({ width: 10, height: 10 })
+                .fill(this.gwStateColor())
+                .margin({ right: 6 })
+              Text(this.gwStatusText)
+                .fontSize(13)
+                .fontColor(this.gwStateColor())
+                .fontWeight(FontWeight.Medium)
+            }
+            .width('100%')
+            .height(40)
+
+            Button(this.gwIsConnected() ? I18n.t('settings.disconnect') : I18n.t('settings.connect'))
+              .width('100%')
+              .height(44)
+              .backgroundColor(this.gwIsConnected() ? '#D32F2F' : '#4CAF50')
+              .fontColor(Color.White)
+              .fontSize(15)
+              .fontWeight(FontWeight.Medium)
+              .borderRadius(10)
+              .margin({ top: 8 })
+              .onClick(() => { this.toggleGateway(); })
+          }
+          .width('100%')
+          .padding(16)
+          .margin({ left: 16, right: 16 })
+          .backgroundColor(Color.White)
+          .borderRadius(12)
+        }
 
         // =============== Common Settings ===============
 
@@ -218,46 +341,6 @@ export struct SettingsPage {
             .borderRadius(8)
             .margin({ top: 6 })
             .onChange((v: string) => { this.assistantName = v; })
-        }
-        .width('100%')
-        .padding(16)
-        .margin({ left: 16, right: 16 })
-        .backgroundColor(Color.White)
-        .borderRadius(12)
-
-        // ---- Soul / Personality ----
-        this.SectionTitle(I18n.t('settings.soul'))
-        Column() {
-          Text(I18n.t('settings.soulDesc'))
-            .fontSize(11)
-            .fontColor('#999999')
-            .width('100%')
-            .margin({ bottom: 10 })
-
-          TextArea({ text: this.soul, placeholder: 'Enter soul / personality...' })
-            .width('100%')
-            .height(200)
-            .backgroundColor('#F5F5F5')
-            .borderRadius(8)
-            .fontSize(13)
-            .onChange((v: string) => { this.soul = v; })
-
-          Row() {
-            Blank()
-            Text(I18n.t('settings.soulReset'))
-              .fontSize(12)
-              .fontColor('#D2691E')
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .borderRadius(6)
-              .borderWidth(1)
-              .borderColor('#D2691E')
-              .margin({ top: 10 })
-              .onClick(() => {
-                this.soul = Constants.DEFAULT_SOUL;
-                promptAction.showToast({ message: I18n.t('settings.soulResetDone'), duration: 1500 });
-              })
-          }
-          .width('100%')
         }
         .width('100%')
         .padding(16)
@@ -452,46 +535,96 @@ export struct SettingsPage {
         .backgroundColor(Color.White)
         .borderRadius(12)
 
-        // =============== Tab Bar ===============
-        Row({ space: 0 }) {
-          Text(I18n.t('settings.tabStandalone'))
-            .fontSize(14)
-            .fontWeight(this.settingsTab === 'standalone' ? FontWeight.Bold : FontWeight.Normal)
-            .fontColor(this.settingsTab === 'standalone' ? '#D2691E' : '#999999')
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .padding({ top: 12, bottom: 12 })
-            .borderWidth({ bottom: this.settingsTab === 'standalone' ? 2 : 0 })
-            .borderColor('#D2691E')
-            .onClick(() => { this.settingsTab = 'standalone'; })
-          Text(I18n.t('settings.tabNode'))
-            .fontSize(14)
-            .fontWeight(this.settingsTab === 'node' ? FontWeight.Bold : FontWeight.Normal)
-            .fontColor(this.settingsTab === 'node' ? '#D2691E' : '#999999')
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .padding({ top: 12, bottom: 12 })
-            .borderWidth({ bottom: this.settingsTab === 'node' ? 2 : 0 })
-            .borderColor('#D2691E')
-            .onClick(() => { this.settingsTab = 'node'; })
-          Text(I18n.t('settings.tabService'))
-            .fontSize(14)
-            .fontWeight(this.settingsTab === 'service' ? FontWeight.Bold : FontWeight.Normal)
-            .fontColor(this.settingsTab === 'service' ? '#D2691E' : '#999999')
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .padding({ top: 12, bottom: 12 })
-            .borderWidth({ bottom: this.settingsTab === 'service' ? 2 : 0 })
-            .borderColor('#D2691E')
-            .onClick(() => { this.settingsTab = 'service'; })
-        }
-        .width('100%')
-        .margin({ left: 16, right: 16, top: 20 })
-        .backgroundColor(Color.White)
-        .borderRadius({ topLeft: 12, topRight: 12 })
+        // =============== Tab Bar (only when multiple modes enabled) ===============
+        if (this.showTabs()) {
+          Row({ space: 0 }) {
+            if (this.modesInclude('standalone')) {
+              Text(I18n.t('settings.tabStandalone'))
+                .fontSize(14)
+                .fontWeight(this.settingsTab === 'standalone' ? FontWeight.Bold : FontWeight.Normal)
+                .fontColor(this.settingsTab === 'standalone' ? '#D2691E' : '#999999')
+                .layoutWeight(1)
+                .textAlign(TextAlign.Center)
+                .padding({ top: 12, bottom: 12 })
+                .borderWidth({ bottom: this.settingsTab === 'standalone' ? 2 : 0 })
+                .borderColor('#D2691E')
+                .onClick(() => { this.settingsTab = 'standalone'; })
+            }
+            if (this.modesInclude('node')) {
+              Text(I18n.t('settings.tabNode'))
+                .fontSize(14)
+                .fontWeight(this.settingsTab === 'node' ? FontWeight.Bold : FontWeight.Normal)
+                .fontColor(this.settingsTab === 'node' ? '#D2691E' : '#999999')
+                .layoutWeight(1)
+                .textAlign(TextAlign.Center)
+                .padding({ top: 12, bottom: 12 })
+                .borderWidth({ bottom: this.settingsTab === 'node' ? 2 : 0 })
+                .borderColor('#D2691E')
+                .onClick(() => { this.settingsTab = 'node'; })
+            }
+            if (this.modesInclude('service')) {
+              Text(I18n.t('settings.tabService'))
+                .fontSize(14)
+                .fontWeight(this.settingsTab === 'service' ? FontWeight.Bold : FontWeight.Normal)
+                .fontColor(this.settingsTab === 'service' ? '#D2691E' : '#999999')
+                .layoutWeight(1)
+                .textAlign(TextAlign.Center)
+                .padding({ top: 12, bottom: 12 })
+                .borderWidth({ bottom: this.settingsTab === 'service' ? 2 : 0 })
+                .borderColor('#D2691E')
+                .onClick(() => { this.settingsTab = 'service'; })
+            }
+          }
+          .width('100%')
+          .margin({ left: 16, right: 16, top: 20 })
+          .backgroundColor(Color.White)
+          .borderRadius({ topLeft: 12, topRight: 12 })
 
-        // =============== Standalone Tab ===============
-        if (this.settingsTab === 'standalone') {
+          // ---- Soul / Personality (standalone tab only, multi-mode) ----
+          if (this.settingsTab === 'standalone' && this.modesInclude('standalone')) {
+            this.SectionTitle(I18n.t('settings.soul'))
+            Column() {
+              Text(I18n.t('settings.soulDesc'))
+                .fontSize(11)
+                .fontColor('#999999')
+                .width('100%')
+                .margin({ bottom: 10 })
+
+              TextArea({ text: this.soul, placeholder: 'Enter soul / personality...' })
+                .width('100%')
+                .height(200)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .fontSize(13)
+                .onChange((v: string) => { this.soul = v; })
+
+              Row() {
+                Blank()
+                Text(I18n.t('settings.soulReset'))
+                  .fontSize(12)
+                  .fontColor('#D2691E')
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .borderRadius(6)
+                  .borderWidth(1)
+                  .borderColor('#D2691E')
+                  .margin({ top: 10 })
+                  .onClick(() => {
+                    this.soul = Constants.DEFAULT_SOUL;
+                    promptAction.showToast({ message: I18n.t('settings.soulResetDone'), duration: 1500 });
+                  })
+              }
+              .width('100%')
+            }
+            .width('100%')
+            .padding(16)
+            .margin({ left: 16, right: 16 })
+            .backgroundColor(Color.White)
+            .borderRadius(12)
+          }
+        }
+
+        // =============== Standalone Tab — AI Provider, Generation, ASR ===============
+        if (this.settingsTab === 'standalone' && this.modesInclude('standalone')) {
           // ---- AI Provider ----
           this.SectionTitle(I18n.t('settings.aiProvider'))
           Column() {
@@ -502,7 +635,7 @@ export struct SettingsPage {
               .width('100%')
             Scroll() {
               Row({ space: 8 }) {
-              ForEach(['openrouter', 'anthropic', 'openai', 'local'] as string[], (p: string) => {
+              ForEach(['openrouter', 'anthropic', 'openai', 'local', 'custom'] as string[], (p: string) => {
                 Text(this.providerLabel(p))
                   .fontSize(13)
                   .fontColor(this.provider === p ? Color.White : '#666666')
@@ -586,7 +719,9 @@ export struct SettingsPage {
                   ? 'https://api.anthropic.com/v1/messages'
                   : this.provider === 'openai'
                     ? 'https://api.openai.com/v1/chat/completions'
-                    : 'http://localhost:11434/api/chat'
+                    : this.provider === 'custom'
+                      ? 'https://your-api.com/v1/chat/completions'
+                      : 'http://localhost:11434/api/chat'
             })
               .height(40)
               .backgroundColor('#F5F5F5')
@@ -625,69 +760,93 @@ export struct SettingsPage {
           .backgroundColor(Color.White)
           .borderRadius(12)
 
-          // ---- ASR (Speech-to-Text) ----
-          this.SectionTitle('ASR')
-          Column() {
-            Text('API URL')
-              .fontSize(14)
-              .fontColor('#1A1A1A')
-              .width('100%')
-            TextInput({ text: this.asrApiUrl, placeholder: 'https://api.openai.com/v1/audio/transcriptions' })
-              .height(40)
-              .backgroundColor('#F5F5F5')
-              .borderRadius(8)
-              .margin({ top: 6 })
-              .onChange((v: string) => { this.asrApiUrl = v; })
-
-            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-            Text('API Key')
-              .fontSize(14)
-              .fontColor('#1A1A1A')
-              .width('100%')
-            Row() {
-              TextInput({ text: this.asrApiKey, placeholder: 'sk-...' })
+          // ---- ASR (Speech-to-Text) with toggle ----
+          if (this.provider !== 'anthropic') {
+            this.SectionTitle('ASR')
+            Column() {
+              Row() {
+                Column({ space: 2 }) {
+                  Text(I18n.t('settings.asrEnabled'))
+                    .fontSize(14)
+                    .fontColor('#1A1A1A')
+                  Text(I18n.t('settings.asrEnabledDesc'))
+                    .fontSize(11)
+                    .fontColor('#999999')
+                }
                 .layoutWeight(1)
-                .height(40)
-                .backgroundColor('#F5F5F5')
-                .borderRadius(8)
-                .type(this.showAsrKey ? InputType.Normal : InputType.Password)
-                .onChange((v: string) => { this.asrApiKey = v; })
-              Button(this.showAsrKey ? I18n.t('settings.hide') : I18n.t('settings.show'))
-                .fontSize(12)
-                .height(34)
-                .backgroundColor('#F0F0F0')
-                .fontColor('#666666')
-                .borderRadius(8)
-                .margin({ left: 8 })
-                .onClick(() => { this.showAsrKey = !this.showAsrKey; })
-            }
-            .margin({ top: 6 })
-            .width('100%')
+                .alignItems(HorizontalAlign.Start)
 
-            Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-            Text('Model')
-              .fontSize(14)
-              .fontColor('#1A1A1A')
+                Toggle({ type: ToggleType.Switch, isOn: this.asrEnabled })
+                  .selectedColor('#D2691E')
+                  .onChange((isOn: boolean) => { this.asrEnabled = isOn; })
+              }
               .width('100%')
-            TextInput({ text: this.asrModel, placeholder: 'whisper-1' })
-              .height(40)
-              .backgroundColor('#F5F5F5')
-              .borderRadius(8)
-              .margin({ top: 6 })
-              .onChange((v: string) => { this.asrModel = v; })
+
+              if (this.asrEnabled) {
+                Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+                Text('API URL')
+                  .fontSize(14)
+                  .fontColor('#1A1A1A')
+                  .width('100%')
+                TextInput({ text: this.asrApiUrl, placeholder: 'https://api.openai.com/v1/audio/transcriptions' })
+                  .height(40)
+                  .backgroundColor('#F5F5F5')
+                  .borderRadius(8)
+                  .margin({ top: 6 })
+                  .onChange((v: string) => { this.asrApiUrl = v; })
+
+                Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+                Text('API Key')
+                  .fontSize(14)
+                  .fontColor('#1A1A1A')
+                  .width('100%')
+                Row() {
+                  TextInput({ text: this.asrApiKey, placeholder: 'sk-...' })
+                    .layoutWeight(1)
+                    .height(40)
+                    .backgroundColor('#F5F5F5')
+                    .borderRadius(8)
+                    .type(this.showAsrKey ? InputType.Normal : InputType.Password)
+                    .onChange((v: string) => { this.asrApiKey = v; })
+                  Button(this.showAsrKey ? I18n.t('settings.hide') : I18n.t('settings.show'))
+                    .fontSize(12)
+                    .height(34)
+                    .backgroundColor('#F0F0F0')
+                    .fontColor('#666666')
+                    .borderRadius(8)
+                    .margin({ left: 8 })
+                    .onClick(() => { this.showAsrKey = !this.showAsrKey; })
+                }
+                .margin({ top: 6 })
+                .width('100%')
+
+                Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
+
+                Text('Model')
+                  .fontSize(14)
+                  .fontColor('#1A1A1A')
+                  .width('100%')
+                TextInput({ text: this.asrModel, placeholder: 'whisper-1' })
+                  .height(40)
+                  .backgroundColor('#F5F5F5')
+                  .borderRadius(8)
+                  .margin({ top: 6 })
+                  .onChange((v: string) => { this.asrModel = v; })
+              }
+            }
+            .width('100%')
+            .padding(16)
+            .margin({ left: 16, right: 16 })
+            .backgroundColor(Color.White)
+            .borderRadius(12)
           }
-          .width('100%')
-          .padding(16)
-          .margin({ left: 16, right: 16 })
-          .backgroundColor(Color.White)
-          .borderRadius(12)
 
         }
 
-        // =============== Node Tab ===============
-        if (this.settingsTab === 'node') {
+        // =============== Node Tab (multi-mode only, gateway with enable toggle) ===============
+        if (this.settingsTab === 'node' && this.showTabs()) {
           // ---- Gateway / Node Mode ----
           this.SectionTitle(I18n.t('settings.gateway'))
           Column() {
@@ -829,7 +988,7 @@ export struct SettingsPage {
         }
 
         // =============== Service Tab ===============
-        if (this.settingsTab === 'service') {
+        if (this.settingsTab === 'service' && this.modesInclude('service')) {
           // ---- Feishu Bot ----
           this.SectionTitle(I18n.t('settings.feishu'))
           Column() {
@@ -928,12 +1087,112 @@ export struct SettingsPage {
         Column() {
           this.InfoRow(I18n.t('settings.app'), I18n.t('settings.appValue'))
           Divider().color('#F0F0F0')
-          this.InfoRow(I18n.t('settings.version'), '2.9.1')
+          this.InfoRow(I18n.t('settings.version'), '2.9.2')
           Divider().color('#F0F0F0')
           this.InfoRow(I18n.t('settings.basedOn'), 'OpenClaw / ClawdBot')
           Divider().color('#F0F0F0')
           this.InfoRow(I18n.t('settings.platform'), 'HarmonyOS NEXT')
         }
+        .padding(16)
+        .margin({ left: 16, right: 16 })
+        .backgroundColor(Color.White)
+        .borderRadius(12)
+
+        // =============== Profiles ===============
+        this.SectionTitle(I18n.t('settings.profiles'))
+        Column() {
+          // Saved profiles list
+          if (this.profiles.filter((p: SettingsProfile) => p.mode === this.settingsTab).length === 0) {
+            Text(I18n.t('settings.profileEmpty'))
+              .fontSize(13)
+              .fontColor('#999999')
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .padding({ top: 8, bottom: 8 })
+          } else {
+            ForEach(this.profiles.filter((p: SettingsProfile) => p.mode === this.settingsTab),
+              (profile: SettingsProfile) => {
+                Row() {
+                  Column() {
+                    Text(profile.name)
+                      .fontSize(14)
+                      .fontColor('#1A1A1A')
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(new Date(profile.createdAt).toLocaleDateString())
+                      .fontSize(11)
+                      .fontColor('#999999')
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+
+                  Text(I18n.t('settings.profileLoad'))
+                    .fontSize(12)
+                    .fontColor(Color.White)
+                    .backgroundColor('#D2691E')
+                    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                    .borderRadius(6)
+                    .margin({ right: 8 })
+                    .onClick(() => { this.loadProfile(profile); })
+
+                  Text(I18n.t('settings.profileDelete'))
+                    .fontSize(12)
+                    .fontColor('#D32F2F')
+                    .borderWidth(1)
+                    .borderColor('#D32F2F')
+                    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                    .borderRadius(6)
+                    .onClick(() => { this.deleteProfile(profile); })
+                }
+                .width('100%')
+                .padding({ top: 8, bottom: 8 })
+
+                Divider().color('#F0F0F0')
+              })
+          }
+
+          // Save as profile
+          if (this.showProfileSave) {
+            Row() {
+              TextInput({ text: this.profileNameInput, placeholder: I18n.t('settings.profileNamePlaceholder') })
+                .layoutWeight(1)
+                .height(36)
+                .backgroundColor('#F5F5F5')
+                .borderRadius(8)
+                .fontSize(13)
+                .onChange((v: string) => { this.profileNameInput = v; })
+
+              Text('\u2714')
+                .fontSize(18)
+                .fontColor('#4CAF50')
+                .padding({ left: 12, right: 6 })
+                .onClick(() => { this.saveProfile(); })
+
+              Text('\u2716')
+                .fontSize(18)
+                .fontColor('#D32F2F')
+                .padding({ left: 6, right: 4 })
+                .onClick(() => {
+                  this.showProfileSave = false;
+                  this.profileNameInput = '';
+                })
+            }
+            .width('100%')
+            .margin({ top: 8 })
+          } else {
+            Text(I18n.t('settings.profileSave'))
+              .fontSize(13)
+              .fontColor('#D2691E')
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .padding({ top: 10, bottom: 4 })
+              .onClick(() => {
+                this.showProfileSave = true;
+                this.profileNameInput = '';
+              })
+          }
+        }
+        .width('100%')
         .padding(16)
         .margin({ left: 16, right: 16 })
         .backgroundColor(Color.White)
@@ -1029,6 +1288,7 @@ export struct SettingsPage {
     if (p === 'openrouter') return Constants.DEFAULT_MODEL_OPENROUTER;
     if (p === 'anthropic') return Constants.DEFAULT_MODEL_ANTHROPIC;
     if (p === 'openai') return Constants.DEFAULT_MODEL_OPENAI;
+    if (p === 'custom') return '';
     return 'llama3';
   }
 
@@ -1036,7 +1296,16 @@ export struct SettingsPage {
     if (p === 'openrouter') return 'OpenRouter';
     if (p === 'anthropic') return 'Anthropic';
     if (p === 'openai') return 'OpenAI';
+    if (p === 'custom') return I18n.t('settings.customProvider');
     return 'Ollama';
+  }
+
+  private showTabs(): boolean {
+    return Constants.ENABLED_MODES.length > 1;
+  }
+
+  private modesInclude(mode: string): boolean {
+    return Constants.ENABLED_MODES.indexOf(mode) >= 0;
   }
 
   private gwStateColor(): string {
@@ -1158,15 +1427,19 @@ export struct SettingsPage {
       this.savedKeys['anthropic'] = (await store.get('key_anthropic', '')) as string;
       this.savedKeys['openai'] = (await store.get('key_openai', '')) as string;
       this.savedKeys['local'] = (await store.get('key_local', '')) as string;
+      this.savedKeys['custom'] = (await store.get('key_custom', '')) as string;
       this.savedUrls['openrouter'] = (await store.get('url_openrouter', '')) as string;
       this.savedUrls['anthropic'] = (await store.get('url_anthropic', '')) as string;
       this.savedUrls['openai'] = (await store.get('url_openai', '')) as string;
       this.savedUrls['local'] = (await store.get('url_local', '')) as string;
+      this.savedUrls['custom'] = (await store.get('url_custom', '')) as string;
+      this.savedModels['custom'] = (await store.get('model_custom', '')) as string;
       // Set current values from active provider
       this.model = this.savedModels[this.provider] ?? this.defaultModelFor(this.provider);
       this.apiKey = this.savedKeys[this.provider] ?? '';
       this.baseUrl = this.savedUrls[this.provider] ?? '';
       // ASR settings
+      this.asrEnabled = (await store.get('asr_enabled', false)) as boolean;
       this.asrApiUrl = (await store.get('asr_url', 'https://api.siliconflow.cn/v1/audio/transcriptions')) as string;
       this.asrApiKey = (await store.get('asr_key', '')) as string;
       this.asrModel = (await store.get('asr_model', 'FunAudioLLM/SenseVoiceSmall')) as string;
@@ -1415,15 +1688,19 @@ export struct SettingsPage {
       await store.put('model_anthropic', this.savedModels['anthropic'] ?? Constants.DEFAULT_MODEL_ANTHROPIC);
       await store.put('model_openai', this.savedModels['openai'] ?? Constants.DEFAULT_MODEL_OPENAI);
       await store.put('model_local', this.savedModels['local'] ?? 'llama3');
+      await store.put('model_custom', this.savedModels['custom'] ?? '');
       await store.put('key_openrouter', this.savedKeys['openrouter'] ?? '');
       await store.put('key_anthropic', this.savedKeys['anthropic'] ?? '');
       await store.put('key_openai', this.savedKeys['openai'] ?? '');
       await store.put('key_local', this.savedKeys['local'] ?? '');
+      await store.put('key_custom', this.savedKeys['custom'] ?? '');
       await store.put('url_openrouter', this.savedUrls['openrouter'] ?? '');
       await store.put('url_anthropic', this.savedUrls['anthropic'] ?? '');
       await store.put('url_openai', this.savedUrls['openai'] ?? '');
       await store.put('url_local', this.savedUrls['local'] ?? '');
+      await store.put('url_custom', this.savedUrls['custom'] ?? '');
       // ASR settings
+      await store.put('asr_enabled', this.asrEnabled);
       await store.put('asr_url', this.asrApiUrl);
       await store.put('asr_key', this.asrApiKey);
       await store.put('asr_model', this.asrModel);
@@ -1436,7 +1713,9 @@ export struct SettingsPage {
 
       // Save gateway settings
       let gwStore = await preferences.getPreferences(ctx, Constants.PREFS_GATEWAY);
-      await gwStore.put('enabled', this.gwEnabled);
+      // In single node mode, gateway is always enabled
+      let gwEnabledValue = !this.showTabs() && this.modesInclude('node') ? true : this.gwEnabled;
+      await gwStore.put('enabled', gwEnabledValue);
       await gwStore.put('host', this.gwHost);
       await gwStore.put('port', this.gwPort);
       await gwStore.put('useTls', this.gwUseTls);
@@ -1527,5 +1806,125 @@ export struct SettingsPage {
     } catch (e) {
       promptAction.showToast({ message: 'Logout failed: ' + String(e), duration: 2000 });
     }
+  }
+
+  // ============ Profiles ============
+
+  private async loadProfiles(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let store = await preferences.getPreferences(ctx, 'clawdbot_profiles');
+      let json = (await store.get('profiles', '[]')) as string;
+      let arr: SettingsProfile[] = JSON.parse(json) as SettingsProfile[];
+      this.profiles = arr;
+    } catch { /* ignore */ }
+  }
+
+  private async persistProfiles(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let store = await preferences.getPreferences(ctx, 'clawdbot_profiles');
+      await store.put('profiles', JSON.stringify(this.profiles));
+      await store.flush();
+    } catch { /* ignore */ }
+  }
+
+  private async saveProfile(): Promise<void> {
+    let name = this.profileNameInput.trim();
+    if (name.length === 0) return;
+
+    let data: Record<string, string | number | boolean> = {};
+    if (this.settingsTab === 'standalone' || (!this.showTabs() && this.modesInclude('standalone'))) {
+      // Standalone mode settings
+      this.savedModels[this.provider] = this.model;
+      this.savedKeys[this.provider] = this.apiKey;
+      this.savedUrls[this.provider] = this.baseUrl;
+      data['provider'] = this.provider;
+      data['temperature'] = this.temperature;
+      data['model'] = this.model;
+      data['apiKey'] = this.apiKey;
+      data['baseUrl'] = this.baseUrl;
+      data['asrEnabled'] = this.asrEnabled;
+      data['asrApiUrl'] = this.asrApiUrl;
+      data['asrApiKey'] = this.asrApiKey;
+      data['asrModel'] = this.asrModel;
+      data['soul'] = this.soul;
+    } else {
+      // Node mode settings
+      data['gwHost'] = this.gwHost;
+      data['gwPort'] = this.gwPort;
+      data['gwUseTls'] = this.gwUseTls;
+      data['gwToken'] = this.gwToken;
+      data['gwPassword'] = this.gwPassword;
+      data['capLocation'] = this.capLocation;
+      data['capCamera'] = this.capCamera;
+      data['capCanvas'] = this.capCanvas;
+      data['capScreen'] = this.capScreen;
+      data['capNotification'] = this.capNotification;
+      data['capMicrophone'] = this.capMicrophone;
+      data['capSpeaker'] = this.capSpeaker;
+      data['capEmail'] = this.capEmail;
+      data['ttsAutoRead'] = this.ttsAutoRead;
+    }
+
+    let mode = (this.settingsTab === 'node' || (!this.showTabs() && this.modesInclude('node') && !this.modesInclude('standalone')))
+      ? 'node' : 'standalone';
+
+    let profile: SettingsProfile = {
+      name: name,
+      mode: mode,
+      data: JSON.stringify(data),
+      createdAt: Date.now()
+    };
+
+    this.profiles.push(profile);
+    await this.persistProfiles();
+    this.showProfileSave = false;
+    this.profileNameInput = '';
+    promptAction.showToast({ message: I18n.t('settings.profileSaved'), duration: 1500 });
+  }
+
+  private loadProfile(profile: SettingsProfile): void {
+    try {
+      let data: Record<string, string | number | boolean> = JSON.parse(profile.data) as Record<string, string | number | boolean>;
+      if (profile.mode === 'standalone') {
+        if (data['provider'] !== undefined) this.provider = data['provider'] as string;
+        if (data['temperature'] !== undefined) this.temperature = data['temperature'] as number;
+        if (data['model'] !== undefined) this.model = data['model'] as string;
+        if (data['apiKey'] !== undefined) this.apiKey = data['apiKey'] as string;
+        if (data['baseUrl'] !== undefined) this.baseUrl = data['baseUrl'] as string;
+        if (data['asrEnabled'] !== undefined) this.asrEnabled = data['asrEnabled'] as boolean;
+        if (data['asrApiUrl'] !== undefined) this.asrApiUrl = data['asrApiUrl'] as string;
+        if (data['asrApiKey'] !== undefined) this.asrApiKey = data['asrApiKey'] as string;
+        if (data['asrModel'] !== undefined) this.asrModel = data['asrModel'] as string;
+        if (data['soul'] !== undefined) this.soul = data['soul'] as string;
+        // Update per-provider maps
+        this.savedModels[this.provider] = this.model;
+        this.savedKeys[this.provider] = this.apiKey;
+        this.savedUrls[this.provider] = this.baseUrl;
+      } else {
+        if (data['gwHost'] !== undefined) this.gwHost = data['gwHost'] as string;
+        if (data['gwPort'] !== undefined) this.gwPort = data['gwPort'] as string;
+        if (data['gwUseTls'] !== undefined) this.gwUseTls = data['gwUseTls'] as boolean;
+        if (data['gwToken'] !== undefined) this.gwToken = data['gwToken'] as string;
+        if (data['gwPassword'] !== undefined) this.gwPassword = data['gwPassword'] as string;
+        if (data['capLocation'] !== undefined) this.capLocation = data['capLocation'] as boolean;
+        if (data['capCamera'] !== undefined) this.capCamera = data['capCamera'] as boolean;
+        if (data['capCanvas'] !== undefined) this.capCanvas = data['capCanvas'] as boolean;
+        if (data['capScreen'] !== undefined) this.capScreen = data['capScreen'] as boolean;
+        if (data['capNotification'] !== undefined) this.capNotification = data['capNotification'] as boolean;
+        if (data['capMicrophone'] !== undefined) this.capMicrophone = data['capMicrophone'] as boolean;
+        if (data['capSpeaker'] !== undefined) this.capSpeaker = data['capSpeaker'] as boolean;
+        if (data['capEmail'] !== undefined) this.capEmail = data['capEmail'] as boolean;
+        if (data['ttsAutoRead'] !== undefined) this.ttsAutoRead = data['ttsAutoRead'] as boolean;
+      }
+      promptAction.showToast({ message: I18n.t('settings.profileLoaded'), duration: 1500 });
+    } catch { /* ignore */ }
+  }
+
+  private async deleteProfile(profile: SettingsProfile): Promise<void> {
+    this.profiles = this.profiles.filter((p: SettingsProfile) => p.createdAt !== profile.createdAt || p.name !== profile.name);
+    await this.persistProfiles();
+    promptAction.showToast({ message: I18n.t('settings.profileDeleted'), duration: 1500 });
   }
 }

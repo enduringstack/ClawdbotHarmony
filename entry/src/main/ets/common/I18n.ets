@@ -60,6 +60,11 @@ function buildZh(): Map<string, string> {
   m.set('chat.deleteHistoryConfirm', '确定删除这条历史对话？');
   m.set('chat.historyDeleted', '已删除');
 
+  // Custom provider & ASR
+  m.set('settings.customProvider', '定制化');
+  m.set('settings.asrEnabled', '云端 ASR');
+  m.set('settings.asrEnabledDesc', '使用云端语音识别服务（如不启用则使用本地离线识别）');
+
   // SettingsPage - TTS auto-read
   m.set('settings.ttsAutoRead', '语音朗读');
   m.set('settings.ttsAutoReadDesc', '自动朗读 AI 回复（使用本地 TTS）');
@@ -254,6 +259,19 @@ function buildZh(): Map<string, string> {
   m.set('settings.tabStandalone', '单机模式');
   m.set('settings.tabNode', '节点模式');
   m.set('settings.tabService', '服务模式');
+  m.set('settings.tabModel', '模型');
+
+  // Profiles
+  m.set('settings.profiles', '配置方案');
+  m.set('settings.profileSave', '保存当前配置');
+  m.set('settings.profileLoad', '加载');
+  m.set('settings.profileDelete', '删除');
+  m.set('settings.profileName', '配置名称');
+  m.set('settings.profileNamePlaceholder', '输入配置名称...');
+  m.set('settings.profileSaved', '配置已保存');
+  m.set('settings.profileLoaded', '配置已加载');
+  m.set('settings.profileDeleted', '配置已删除');
+  m.set('settings.profileEmpty', '暂无保存的配置');
 
   // Feishu Bot
   m.set('settings.feishu', '飞书机器人');
@@ -331,6 +349,11 @@ function buildEn(): Map<string, string> {
   m.set('chat.compressFailed', 'Compress failed');
   m.set('chat.deleteHistoryConfirm', 'Delete this conversation?');
   m.set('chat.historyDeleted', 'Deleted');
+
+  // Custom provider & ASR
+  m.set('settings.customProvider', 'Custom');
+  m.set('settings.asrEnabled', 'Cloud ASR');
+  m.set('settings.asrEnabledDesc', 'Use cloud speech recognition (disable for local offline ASR)');
 
   // SettingsPage - TTS auto-read
   m.set('settings.ttsAutoRead', 'Auto Read Aloud');
@@ -526,6 +549,19 @@ function buildEn(): Map<string, string> {
   m.set('settings.tabStandalone', 'Standalone');
   m.set('settings.tabNode', 'Node Mode');
   m.set('settings.tabService', 'Service Mode');
+  m.set('settings.tabModel', 'Model');
+
+  // Profiles
+  m.set('settings.profiles', 'Profiles');
+  m.set('settings.profileSave', 'Save Current Config');
+  m.set('settings.profileLoad', 'Load');
+  m.set('settings.profileDelete', 'Delete');
+  m.set('settings.profileName', 'Profile Name');
+  m.set('settings.profileNamePlaceholder', 'Enter profile name...');
+  m.set('settings.profileSaved', 'Profile saved');
+  m.set('settings.profileLoaded', 'Profile loaded');
+  m.set('settings.profileDeleted', 'Profile deleted');
+  m.set('settings.profileEmpty', 'No saved profiles');
 
   // Feishu Bot
   m.set('settings.feishu', 'FEISHU BOT');
