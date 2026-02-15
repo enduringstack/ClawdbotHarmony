@@ -8,7 +8,7 @@ export struct SessionDrawer {
   @Link sessions: ChatSession[];
   @Link currentSessionId: string;
   @Prop lang: string = 'zh';
-  @State showRenameDialog: boolean = false;
+  @State isRenameDialogVisible: boolean = false;
   @State renameSessionId: string = '';
   @State renameText: string = '';
   onSessionSelect: (sessionId: string) => void = () => {};
@@ -75,16 +75,14 @@ export struct SessionDrawer {
   }
 
   private showSessionMenu(session: ChatSession): void {
-    const menuItems: promptAction.Button[] = [
-      { text: t('session.rename'), color: '#007AFF' },
-      { text: session.isPinned ? t('session.unpin') : t('session.pin'), color: '#007AFF' },
-      { text: t('session.clear'), color: '#FF9500' },
-      { text: t('session.delete'), color: '#FF3B30' }
-    ];
-
     promptAction.showActionMenu({
       title: session.title,
-      buttons: menuItems
+      buttons: [
+        { text: t('session.rename'), color: '#007AFF' },
+        { text: session.isPinned ? t('session.unpin') : t('session.pin'), color: '#007AFF' },
+        { text: t('session.clear'), color: '#FF9500' },
+        { text: t('session.delete'), color: '#FF3B30' }
+      ]
     }).then((result) => {
       switch (result.index) {
         case 0: // Rename
@@ -108,20 +106,20 @@ export struct SessionDrawer {
   private showRenameDialog(session: ChatSession): void {
     this.renameSessionId = session.id;
     this.renameText = session.title;
-    this.showRenameDialog = true;
+    this.isRenameDialogVisible = true;
   }
 
   private confirmRename(): void {
     if (this.renameText.trim().length > 0) {
       this.onSessionRename(this.renameSessionId, this.renameText.trim());
     }
-    this.showRenameDialog = false;
+    this.isRenameDialogVisible = false;
     this.renameSessionId = '';
     this.renameText = '';
   }
 
   private cancelRename(): void {
-    this.showRenameDialog = false;
+    this.isRenameDialogVisible = false;
     this.renameSessionId = '';
     this.renameText = '';
   }
@@ -219,7 +217,7 @@ export struct SessionDrawer {
       .backgroundColor('#FFFFFF')
 
       // Rename dialog overlay
-      if (this.showRenameDialog) {
+      if (this.isRenameDialogVisible) {
         Column() {
           // Backdrop
           Column()

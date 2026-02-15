@@ -9,6 +9,28 @@ const MESSAGES_PREFIX = 'session_messages_';
 const CURRENT_SESSION_KEY = 'current_session_id';
 const DEFAULT_SESSION_ID = 'default';
 
+// Serializable message data structure
+interface MessageData {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: number;
+  isToolCall: boolean;
+  toolName: string;
+  toolInput: string;
+  toolOutput: string;
+  imagePath: string;
+  audioPath: string;
+  userImagePath: string;
+  userImagePaths: string[];
+  feedback: string;
+  videoPath: string;
+  attachmentName: string;
+  replyToId: string;
+  replyToContent: string;
+  replyToRole: string;
+}
+
 export class SessionService {
   private static instance: SessionService;
   private prefs: preferences.Preferences | undefined;
@@ -76,15 +98,17 @@ export class SessionService {
     if (!this.prefs) return;
     
     try {
-      const dataList: ChatSessionData[] = this.sessions.map(s => ({
-        id: s.id,
-        title: s.title,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt,
-        messageCount: s.messageCount,
-        lastMessage: s.lastMessage,
-        isPinned: s.isPinned
-      }));
+      const dataList: ChatSessionData[] = this.sessions.map((s): ChatSessionData => {
+        return {
+          id: s.id,
+          title: s.title,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+          messageCount: s.messageCount,
+          lastMessage: s.lastMessage,
+          isPinned: s.isPinned
+        };
+      });
       
       await this.prefs.put(SESSIONS_KEY, JSON.stringify(dataList));
       await this.prefs.flush();
@@ -235,26 +259,30 @@ export class SessionService {
     if (!this.prefs) return;
     
     try {
-      const dataList = messages.map(msg => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-        timestamp: msg.timestamp,
-        isToolCall: msg.isToolCall,
-        toolName: msg.toolName,
-        toolInput: msg.toolInput,
-        toolOutput: msg.toolOutput,
-        imagePath: msg.imagePath,
-        audioPath: msg.audioPath,
-        userImagePath: msg.userImagePath,
-        userImagePaths: msg.userImagePaths,
-        feedback: msg.feedback,
-        videoPath: msg.videoPath,
-        attachmentName: msg.attachmentName,
-        replyToId: msg.replyToId,
-        replyToContent: msg.replyToContent,
-        replyToRole: msg.replyToRole
-      }));
+      const dataList: MessageData[] = [];
+      for (let msg of messages) {
+        let item: MessageData = {
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp,
+          isToolCall: msg.isToolCall,
+          toolName: msg.toolName,
+          toolInput: msg.toolInput,
+          toolOutput: msg.toolOutput,
+          imagePath: msg.imagePath,
+          audioPath: msg.audioPath,
+          userImagePath: msg.userImagePath,
+          userImagePaths: msg.userImagePaths,
+          feedback: msg.feedback,
+          videoPath: msg.videoPath,
+          attachmentName: msg.attachmentName,
+          replyToId: msg.replyToId,
+          replyToContent: msg.replyToContent,
+          replyToRole: msg.replyToRole
+        };
+        dataList.push(item);
+      }
       
       await this.prefs.put(MESSAGES_PREFIX + sessionId, JSON.stringify(dataList));
       await this.prefs.flush();
