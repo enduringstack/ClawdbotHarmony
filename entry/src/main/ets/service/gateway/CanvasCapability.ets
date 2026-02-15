@@ -27,6 +27,10 @@ export class CanvasCapability {
   private controller: webview.WebviewController | undefined = undefined;
   private _isPresented: boolean = false;
   private _a2uiMode: boolean = false;
+  private _a2uiReady: boolean = false;
+  private _pendingA2UIContent: string[] = [];
+  private _controllerResolve: (() => void) | undefined = undefined;
+  private _pageLoadResolve: (() => void) | undefined = undefined;
 
   /** Callback for A2UI action events from WebView */
   onA2UIAction: ((actionJson: string) => void) | undefined = undefined;
@@ -35,6 +39,24 @@ export class CanvasCapability {
   registerController(ctrl: webview.WebviewController): void {
     this.controller = ctrl;
     this.log.info(TAG, 'WebviewController registered');
+    if (this._controllerResolve) {
+      this._controllerResolve();
+      this._controllerResolve = undefined;
+    }
+  }
+
+  /** Called by CanvasPage when page finishes loading */
+  notifyPageLoaded(): void {
+    this.log.info(TAG, 'Page loaded');
+    if (this._a2uiMode) {
+      this._a2uiReady = true;
+      // Flush any pending A2UI content
+      this.flushPendingA2UI();
+    }
+    if (this._pageLoadResolve) {
+      this._pageLoadResolve();
+      this._pageLoadResolve = undefined;
+    }
   }
 
   /** Called by CanvasPage when it disappears */
@@ -42,6 +64,8 @@ export class CanvasCapability {
     this.controller = undefined;
     this._isPresented = false;
     this._a2uiMode = false;
+    this._a2uiReady = false;
+    this._pendingA2UIContent = [];
     this.log.info(TAG, 'WebviewController unregistered');
   }
 
@@ -237,68 +261,104 @@ export class CanvasCapability {
   // ---- canvas.a2ui.push: Push A2UI JSONL content ----
 
   private async pushA2UI(paramsJson: string | undefined): Promise<string> {
+    // Extract JSONL content from params first
+    let jsonlContent: string = this.extractA2UIContent(paramsJson);
+    if (jsonlContent.length === 0) {
+      return '{"ok":true,"action":"no_content"}';
+    }
+
+    this.log.info(TAG, `pushA2UI: ${jsonlContent.length} chars, ready=${this._a2uiReady}`);
+
     // Auto-present with local A2UI renderer if not already shown
     if (!this._isPresented || !this.controller) {
+      this._a2uiMode = true;
+      this._a2uiReady = false;
+      // Queue content - will be flushed when page loads
+      this._pendingA2UIContent.push(jsonlContent);
+
       let a2uiUrl: string = 'resource://rawfile/a2ui/index.html';
       CanvasCapability._pendingUrl = a2uiUrl;
       this._isPresented = true;
-      this._a2uiMode = true;
 
       try {
         await router.pushUrl({ url: 'pages/CanvasPage' });
       } catch (err) {
         this._isPresented = false;
         this._a2uiMode = false;
+        this._pendingA2UIContent = [];
         throw new Error(`Failed to open CanvasPage: ${(err as Error).message ?? 'unknown'}`);
       }
 
-      await this.waitForController(5000);
-      // Wait a bit more for HTML to load
-      await new Promise<void>((resolve) => { setTimeout(() => { resolve(); }, 500); });
-    } else if (!this._a2uiMode) {
+      // Wait for controller + page load (notifyPageLoaded will flush queue)
+      await this.waitForReady(5000);
+      return '{"ok":true}';
+    }
+
+    if (!this._a2uiMode) {
       // Canvas is showing a regular URL, switch to A2UI
-      this.controller.loadUrl('resource://rawfile/a2ui/index.html');
       this._a2uiMode = true;
-      await new Promise<void>((resolve) => { setTimeout(() => { resolve(); }, 500); });
+      this._a2uiReady = false;
+      this._pendingA2UIContent.push(jsonlContent);
+      this.controller.loadUrl('resource://rawfile/a2ui/index.html');
+      await this.waitForReady(3000);
+      return '{"ok":true}';
     }
 
-    if (!this.controller) {
-      throw new Error('Canvas controller not available');
+    // Already ready - inject directly
+    if (this._a2uiReady && this.controller) {
+      this.injectA2UI(jsonlContent);
+    } else {
+      // Still loading, queue it
+      this._pendingA2UIContent.push(jsonlContent);
     }
-
-    // Extract JSONL content from params
-    let jsonlContent: string = '';
-    if (paramsJson && paramsJson.length > 0) {
-      try {
-        let p = JSON.parse(paramsJson) as Record<string, Object>;
-        // Support multiple param key names
-        if (p['lines'] !== undefined) {
-          jsonlContent = p['lines'] as string;
-        } else if (p['content'] !== undefined) {
-          jsonlContent = p['content'] as string;
-        } else if (p['jsonl'] !== undefined) {
-          jsonlContent = p['jsonl'] as string;
-        } else {
-          // Whole params might be the JSONL content itself
-          jsonlContent = paramsJson;
-        }
-      } catch {
-        // params itself might be raw JSONL
-        jsonlContent = paramsJson;
-      }
-    }
-
-    if (jsonlContent.length === 0) {
-      return '{"ok":true,"action":"no_content"}';
-    }
-
-    this.log.info(TAG, `pushA2UI: ${jsonlContent.length} chars`);
-
-    // Escape for JS string injection
-    let escaped: string = jsonlContent.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
-    await this.controller.runJavaScript(`window.a2ui.push('${escaped}')`);
 
     return '{"ok":true}';
+  }
+
+  private extractA2UIContent(paramsJson: string | undefined): string {
+    if (!paramsJson || paramsJson.length === 0) return '';
+    try {
+      let p = JSON.parse(paramsJson) as Record<string, Object>;
+      if (p['lines'] !== undefined) return p['lines'] as string;
+      if (p['content'] !== undefined) return p['content'] as string;
+      if (p['jsonl'] !== undefined) return p['jsonl'] as string;
+      return paramsJson;
+    } catch {
+      return paramsJson;
+    }
+  }
+
+  private injectA2UI(content: string): void {
+    if (!this.controller) return;
+    let escaped: string = content.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+    this.controller.runJavaScript(`window.a2ui.push('${escaped}')`);
+  }
+
+  private flushPendingA2UI(): void {
+    if (this._pendingA2UIContent.length === 0 || !this.controller) return;
+    this.log.info(TAG, `Flushing ${this._pendingA2UIContent.length} pending A2UI messages`);
+    let all: string = this._pendingA2UIContent.join('\n');
+    this._pendingA2UIContent = [];
+    this.injectA2UI(all);
+  }
+
+  private waitForReady(timeoutMs: number): Promise<void> {
+    if (this._a2uiReady) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      this._pageLoadResolve = resolve;
+      setTimeout(() => {
+        if (this._pageLoadResolve === resolve) {
+          this._pageLoadResolve = undefined;
+          this.log.warn(TAG, 'waitForReady timed out');
+          // Force flush anyway
+          if (this.controller && this._pendingA2UIContent.length > 0) {
+            this._a2uiReady = true;
+            this.flushPendingA2UI();
+          }
+          resolve();
+        }
+      }, timeoutMs);
+    });
   }
 
   // ---- canvas.a2ui.reset: Clear A2UI state ----
@@ -327,18 +387,16 @@ export class CanvasCapability {
   static _pendingUrl: string = 'about:blank';
 
   private waitForController(timeoutMs: number): Promise<void> {
+    if (this.controller) return Promise.resolve();
     return new Promise<void>((resolve) => {
-      let elapsed: number = 0;
-      let interval: number = 100;
-      let check = (): void => {
-        if (this.controller || elapsed >= timeoutMs) {
+      this._controllerResolve = resolve;
+      setTimeout(() => {
+        if (this._controllerResolve === resolve) {
+          this._controllerResolve = undefined;
+          this.log.warn(TAG, 'waitForController timed out');
           resolve();
-          return;
         }
-        elapsed += interval;
-        setTimeout(check, interval);
-      };
-      setTimeout(check, interval);
+      }, timeoutMs);
     });
   }
 }

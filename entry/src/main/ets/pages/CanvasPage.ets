@@ -84,6 +84,7 @@ struct CanvasPage {
         })
         .onPageEnd((event: OnPageEndEvent) => {
           this.loading = false;
+          CanvasCapability.getInstance().notifyPageLoaded();
         })
         .onErrorReceive((event: OnErrorReceiveEvent) => {
           this.log.error(TAG, `Web error: code=${event.error.getErrorCode()} msg=${event.error.getErrorInfo()}`);
