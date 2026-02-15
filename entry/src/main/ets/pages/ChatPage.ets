@@ -677,16 +677,16 @@ export struct ChatPage {
 
         // Mic button: tap = toggle Talk Mode (phone call style), long press = single voice input
         Column() {
-          Image($rawfile(this.isTalkMode ? 'ic_phone_hangup.svg' : 'ic_phone_call.svg'))
-            .width(22)
-            .height(22)
-            .fillColor(Color.White)
-            .objectFit(ImageFit.Contain)
+          Image(this.isTalkMode ? $r('app.media.ic_hangup') : $r('app.media.ic_talk_mode'))
+            .width(44)
+            .height(44)
+            .objectFit(ImageFit.Cover)
+            .borderRadius(22)
         }
         .width(44)
         .height(44)
         .borderRadius(22)
-        .backgroundColor(this.isTalkMode ? '#F5222D' : (this.isRecording ? '#F5222D' : '#52C41A'))
+        .backgroundColor(Color.Transparent)
         .justifyContent(FlexAlign.Center)
         .gesture(
           GestureGroup(GestureMode.Exclusive,
