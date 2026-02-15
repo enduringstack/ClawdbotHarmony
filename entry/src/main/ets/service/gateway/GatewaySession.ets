@@ -440,18 +440,22 @@ export class GatewaySession {
     this.log.info(this.logTag, `Auth: storedToken=${storedToken ? 'yes(' + storedToken.length + ')' : 'no'} inputToken=${trimmedToken.length > 0 ? 'yes(' + trimmedToken.length + ')' : 'no'} using=${authToken.length > 0 ? 'token(' + authToken.length + ')' : 'none'}`);
 
     // Decide auth method BEFORE signing — the signature must match the auth method used.
-    // Strategy for node role:
-    //   - If stored device token exists → use it (device was previously paired successfully)
-    //   - If no stored token + password available → use password (need to go through pairing first time)
+    // Strategy:
+    //   - If stored device token exists: use it (device tokens carry granted scopes)
+    //   - Otherwise: use password auth for initial pairing flow
     //   - forcePassword=true → always use password (e.g. retry after pairing on same WS)
+    // NOTE: Password auth validates connection but does NOT grant scopes.
+    //       Scopes come from device tokens which are issued during pairing.
     let hasPassword: boolean = (this.password !== undefined && this.password !== null && this.password.length > 0);
     let hasStoredToken: boolean = (storedToken !== undefined && storedToken !== null && storedToken.length > 0);
-    let isNodeRole: boolean = (this.options.role === 'node');
     let usePassword: boolean = false;
     if (forcePassword === true && hasPassword) {
       usePassword = true;
-    } else if (isNodeRole && hasPassword && !hasStoredToken) {
-      // Node without stored device token: use password auth for initial pairing flow
+    } else if (hasStoredToken) {
+      // Have a stored device token - use it (carries granted scopes)
+      usePassword = false;
+    } else if (hasPassword) {
+      // No stored device token - use password auth for initial pairing
       usePassword = true;
     }
     this.log.info(this.logTag, `Auth decision: role=${this.options.role} hasPassword=${hasPassword} hasStoredToken=${hasStoredToken} forcePassword=${forcePassword ?? false} usePassword=${usePassword}`);

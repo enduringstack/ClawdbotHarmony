@@ -22,6 +22,7 @@ export struct MessageBubble {
   onCanvasAction: (json: string) => void = () => {};
   onReply: (message: ChatMessage) => void = () => {};
   @State audioPlaying: boolean = false;
+  @State showMenu: boolean = false;
   @State a2uiHeight: number = 280;
   @State canvasHeight: number = 400;
   private avPlayer: media.AVPlayer | undefined = undefined;
@@ -58,34 +59,6 @@ export struct MessageBubble {
       Row() {
         Blank()
         Column() {
-          // Reply preview if replying to another message (compact)
-          if (this.sLen(this.message.replyToId) > 0) {
-            Row() {
-              Column()
-                .width(2)
-                .height(24)
-                .backgroundColor('rgba(255,255,255,0.5)')
-                .borderRadius(1)
-              Column() {
-                Text(this.message.replyToRole === 'user' ? I18n.t('chat.you') : this.assistantName || 'Assistant')
-                  .fontSize(10)
-                  .fontColor('rgba(255,255,255,0.8)')
-                Text(this.message.replyToContent)
-                  .fontSize(10)
-                  .fontColor('rgba(255,255,255,0.5)')
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-              }
-              .alignItems(HorizontalAlign.Start)
-              .layoutWeight(1)
-              .margin({ left: 6 })
-            }
-            .width('100%')
-            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-            .margin({ bottom: 4 })
-            .alignItems(VerticalAlign.Center)
-          }
-
           // User attached images
           if (this.aLen(this.message.userImagePaths) > 1) {
             // Multiple images — 2-column grid using nested Rows
@@ -165,6 +138,7 @@ export struct MessageBubble {
                 ? { left: 12, right: 12, top: 2, bottom: 12 }
                 : 12)
           }
+
         }
         .backgroundColor('#D2691E')
         .borderRadius({
@@ -175,7 +149,7 @@ export struct MessageBubble {
         .gesture(
           GestureGroup(GestureMode.Exclusive,
             LongPressGesture().onAction(() => {
-              this.showMessageMenu();
+              this.showMenu = true;
             }),
             TapGesture().onAction(() => {
               if (this.sLen(this.message.audioPath) > 0) {
@@ -184,30 +158,73 @@ export struct MessageBubble {
             })
           )
         )
+        .bindPopup(this.showMenu, {
+          builder: this.MessageMenuPopup,
+          placement: Placement.Top,
+          popupColor: Color.White,
+          onStateChange: (e) => {
+            if (!e.isVisible) this.showMenu = false;
+          }
+        })
       }
       .width('100%')
+
+      // Reply quote bar (below bubble)
+      if (this.sLen(this.message.replyToId) > 0) {
+        Row() {
+          Blank()
+          Row({ space: 6 }) {
+            Column()
+              .width(2)
+              .height(14)
+              .backgroundColor('#CCCCCC')
+              .borderRadius(1)
+            Text((this.message.replyToRole === 'user' ? I18n.t('chat.you') : this.assistantName || 'Assistant') + ': ' + this.message.replyToContent)
+              .fontSize(11)
+              .fontColor('#999999')
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+          }
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .backgroundColor('#F0F0F0')
+          .borderRadius(8)
+          .constraintSize({ maxWidth: '75%' })
+          .alignItems(VerticalAlign.Center)
+        }
+        .width('100%')
+        .margin({ top: 2 })
+      }
     }
     .width('100%')
     .padding({ left: 16, right: 20, top: 4, bottom: 4 })
   }
 
-  private showMessageMenu(): void {
-    // 使用 showDialog 代替 showActionMenu，更可控
-    promptAction.showDialog({
-      title: '',
-      message: '',
-      buttons: [
-        { text: I18n.t('chat.copy'), color: '#666666' },
-        { text: I18n.t('chat.reply'), color: '#007AFF' }
-      ]
-    }).then((result) => {
-      if (result.index === 0) {
-        this.copyToClipboard(this.message.content);
-        promptAction.showToast({ message: '已复制' });
-      } else if (result.index === 1) {
-        this.onReply(this.message);
-      }
-    }).catch(() => { /* cancelled */ });
+  @Builder
+  MessageMenuPopup() {
+    Row({ space: 0 }) {
+      Text(I18n.t('chat.copy'))
+        .fontSize(14)
+        .fontColor('#333333')
+        .padding({ left: 20, right: 16, top: 10, bottom: 10 })
+        .onClick(() => {
+          this.showMenu = false;
+          this.copyToClipboard(this.message.content);
+          promptAction.showToast({ message: '已复制' });
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color('#E0E0E0')
+      Text(I18n.t('chat.reply'))
+        .fontSize(14)
+        .fontColor('#007AFF')
+        .padding({ left: 16, right: 20, top: 10, bottom: 10 })
+        .onClick(() => {
+          this.showMenu = false;
+          this.onReply(this.message);
+        })
+    }
   }
 
   @Builder
@@ -249,33 +266,6 @@ export struct MessageBubble {
         .margin({ right: 8, top: 2 })
 
         Column() {
-          // Reply preview if replying to another message (compact)
-          if (this.sLen(this.message.replyToId) > 0) {
-            Row() {
-              Column()
-                .width(2)
-                .height(24)
-                .backgroundColor('#D2691E')
-                .borderRadius(1)
-              Column() {
-                Text(this.message.replyToRole === 'user' ? I18n.t('chat.you') : this.assistantName || 'Assistant')
-                  .fontSize(10)
-                  .fontColor('#D2691E')
-                Text(this.message.replyToContent)
-                  .fontSize(10)
-                  .fontColor('#999999')
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-              }
-              .alignItems(HorizontalAlign.Start)
-              .layoutWeight(1)
-              .margin({ left: 6 })
-            }
-            .width('100%')
-            .padding({ left: 2, right: 2, bottom: 4 })
-            .alignItems(VerticalAlign.Center)
-          }
-
           MarkdownText({
             content: this.sLen(this.message.imagePath) > 0 ? this.stripImagePaths(this.message.content) : this.message.content,
             textColor: '#1A1A1A',
@@ -365,13 +355,48 @@ export struct MessageBubble {
         })
         .layoutWeight(1)
         .gesture(LongPressGesture().onAction(() => {
-          this.showMessageMenu();
+          this.showMenu = true;
         }))
+        .bindPopup(this.showMenu, {
+          builder: this.MessageMenuPopup,
+          placement: Placement.Top,
+          popupColor: Color.White,
+          onStateChange: (e) => {
+            if (!e.isVisible) this.showMenu = false;
+          }
+        })
 
         Blank()
       }
       .width('100%')
       .alignItems(VerticalAlign.Top)
+
+      // Reply quote bar (below bubble)
+      if (this.sLen(this.message.replyToId) > 0) {
+        Row() {
+          Blank().width(38)
+          Row({ space: 6 }) {
+            Column()
+              .width(2)
+              .height(14)
+              .backgroundColor('#CCCCCC')
+              .borderRadius(1)
+            Text((this.message.replyToRole === 'user' ? I18n.t('chat.you') : this.assistantName || 'Assistant') + ': ' + this.message.replyToContent)
+              .fontSize(11)
+              .fontColor('#999999')
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+          }
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .backgroundColor('#E8E8E8')
+          .borderRadius(8)
+          .alignItems(VerticalAlign.Center)
+          Blank()
+        }
+        .width('100%')
+        .margin({ top: 2 })
+      }
     }
     .width('100%')
     .padding({ left: 16, right: 20, top: 4, bottom: 4 })
