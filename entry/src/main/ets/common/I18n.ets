@@ -38,6 +38,8 @@ function buildZh(): Map<string, string> {
   m.set('chat.approval.approved', '已批准');
   m.set('chat.approval.denied', '已拒绝');
   m.set('chat.approval.expired', '已过期');
+  m.set('chat.sharedContent', '收到分享内容');
+  m.set('chat.sharedImage', '收到分享图片');
   m.set('chat.playingAudio', '正在播放音频...');
   m.set('chat.audioPlayed', '音频已播放');
   m.set('chat.audioFailed', '音频播放失败');
@@ -313,6 +315,8 @@ function buildEn(): Map<string, string> {
   m.set('chat.approval.approved', 'Approved');
   m.set('chat.approval.denied', 'Denied');
   m.set('chat.approval.expired', 'Expired');
+  m.set('chat.sharedContent', 'Shared content received');
+  m.set('chat.sharedImage', 'Shared image received');
   m.set('chat.playingAudio', 'Playing audio...');
   m.set('chat.audioPlayed', 'Audio played');
   m.set('chat.audioFailed', 'Audio playback failed');

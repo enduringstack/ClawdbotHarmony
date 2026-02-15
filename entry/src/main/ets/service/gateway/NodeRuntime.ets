@@ -817,16 +817,10 @@ export class NodeRuntime {
           if (typeof dataObj === 'string') {
             fullText = String(dataObj);
           } else if (dataObj['delta'] !== undefined && String(dataObj['delta']).length > 0) {
-            // Prefer incremental delta text — ChatPage accumulates these
-            let deltaText = String(dataObj['delta']);
-            let accText = dataObj['text'] !== undefined ? String(dataObj['text']) : '';
-            // If data.text (accumulated) is longer than data.delta (chunk), use the accumulated text.
-            // This ensures final events carry the complete response, not just the last chunk.
-            if (accText.length > deltaText.length) {
-              fullText = accText;
-            } else {
-              fullText = deltaText;
-            }
+            // Always use incremental delta — ChatPage accumulates on its side.
+            // NEVER use data.text (server-accumulated) here, because ChatPage does
+            // gwAccumulatedText += text, which would cause double content.
+            fullText = String(dataObj['delta']);
           } else if (dataObj['text'] !== undefined) {
             // Fallback to accumulated text (used for final events that have no delta)
             fullText = String(dataObj['text']);

@@ -50,6 +50,8 @@ export struct ChatPage {
   @State pendingImagePath: string = '';   // user-selected image ready to send
   @State pendingFileName: string = '';    // user-selected file name
   private pendingFileContent: string = '';  // file text content to attach
+  @StorageLink('share_timestamp') @Watch('onShareReceived') shareTimestamp: number = 0;
+  private lastConsumedShareTs: number = 0;
   private gwRecordingInterval: number = -1;
   private gwRecordingDuration: number = 0;
   private dotTimer: number = -1;
@@ -137,6 +139,11 @@ export struct ChatPage {
     this.lang = I18n.lang;
     this.langListener = () => { this.lang = I18n.lang; this.loadAssistantSettings(); };
     I18n.addListener(this.langListener);
+    // Check for pending share data (cold-start via share intent)
+    if (this.shareTimestamp > 0) {
+      // Delay slightly to ensure UI is ready
+      setTimeout(() => { this.onShareReceived(); }, 300);
+    }
     this.startCronTimer();
     this.initFeishuBot();
   }
@@ -1801,6 +1808,117 @@ Keep it short but preserve all important information. Use the same language as t
       this.messages.push(errMsg);
       this.scrollToEnd();
     });
+  }
+
+  /** Called reactively when share_timestamp changes in AppStorage */
+  private onShareReceived(): void {
+    if (this.shareTimestamp <= 0 || this.shareTimestamp === this.lastConsumedShareTs) {
+      return;
+    }
+    this.lastConsumedShareTs = this.shareTimestamp;
+    this.consumeShareData();
+  }
+
+  private consumeShareData(): void {
+    let shareText = AppStorage.get<string>('share_text') ?? '';
+    let shareUri = AppStorage.get<string>('share_uri') ?? '';
+    let shareType = AppStorage.get<string>('share_type') ?? '';
+
+    this.log.info('ChatPage', `consumeShareData: type=${shareType} textLen=${shareText.length} uri=${shareUri}`);
+
+    // Clear AppStorage
+    AppStorage.setOrCreate<number>('share_timestamp', 0);
+    AppStorage.setOrCreate<string>('share_text', '');
+    AppStorage.setOrCreate<string>('share_uri', '');
+    AppStorage.setOrCreate<string>('share_type', '');
+
+    if (shareType === 'text' && shareText.length > 0) {
+      // Text share — fill input box
+      this.inputText = shareText;
+      this.scrollToEnd();
+    } else if (shareType === 'image' && shareUri.length > 0) {
+      // Image share — compress and set as pending image
+      this.handleSharedImage(shareUri);
+    } else if (shareType === 'file' && shareUri.length > 0) {
+      // File share — try to read content
+      this.handleSharedFile(shareUri);
+    } else if (shareText.length > 0) {
+      // Fallback: any text available
+      this.inputText = shareText;
+      this.scrollToEnd();
+    }
+  }
+
+  private async handleSharedImage(uri: string): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let imgDir = ctx.filesDir + '/user_images';
+      try { fileIo.mkdirSync(imgDir); } catch { /* exists */ }
+      let destPath = `${imgDir}/share_${Date.now()}.jpg`;
+
+      // Compress shared image (reuse pickPhoto logic)
+      let srcFile = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      let imgSource = image.createImageSource(srcFile.fd);
+      let info = await imgSource.getImageInfo();
+      let origW = info.size.width;
+      let origH = info.size.height;
+      let scale = 1.0;
+      let maxDim = 1280;
+      if (origW > maxDim || origH > maxDim) {
+        scale = maxDim / Math.max(origW, origH);
+      }
+      let targetW = Math.round(origW * scale);
+      let targetH = Math.round(origH * scale);
+      let decodingOpts: image.DecodingOptions = { desiredSize: { width: targetW, height: targetH } };
+      let pixelMap = await imgSource.createPixelMap(decodingOpts);
+      let packer = image.createImagePacker();
+      let packOpts: image.PackingOption = { format: 'image/jpeg', quality: 80 };
+      let packed: ArrayBuffer = await packer.packing(pixelMap, packOpts);
+      await pixelMap.release();
+      imgSource.release();
+      packer.release();
+      fileIo.closeSync(srcFile);
+
+      let destFile = fileIo.openSync(destPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(destFile.fd, packed);
+      fileIo.closeSync(destFile);
+
+      this.log.info('ChatPage', `Shared image compressed: ${origW}x${origH} -> ${targetW}x${targetH}, ${packed.byteLength} bytes`);
+      this.pendingImagePath = destPath;
+    } catch (e) {
+      this.log.error('ChatPage', `handleSharedImage error: ${(e as Error).message ?? ''}`);
+    }
+  }
+
+  private async handleSharedFile(uri: string): Promise<void> {
+    try {
+      let srcFile = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      let stat = fileIo.statSync(srcFile.fd);
+      let size = stat.size;
+      if (size > 512 * 1024) {
+        // Too large — show truncated
+        this.log.warn('ChatPage', `Shared file too large: ${size} bytes, truncating`);
+        size = 512 * 1024;
+      }
+      let buf = new ArrayBuffer(size);
+      fileIo.readSync(srcFile.fd, buf);
+      fileIo.closeSync(srcFile);
+
+      let decoder = util.TextDecoder.create('utf-8');
+      let text = decoder.decodeToString(new Uint8Array(buf));
+
+      // Extract filename from URI
+      let parts = uri.split('/');
+      let fileName = parts[parts.length - 1] || 'shared_file.txt';
+
+      this.pendingFileName = fileName;
+      this.pendingFileContent = text;
+      this.log.info('ChatPage', `Shared file loaded: ${fileName}, ${text.length} chars`);
+    } catch (e) {
+      this.log.error('ChatPage', `handleSharedFile error: ${(e as Error).message ?? ''}`);
+      // Fallback: put URI in input
+      this.inputText = uri;
+    }
   }
 
   private showAttachmentMenu(): void {
