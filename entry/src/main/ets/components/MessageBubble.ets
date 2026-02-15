@@ -31,11 +31,11 @@ export struct MessageBubble {
       // Hide tool call JSON bubbles — they clutter the chat
     } else if (this.message.role === 'tool') {
       // Only show tool results that have media content (photo/audio/video)
-      if (this.message.imagePath.length > 0 || this.message.audioPath.length > 0 || this.message.videoPath.length > 0) {
+      if (this.sLen(this.message.imagePath) > 0 || this.sLen(this.message.audioPath) > 0 || this.sLen(this.message.videoPath) > 0) {
         this.ToolResultBubble()
       }
       // else: hide plain JSON tool results
-    } else if (this.message.content.length > 0 || this.message.a2uiContent.length > 0) {
+    } else if (this.sLen(this.message.content) > 0 || this.sLen(this.message.a2uiContent) > 0) {
       this.AssistantBubble()
     }
   }
@@ -54,7 +54,7 @@ export struct MessageBubble {
         Blank()
         Column() {
           // User attached images
-          if (this.message.userImagePaths !== undefined && this.message.userImagePaths !== null && this.message.userImagePaths.length > 1) {
+          if (this.aLen(this.message.userImagePaths) > 1) {
             // Multiple images — 2-column grid using nested Rows
             Column({ space: 4 }) {
               ForEach(this.getImageRows(), (row: string[]) => {
@@ -72,7 +72,7 @@ export struct MessageBubble {
               }, (row: string[], idx?: number) => `row_${idx}`)
             }
             .padding(6)
-          } else if ((this.message.userImagePaths !== undefined && this.message.userImagePaths !== null && this.message.userImagePaths.length === 1) || this.message.userImagePath.length > 0) {
+          } else if (this.aLen(this.message.userImagePaths) === 1 || this.sLen(this.message.userImagePath) > 0) {
             // Single image
             Image(this.getSingleImageSrc())
               .constraintSize({ maxHeight: 240 })
@@ -80,14 +80,14 @@ export struct MessageBubble {
               .borderRadius(8)
               .margin({ top: 8, bottom: 4 })
               .onClick(() => {
-                let paths = this.message.userImagePaths;
-                let p = (paths !== undefined && paths !== null && paths.length > 0) ? paths[0] : this.message.userImagePath;
+                let paths = this.safePaths();
+                let p = paths.length > 0 ? paths[0] : this.message.userImagePath;
                 this.onImageClick(p);
               })
           }
 
           // File attachment indicator
-          if (this.message.attachmentName.length > 0) {
+          if (this.sLen(this.message.attachmentName) > 0) {
             Row({ space: 6 }) {
               Text('\uD83D\uDCC4').fontSize(14)
               Text(this.message.attachmentName)
@@ -100,7 +100,7 @@ export struct MessageBubble {
           }
 
           // Voice message: audio indicator + label (tap entire bubble to play)
-          if (this.message.audioPath.length > 0) {
+          if (this.sLen(this.message.audioPath) > 0) {
             Row({ space: 8 }) {
               // Audio indicator bars
               Row({ space: 3 }) {
@@ -123,12 +123,12 @@ export struct MessageBubble {
           }
 
           // Text content (or ASR transcription below voice indicator)
-          if (this.message.content.length > 0) {
+          if (this.sLen(this.message.content) > 0) {
             Text(this.message.content)
               .fontSize(15)
               .fontColor(Color.White)
               .lineHeight(22)
-              .padding(this.message.audioPath.length > 0
+              .padding(this.sLen(this.message.audioPath) > 0
                 ? { left: 12, right: 12, top: 2, bottom: 12 }
                 : 12)
           }
@@ -145,7 +145,7 @@ export struct MessageBubble {
               this.copyToClipboard(this.message.content);
             }),
             TapGesture().onAction(() => {
-              if (this.message.audioPath.length > 0) {
+              if (this.sLen(this.message.audioPath) > 0) {
                 this.toggleAudioPlayback();
               }
             })
@@ -160,7 +160,7 @@ export struct MessageBubble {
 
   @Builder
   AssistantAvatarIcon(size: number) {
-    if (this.assistantAvatar.length > 0) {
+    if (this.sLen(this.assistantAvatar) > 0) {
       Image(this.assistantAvatar.startsWith('http') || this.assistantAvatar.startsWith('data:')
         ? this.assistantAvatar : 'file://' + this.assistantAvatar)
         .width(size)
@@ -198,12 +198,12 @@ export struct MessageBubble {
 
         Column() {
           MarkdownText({
-            content: this.message.imagePath.length > 0 ? this.stripImagePaths(this.message.content) : this.message.content,
+            content: this.sLen(this.message.imagePath) > 0 ? this.stripImagePaths(this.message.content) : this.message.content,
             textColor: '#1A1A1A',
             baseFontSize: 15
           })
 
-          if (this.message.imagePath.length > 0) {
+          if (this.sLen(this.message.imagePath) > 0) {
             Image(this.message.imagePath.startsWith('file://') ? this.message.imagePath : 'file://' + this.message.imagePath)
               .width('100%')
               .constraintSize({ maxHeight: 280 })
@@ -216,7 +216,7 @@ export struct MessageBubble {
           }
 
           // Video display
-          if (this.message.videoPath.length > 0) {
+          if (this.sLen(this.message.videoPath) > 0) {
             Video({ src: this.message.videoPath })
               .width('100%')
               .constraintSize({ maxHeight: 280 })
@@ -228,12 +228,12 @@ export struct MessageBubble {
           }
 
           // Inline A2UI rendering
-          if (this.message.a2uiContent.length > 0) {
+          if (this.sLen(this.message.a2uiContent) > 0) {
             this.A2UIView()
           }
 
           // Inline buttons
-          if (this.message.buttons.length > 0) {
+          if (this.aLen(this.message.buttons) > 0) {
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(this.message.buttons, (btn: InlineButton) => {
                 Text(btn.label)
@@ -307,7 +307,7 @@ export struct MessageBubble {
             .fontColor('#795548')
         }
 
-        if (this.message.toolInput.length > 0) {
+        if (this.sLen(this.message.toolInput) > 0) {
           Text(this.formatJson(this.message.toolInput))
             .fontSize(11)
             .fontColor('#EEFFFF')
@@ -398,7 +398,7 @@ export struct MessageBubble {
             .fontColor('#666666')
         }
 
-        if (this.message.videoPath.length > 0) {
+        if (this.sLen(this.message.videoPath) > 0) {
           // Display recorded video
           Video({ src: this.message.videoPath })
             .width('100%')
@@ -408,7 +408,7 @@ export struct MessageBubble {
             .margin({ top: 6 })
             .autoPlay(false)
             .controls(true)
-        } else if (this.message.imagePath.length > 0) {
+        } else if (this.sLen(this.message.imagePath) > 0) {
           // Display captured photo
           Image(this.message.imagePath.startsWith('file://') ? this.message.imagePath : 'file://' + this.message.imagePath)
             .width('100%')
@@ -419,7 +419,7 @@ export struct MessageBubble {
             .onClick(() => {
               this.onImageClick(this.message.imagePath);
             })
-        } else if (this.message.audioPath.length > 0) {
+        } else if (this.sLen(this.message.audioPath) > 0) {
           // Audio playback control
           Row({ space: 10 }) {
             Text(this.audioPlaying ? '\u23F9' : '\u25B6\uFE0F')
@@ -535,7 +535,7 @@ export struct MessageBubble {
   }
 
   private getAssistantInitial(): string {
-    if (this.assistantName.length > 0) {
+    if (this.sLen(this.assistantName) > 0) {
       return this.assistantName.charAt(0).toUpperCase();
     }
     return 'C';
@@ -562,12 +562,28 @@ export struct MessageBubble {
     return cleaned.replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  /** Safe string length — handles undefined/null from deserialization */
+  private sLen(s: string): number {
+    if (s === undefined || s === null) return 0;
+    return s.length;
+  }
+
+  /** Safe array length — handles undefined/null from deserialization */
+  private aLen(a: Object[]): number {
+    if (a === undefined || a === null) return 0;
+    return a.length;
+  }
+
+  /** Safe userImagePaths accessor — always returns string[] */
+  private safePaths(): string[] {
+    let p = this.message.userImagePaths;
+    if (p === undefined || p === null) return [];
+    return p;
+  }
+
   /** Split image paths into rows of 2 for grid display */
   private getImageRows(): string[][] {
-    let paths = this.message.userImagePaths;
-    if (paths === undefined || paths === null) {
-      return [];
-    }
+    let paths = this.safePaths();
     let rows: string[][] = [];
     for (let i = 0; i < paths.length; i += 2) {
       if (i + 1 < paths.length) {
@@ -581,8 +597,9 @@ export struct MessageBubble {
 
   /** Get image source string for single image display */
   private getSingleImageSrc(): string {
-    let paths = this.message.userImagePaths;
-    let p = (paths !== undefined && paths !== null && paths.length > 0) ? paths[0] : this.message.userImagePath;
+    let paths = this.safePaths();
+    let p = paths.length > 0 ? paths[0] : (this.message.userImagePath ?? '');
+    if (p.length === 0) return '';
     return p.startsWith('file://') ? p : 'file://' + p;
   }
 
