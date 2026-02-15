@@ -288,6 +288,23 @@ function buildZh(): Map<string, string> {
   m.set('state.reconnecting', '重连中...');
   m.set('state.error', '错误');
 
+  // Sessions
+  m.set('session.title', '对话');
+  m.set('session.new', '新对话');
+  m.set('session.default', '默认对话');
+  m.set('session.delete', '删除');
+  m.set('session.deleteConfirm', '确定删除此对话？');
+  m.set('session.deleted', '已删除');
+  m.set('session.rename', '重命名');
+  m.set('session.renameTitle', '重命名对话');
+  m.set('session.renamePlaceholder', '输入新名称...');
+  m.set('session.pin', '置顶');
+  m.set('session.unpin', '取消置顶');
+  m.set('session.clear', '清空消息');
+  m.set('session.clearConfirm', '确定清空此对话的所有消息？');
+  m.set('session.cleared', '已清空');
+  m.set('session.cannotDeleteLast', '无法删除最后一个对话');
+
   return m;
 }
 
@@ -572,6 +589,23 @@ function buildEn(): Map<string, string> {
   m.set('state.connected', 'Connected');
   m.set('state.reconnecting', 'Reconnecting…');
   m.set('state.error', 'Error');
+
+  // Sessions
+  m.set('session.title', 'Chats');
+  m.set('session.new', 'New Chat');
+  m.set('session.default', 'Default Chat');
+  m.set('session.delete', 'Delete');
+  m.set('session.deleteConfirm', 'Delete this conversation?');
+  m.set('session.deleted', 'Deleted');
+  m.set('session.rename', 'Rename');
+  m.set('session.renameTitle', 'Rename Conversation');
+  m.set('session.renamePlaceholder', 'Enter new name...');
+  m.set('session.pin', 'Pin');
+  m.set('session.unpin', 'Unpin');
+  m.set('session.clear', 'Clear Messages');
+  m.set('session.clearConfirm', 'Clear all messages in this conversation?');
+  m.set('session.cleared', 'Cleared');
+  m.set('session.cannotDeleteLast', 'Cannot delete the last conversation');
 
   return m;
 }

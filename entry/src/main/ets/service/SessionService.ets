@@ -1,0 +1,311 @@
+// Session management service for multi-conversation support
+import { preferences } from '@kit.ArkData';
+import { ChatSession, ChatSessionData, ChatMessage } from '../model/Models';
+import { LogService } from '../common/LogService';
+
+const PREFS_NAME = 'chat_sessions';
+const SESSIONS_KEY = 'session_list';
+const MESSAGES_PREFIX = 'session_messages_';
+const CURRENT_SESSION_KEY = 'current_session_id';
+const DEFAULT_SESSION_ID = 'default';
+
+export class SessionService {
+  private static instance: SessionService;
+  private prefs: preferences.Preferences | undefined;
+  private log: LogService = LogService.getInstance();
+  private sessions: ChatSession[] = [];
+  private currentSessionId: string = DEFAULT_SESSION_ID;
+  private initialized: boolean = false;
+
+  private constructor() {}
+
+  static getInstance(): SessionService {
+    if (!SessionService.instance) {
+      SessionService.instance = new SessionService();
+    }
+    return SessionService.instance;
+  }
+
+  async initialize(context: Context): Promise<void> {
+    if (this.initialized) return;
+    
+    try {
+      this.prefs = await preferences.getPreferences(context, PREFS_NAME);
+      await this.loadSessions();
+      await this.loadCurrentSessionId();
+      
+      // Ensure at least one session exists
+      if (this.sessions.length === 0) {
+        const defaultSession = new ChatSession('默认对话');
+        defaultSession.id = DEFAULT_SESSION_ID;
+        this.sessions.push(defaultSession);
+        await this.saveSessions();
+      }
+      
+      this.initialized = true;
+      this.log.info('SessionService', `Initialized with ${this.sessions.length} sessions`);
+    } catch (err) {
+      this.log.error('SessionService', `Initialize failed: ${err}`);
+    }
+  }
+
+  private async loadSessions(): Promise<void> {
+    if (!this.prefs) return;
+    
+    try {
+      const json = await this.prefs.get(SESSIONS_KEY, '[]') as string;
+      const dataList: ChatSessionData[] = JSON.parse(json);
+      
+      this.sessions = dataList.map(data => {
+        const session = new ChatSession(data.title);
+        session.id = data.id;
+        session.createdAt = data.createdAt;
+        session.updatedAt = data.updatedAt;
+        session.messageCount = data.messageCount;
+        session.lastMessage = data.lastMessage;
+        session.isPinned = data.isPinned || false;
+        return session;
+      });
+    } catch (err) {
+      this.log.error('SessionService', `Load sessions failed: ${err}`);
+      this.sessions = [];
+    }
+  }
+
+  private async saveSessions(): Promise<void> {
+    if (!this.prefs) return;
+    
+    try {
+      const dataList: ChatSessionData[] = this.sessions.map(s => ({
+        id: s.id,
+        title: s.title,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+        messageCount: s.messageCount,
+        lastMessage: s.lastMessage,
+        isPinned: s.isPinned
+      }));
+      
+      await this.prefs.put(SESSIONS_KEY, JSON.stringify(dataList));
+      await this.prefs.flush();
+    } catch (err) {
+      this.log.error('SessionService', `Save sessions failed: ${err}`);
+    }
+  }
+
+  private async loadCurrentSessionId(): Promise<void> {
+    if (!this.prefs) return;
+    
+    try {
+      this.currentSessionId = await this.prefs.get(CURRENT_SESSION_KEY, DEFAULT_SESSION_ID) as string;
+    } catch (err) {
+      this.currentSessionId = DEFAULT_SESSION_ID;
+    }
+  }
+
+  private async saveCurrentSessionId(): Promise<void> {
+    if (!this.prefs) return;
+    
+    try {
+      await this.prefs.put(CURRENT_SESSION_KEY, this.currentSessionId);
+      await this.prefs.flush();
+    } catch (err) {
+      this.log.error('SessionService', `Save current session ID failed: ${err}`);
+    }
+  }
+
+  // Get all sessions sorted by pinned first, then by updatedAt
+  getSessions(): ChatSession[] {
+    return [...this.sessions].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return b.updatedAt - a.updatedAt;
+    });
+  }
+
+  getCurrentSessionId(): string {
+    return this.currentSessionId;
+  }
+
+  getCurrentSession(): ChatSession | undefined {
+    return this.sessions.find(s => s.id === this.currentSessionId);
+  }
+
+  async setCurrentSession(sessionId: string): Promise<void> {
+    if (this.sessions.find(s => s.id === sessionId)) {
+      this.currentSessionId = sessionId;
+      await this.saveCurrentSessionId();
+      this.log.info('SessionService', `Switched to session: ${sessionId}`);
+    }
+  }
+
+  async createSession(title: string = ''): Promise<ChatSession> {
+    const session = new ChatSession(title || '新对话');
+    this.sessions.unshift(session);
+    await this.saveSessions();
+    this.log.info('SessionService', `Created session: ${session.id} - ${session.title}`);
+    return session;
+  }
+
+  async deleteSession(sessionId: string): Promise<boolean> {
+    // Don't delete the last session
+    if (this.sessions.length <= 1) {
+      this.log.warn('SessionService', 'Cannot delete the last session');
+      return false;
+    }
+    
+    const index = this.sessions.findIndex(s => s.id === sessionId);
+    if (index === -1) return false;
+    
+    this.sessions.splice(index, 1);
+    
+    // Clear messages for this session
+    if (this.prefs) {
+      await this.prefs.delete(MESSAGES_PREFIX + sessionId);
+    }
+    
+    // If deleted current session, switch to first available
+    if (this.currentSessionId === sessionId) {
+      this.currentSessionId = this.sessions[0].id;
+      await this.saveCurrentSessionId();
+    }
+    
+    await this.saveSessions();
+    this.log.info('SessionService', `Deleted session: ${sessionId}`);
+    return true;
+  }
+
+  async renameSession(sessionId: string, newTitle: string): Promise<boolean> {
+    const session = this.sessions.find(s => s.id === sessionId);
+    if (!session) return false;
+    
+    session.title = newTitle;
+    session.updatedAt = Date.now();
+    await this.saveSessions();
+    this.log.info('SessionService', `Renamed session ${sessionId} to: ${newTitle}`);
+    return true;
+  }
+
+  async togglePinSession(sessionId: string): Promise<boolean> {
+    const session = this.sessions.find(s => s.id === sessionId);
+    if (!session) return false;
+    
+    session.isPinned = !session.isPinned;
+    await this.saveSessions();
+    return true;
+  }
+
+  // Load messages for a specific session
+  async loadMessages(sessionId: string): Promise<ChatMessage[]> {
+    if (!this.prefs) return [];
+    
+    try {
+      const json = await this.prefs.get(MESSAGES_PREFIX + sessionId, '[]') as string;
+      const dataList = JSON.parse(json) as object[];
+      
+      return dataList.map(data => {
+        const d = data as Record<string, Object>;
+        const msg = new ChatMessage(d['role'] as string || 'user', d['content'] as string || '');
+        msg.id = d['id'] as string || msg.id;
+        msg.timestamp = d['timestamp'] as number || Date.now();
+        msg.isToolCall = d['isToolCall'] as boolean || false;
+        msg.toolName = d['toolName'] as string || '';
+        msg.toolInput = d['toolInput'] as string || '';
+        msg.toolOutput = d['toolOutput'] as string || '';
+        msg.imagePath = d['imagePath'] as string || '';
+        msg.audioPath = d['audioPath'] as string || '';
+        msg.userImagePath = d['userImagePath'] as string || '';
+        msg.userImagePaths = d['userImagePaths'] as string[] || [];
+        msg.feedback = d['feedback'] as string || '';
+        msg.videoPath = d['videoPath'] as string || '';
+        msg.attachmentName = d['attachmentName'] as string || '';
+        msg.replyToId = d['replyToId'] as string || '';
+        msg.replyToContent = d['replyToContent'] as string || '';
+        msg.replyToRole = d['replyToRole'] as string || '';
+        return msg;
+      });
+    } catch (err) {
+      this.log.error('SessionService', `Load messages failed for ${sessionId}: ${err}`);
+      return [];
+    }
+  }
+
+  // Save messages for a specific session
+  async saveMessages(sessionId: string, messages: ChatMessage[]): Promise<void> {
+    if (!this.prefs) return;
+    
+    try {
+      const dataList = messages.map(msg => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp,
+        isToolCall: msg.isToolCall,
+        toolName: msg.toolName,
+        toolInput: msg.toolInput,
+        toolOutput: msg.toolOutput,
+        imagePath: msg.imagePath,
+        audioPath: msg.audioPath,
+        userImagePath: msg.userImagePath,
+        userImagePaths: msg.userImagePaths,
+        feedback: msg.feedback,
+        videoPath: msg.videoPath,
+        attachmentName: msg.attachmentName,
+        replyToId: msg.replyToId,
+        replyToContent: msg.replyToContent,
+        replyToRole: msg.replyToRole
+      }));
+      
+      await this.prefs.put(MESSAGES_PREFIX + sessionId, JSON.stringify(dataList));
+      await this.prefs.flush();
+      
+      // Update session metadata
+      const session = this.sessions.find(s => s.id === sessionId);
+      if (session && messages.length > 0) {
+        session.messageCount = messages.length;
+        session.updatedAt = Date.now();
+        const lastMsg = messages[messages.length - 1];
+        session.lastMessage = lastMsg.content.substring(0, 50);
+        await this.saveSessions();
+      }
+    } catch (err) {
+      this.log.error('SessionService', `Save messages failed for ${sessionId}: ${err}`);
+    }
+  }
+
+  // Clear messages for a specific session
+  async clearMessages(sessionId: string): Promise<void> {
+    if (!this.prefs) return;
+    
+    try {
+      await this.prefs.delete(MESSAGES_PREFIX + sessionId);
+      await this.prefs.flush();
+      
+      const session = this.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.messageCount = 0;
+        session.lastMessage = '';
+        session.updatedAt = Date.now();
+        await this.saveSessions();
+      }
+    } catch (err) {
+      this.log.error('SessionService', `Clear messages failed for ${sessionId}: ${err}`);
+    }
+  }
+
+  // Auto-generate title from first user message
+  async autoGenerateTitle(sessionId: string, firstMessage: string): Promise<void> {
+    const session = this.sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    
+    // Only auto-generate if title is default
+    if (session.title === '新对话' || session.title === '默认对话') {
+      // Take first 20 chars of message as title
+      const title = firstMessage.substring(0, 20).replace(/\n/g, ' ').trim();
+      if (title) {
+        session.title = title + (firstMessage.length > 20 ? '...' : '');
+        await this.saveSessions();
+      }
+    }
+  }
+}

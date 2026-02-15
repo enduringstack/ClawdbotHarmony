@@ -1,7 +1,9 @@
 import { preferences } from '@kit.ArkData';
 import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { MessageBubble } from '../components/MessageBubble';
-import { ChatMessage, InlineButton, SettingsData, MemoryItem, ConversationFile, CronTask } from '../model/Models';
+import { ChatMessage, InlineButton, SettingsData, MemoryItem, ConversationFile, CronTask, ChatSession } from '../model/Models';
+import { SessionService } from '../service/SessionService';
+import { SessionDrawer } from '../components/SessionDrawer';
 import { AIService, AIResult } from '../service/AIService';
 import { MemoryService } from '../service/MemoryService';
 import { getEnabledToolSchemas, getSkillSystemPrompt, getDefaultSkills } from '../service/SkillData';
@@ -56,7 +58,11 @@ export struct ChatPage {
   @State pendingImagePaths: string[] = [];  // multiple images ready to send
   @State pendingFileName: string = '';    // user-selected file name
   @State replyingToMessage: ChatMessage | null = null;  // message being replied to
+  @State showSessionDrawer: boolean = false;  // session list drawer visibility
+  @State sessions: ChatSession[] = [];  // all sessions
+  @State currentSessionId: string = 'default';  // current active session ID
   private pendingFileContent: string = '';  // file text content to attach
+  private sessionSvc: SessionService = SessionService.getInstance();
   @StorageLink('share_timestamp') @Watch('onShareReceived') shareTimestamp: number = 0;
   private lastConsumedShareTs: number = 0;
   private gwRecordingInterval: number = -1;
@@ -106,7 +112,7 @@ export struct ChatPage {
   aboutToAppear(): void {
     // Mark chat page as visible for unread message notifications
     NodeRuntime.getInstance().setChatPageVisible(true);
-    this.loadHistory();
+    this.initializeSessions();
     this.loadTtsAutoReadSetting();
     this.loadAssistantSettings();
     this.gwConnected = NodeRuntime.getInstance().isConnected;
@@ -305,6 +311,16 @@ export struct ChatPage {
               .onClick(() => { this.deleteHistory(); })
           }
         } else {
+          // Session menu button (hamburger)
+          Text('☰')
+            .fontSize(22)
+            .fontColor('#333333')
+            .padding(6)
+            .margin({ right: 6 })
+            .onClick(() => {
+              this.showSessionDrawer = true;
+            })
+          
           // Normal chat header — avatar
           if (this.gwConnected && this.gwAgentAvatar.length > 0) {
             Image(this.gwAgentAvatar)
@@ -786,6 +802,59 @@ export struct ChatPage {
         this.previewImagePath = '';
       })
     }
+
+    // Session drawer overlay
+    if (this.showSessionDrawer) {
+      Row() {
+        // Semi-transparent backdrop
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('#00000066')
+          .onClick(() => {
+            this.showSessionDrawer = false;
+          })
+      }
+      .width('100%')
+      .height('100%')
+      .position({ x: 0, y: 0 })
+
+      // Session drawer panel
+      Column() {
+        SessionDrawer({
+          sessions: $sessions,
+          currentSessionId: $currentSessionId,
+          lang: this.lang,
+          onSessionSelect: (sessionId: string) => {
+            this.switchToSession(sessionId);
+          },
+          onSessionCreate: () => {
+            this.createNewSession();
+          },
+          onSessionDelete: (sessionId: string) => {
+            this.deleteSession(sessionId);
+          },
+          onSessionRename: (sessionId: string, newName: string) => {
+            this.renameSession(sessionId, newName);
+          },
+          onSessionPin: (sessionId: string) => {
+            this.togglePinSession(sessionId);
+          },
+          onSessionClear: (sessionId: string) => {
+            this.clearSessionMessages(sessionId);
+          },
+          onClose: () => {
+            this.showSessionDrawer = false;
+          }
+        })
+      }
+      .width('80%')
+      .height('100%')
+      .position({ x: 0, y: 0 })
+      .backgroundColor('#FFFFFF')
+      .shadow({ radius: 8, color: '#00000033', offsetX: 4 })
+      .transition(TransitionEffect.translate({ x: -300 }).animation({ duration: 200 }))
+    }
     } // end Stack
   }
 
@@ -1163,6 +1232,126 @@ Keep it short but preserve all important information. Use the same language as t
     } catch { /* defaults */ }
   }
 
+  // ========== Session Management ==========
+  
+  private async initializeSessions(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      await this.sessionSvc.initialize(ctx);
+      this.sessions = this.sessionSvc.getSessions();
+      this.currentSessionId = this.sessionSvc.getCurrentSessionId();
+      // Load messages for current session
+      await this.loadSessionMessages();
+      this.log.info('ChatPage', `Sessions initialized: ${this.sessions.length} sessions, current: ${this.currentSessionId}`);
+    } catch (err) {
+      this.log.error('ChatPage', `Failed to initialize sessions: ${err}`);
+      // Fallback: load history the old way
+      this.loadHistory();
+    }
+  }
+
+  private async loadSessionMessages(): Promise<void> {
+    try {
+      this.messages = await this.sessionSvc.loadMessages(this.currentSessionId);
+      this.log.info('ChatPage', `Loaded ${this.messages.length} messages for session ${this.currentSessionId}`);
+    } catch (err) {
+      this.log.error('ChatPage', `Failed to load session messages: ${err}`);
+      this.messages = [];
+    }
+  }
+
+  private async saveSessionMessages(): Promise<void> {
+    try {
+      await this.sessionSvc.saveMessages(this.currentSessionId, this.messages);
+      // Refresh session list to update metadata (lastMessage, messageCount)
+      this.sessions = this.sessionSvc.getSessions();
+    } catch (err) {
+      this.log.error('ChatPage', `Failed to save session messages: ${err}`);
+    }
+  }
+
+  private async switchToSession(sessionId: string): Promise<void> {
+    if (sessionId === this.currentSessionId) {
+      this.showSessionDrawer = false;
+      return;
+    }
+    
+    // Save current session first
+    await this.saveSessionMessages();
+    
+    // Switch to new session
+    await this.sessionSvc.setCurrentSession(sessionId);
+    this.currentSessionId = sessionId;
+    
+    // Load new session's messages
+    await this.loadSessionMessages();
+    
+    // Refresh session list and close drawer
+    this.sessions = this.sessionSvc.getSessions();
+    this.showSessionDrawer = false;
+    
+    this.log.info('ChatPage', `Switched to session: ${sessionId}`);
+  }
+
+  private async createNewSession(): Promise<void> {
+    // Save current session first
+    await this.saveSessionMessages();
+    
+    // Create new session
+    const newSession = await this.sessionSvc.createSession();
+    
+    // Switch to new session
+    await this.sessionSvc.setCurrentSession(newSession.id);
+    this.currentSessionId = newSession.id;
+    this.messages = [];
+    
+    // Refresh session list
+    this.sessions = this.sessionSvc.getSessions();
+    this.showSessionDrawer = false;
+    
+    this.log.info('ChatPage', `Created new session: ${newSession.id}`);
+  }
+
+  private async deleteSession(sessionId: string): Promise<void> {
+    const success = await this.sessionSvc.deleteSession(sessionId);
+    if (success) {
+      // If current session was deleted, load the new current session's messages
+      if (sessionId === this.currentSessionId) {
+        this.currentSessionId = this.sessionSvc.getCurrentSessionId();
+        await this.loadSessionMessages();
+      }
+      this.sessions = this.sessionSvc.getSessions();
+      promptAction.showToast({ message: I18n.t('session.deleted') });
+    } else {
+      promptAction.showToast({ message: I18n.t('session.cannotDeleteLast') });
+    }
+  }
+
+  private async renameSession(sessionId: string, newName: string): Promise<void> {
+    await this.sessionSvc.renameSession(sessionId, newName);
+    this.sessions = this.sessionSvc.getSessions();
+  }
+
+  private async togglePinSession(sessionId: string): Promise<void> {
+    await this.sessionSvc.togglePinSession(sessionId);
+    this.sessions = this.sessionSvc.getSessions();
+  }
+
+  private async clearSessionMessages(sessionId: string): Promise<void> {
+    await this.sessionSvc.clearMessages(sessionId);
+    if (sessionId === this.currentSessionId) {
+      this.messages = [];
+    }
+    this.sessions = this.sessionSvc.getSessions();
+  }
+
+  private getCurrentSessionTitle(): string {
+    const session = this.sessions.find(s => s.id === this.currentSessionId);
+    return session?.title || I18n.t('session.default');
+  }
+
+  // ========== End Session Management ==========
+
   private async send(): Promise<void> {
     let text = this.inputText.trim();
     let hasImage = this.pendingImagePath.length > 0 || this.pendingImagePaths.length > 0;
@@ -1219,6 +1408,13 @@ Keep it short but preserve all important information. Use the same language as t
     }
     this.messages.push(userMsg);
     this.scrollToEnd();
+
+    // Auto-generate session title from first user message
+    if (this.messages.length === 1 && text.length > 0) {
+      this.sessionSvc.autoGenerateTitle(this.currentSessionId, text).then(() => {
+        this.sessions = this.sessionSvc.getSessions();
+      });
+    }
 
     this.isLoading = true;
     this.startDotAnimation();
@@ -2895,6 +3091,10 @@ You have persistent memory that survives across conversations. Use it proactivel
 
   // ---- persistence (simple JSON in preferences) ----
   private async saveHistory(): Promise<void> {
+    // Save to session service (new multi-session storage)
+    await this.saveSessionMessages();
+    
+    // Also save to legacy preferences for backward compatibility
     try {
       let ctx = getContext(this) as common.UIAbilityContext;
       let store = await preferences.getPreferences(ctx, Constants.PREFS_MESSAGES);

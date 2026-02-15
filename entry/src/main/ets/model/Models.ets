@@ -198,3 +198,36 @@ export interface CronTask {
   enabled: boolean;
   oneShot: boolean;
 }
+
+// Chat session for multi-conversation support
+@Observed
+export class ChatSession {
+  id: string;           // unique session ID
+  title: string;        // session title (auto-generated or user-defined)
+  createdAt: number;    // creation timestamp
+  updatedAt: number;    // last update timestamp
+  messageCount: number; // number of messages
+  lastMessage: string;  // last message preview
+  isPinned: boolean;    // whether pinned to top
+
+  constructor(title: string = '') {
+    this.id = `session_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    this.title = title || '新对话';
+    this.createdAt = Date.now();
+    this.updatedAt = Date.now();
+    this.messageCount = 0;
+    this.lastMessage = '';
+    this.isPinned = false;
+  }
+}
+
+// Serializable session data
+export interface ChatSessionData {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+  lastMessage: string;
+  isPinned: boolean;
+}
