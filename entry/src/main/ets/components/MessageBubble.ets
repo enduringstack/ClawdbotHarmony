@@ -192,15 +192,18 @@ export struct MessageBubble {
   }
 
   private showMessageMenu(): void {
-    promptAction.showActionMenu({
+    // 使用 showDialog 代替 showActionMenu，更可控
+    promptAction.showDialog({
       title: '',
+      message: '',
       buttons: [
-        { text: I18n.t('chat.copy'), color: '#333333' },
-        { text: I18n.t('chat.reply'), color: '#333333' }
+        { text: I18n.t('chat.copy'), color: '#666666' },
+        { text: I18n.t('chat.reply'), color: '#007AFF' }
       ]
     }).then((result) => {
       if (result.index === 0) {
         this.copyToClipboard(this.message.content);
+        promptAction.showToast({ message: '已复制' });
       } else if (result.index === 1) {
         this.onReply(this.message);
       }
