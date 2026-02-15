@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\Liuho\\.ohos\\config\\default_ClawdbotHarmony_z9T_7I2-zmz-PTi8NFVpSdiOMpntI_XQ0LcXqMjVPLQ=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001A37C6590CFF7C0D0E16B6D89080B56F409C68D65DC992841097E8BD7C493386E304FAEED74262",
+          "keyPassword": "0000001B9A84AC61F23FACA35487B95C2839E3C508B75C9FCBEEECAA31825D948EE91116A6034A65163A81",
           "profile": "C:\\Users\\Liuho\\.ohos\\config\\default_ClawdbotHarmony_z9T_7I2-zmz-PTi8NFVpSdiOMpntI_XQ0LcXqMjVPLQ=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\Liuho\\.ohos\\config\\default_ClawdbotHarmony_z9T_7I2-zmz-PTi8NFVpSdiOMpntI_XQ0LcXqMjVPLQ=.p12",
-          "storePassword": "0000001A9C8100843681FE37559E842C4795FB6005B8836E7D357FD7ECEFC8B47774D2BDD377A720E394"
+          "storePassword": "0000001B8B12738C0DB6FF6D2ECD3C80733548A0676C6B9B7540DC124C4D49C38CDC0AB14AC22E7758F549"
         }
       }
     ],

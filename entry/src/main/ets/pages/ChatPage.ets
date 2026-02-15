@@ -562,37 +562,46 @@ export struct ChatPage {
 
       // -- input bar (hidden in history mode) --
       if (!this.showHistory) {
-      // Reply preview
+      // Reply preview (微信风格 - 显示在输入框上方)
       if (this.replyingToMessage !== null) {
         Row() {
+          // 左侧彩色竖条
           Column()
-            .width(4)
-            .height('100%')
-            .backgroundColor('#D2691E')
+            .width(3)
+            .height(36)
+            .backgroundColor(this.replyingToMessage.role === 'user' ? '#007AFF' : '#D2691E')
             .borderRadius(2)
+          
+          // 引用内容
           Column() {
             Text(this.replyingToMessage.role === 'user' ? I18n.t('chat.you') : this.getAssistantDisplayName())
               .fontSize(12)
-              .fontColor('#D2691E')
+              .fontColor(this.replyingToMessage.role === 'user' ? '#007AFF' : '#D2691E')
               .fontWeight(FontWeight.Medium)
             Text(this.replyingToMessage.content)
               .fontSize(13)
               .fontColor('#666666')
-              .maxLines(2)
+              .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ top: 2 })
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
-          .margin({ left: 10 })
-          Text('\u2715')
-            .fontSize(16)
+          .margin({ left: 8 })
+          
+          // 关闭按钮
+          Text('✕')
+            .fontSize(18)
             .fontColor('#999999')
+            .padding(8)
             .onClick(() => { this.replyingToMessage = null; })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 10, bottom: 10 })
-        .backgroundColor('#F8F8F8')
-        .alignItems(VerticalAlign.Top)
+        .height(52)
+        .padding({ left: 12, right: 8 })
+        .backgroundColor('#F5F5F5')
+        .alignItems(VerticalAlign.Center)
+        .borderRadius({ topLeft: 8, topRight: 8 })
       }
 
       // Attachment preview (image or file)
