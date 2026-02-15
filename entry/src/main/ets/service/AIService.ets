@@ -223,7 +223,10 @@ export class AIService {
         // Auto-dispatch: if model failed to call a tool but user clearly wants one,
         // inject the tool call automatically (works around weak tool-calling models)
         if (loopCount === 1 && context) {
-          let dispatch = this.detectAutoDispatch(history, textToShow);
+          let intentMode = await this.getIntentMode(context);
+          let dispatch = intentMode !== 'cloud'
+            ? this.detectAutoDispatch(history, textToShow)
+            : { tool: '', input: '{}' } as AutoDispatchResult;
           if (dispatch.tool.length > 0) {
             this.log.info(this.TAG, `Auto-dispatch: ${dispatch.tool} input=${dispatch.input}`);
             let autoOutput = '';
@@ -1988,6 +1991,15 @@ export class AIService {
     } catch (e) {
       this.log.error(this.TAG, `saveImageToolResult failed: ${(e as Error).message}`);
       return empty;
+    }
+  }
+
+  private async getIntentMode(context: Context): Promise<string> {
+    try {
+      let store = await preferences.getPreferences(context, Constants.PREFS_SETTINGS);
+      return (await store.get('intent_mode', 'auto')) as string;
+    } catch {
+      return 'auto';
     }
   }
 

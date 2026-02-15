@@ -37,6 +37,8 @@ import { buffer } from '@kit.ArkTS';
 import { webview } from '@kit.ArkWeb';
 import { componentSnapshot } from '@kit.ArkUI';
 import { preferences } from '@kit.ArkData';
+import { http } from '@kit.NetworkKit';
+import { fileIo } from '@kit.CoreFileKit';
 import { LogService } from '../../common/LogService';
 import { Constants } from '../../common/Constants';
 
@@ -123,6 +125,8 @@ export class NodeRuntime {
 
   // Gateway agent identity (fetched from config.get after connect)
   private _agentIdentity: AgentIdentity | undefined = undefined;
+  private _agentId: string = 'main';  // agent ID from config (for avatar URL)
+  private _cachedAvatarPath: string = '';  // local file path of downloaded avatar
   private _identityListeners: Array<(identity: AgentIdentity | undefined) => void> = [];
 
   // App foreground/background state and chat page visibility for message notifications
@@ -487,11 +491,15 @@ export class NodeRuntime {
   }
 
   private dispatchIdentity(identity: AgentIdentity | undefined): void {
-    this.log.info(TAG, `dispatchIdentity: name=${identity ? identity.name : '(none)'} emoji=${identity ? identity.emoji : ''}`);
+    this.log.info(TAG, `dispatchIdentity: name=${identity ? identity.name : '(none)'} emoji=${identity ? identity.emoji : ''} avatar=${identity ? identity.avatar : ''} cachedAvatar=${this._cachedAvatarPath}`);
     for (let listener of this._identityListeners) {
       try {
         listener(identity);
       } catch { /* ignore */ }
+    }
+    // Trigger avatar download if identity has avatar but not yet cached
+    if (identity && identity.avatar.length > 0 && this._cachedAvatarPath.length === 0) {
+      this.downloadAndCacheAvatar();
     }
   }
 
@@ -544,10 +552,17 @@ export class NodeRuntime {
 
   /** Resolve gateway agent avatar to a loadable URL. Returns undefined if not resolvable. */
   resolveAgentAvatarUrl(): string | undefined {
+    // Prefer cached local file (already downloaded)
+    if (this._cachedAvatarPath.length > 0) {
+      return this._cachedAvatarPath;
+    }
     let identity = this._agentIdentity;
     if (!identity || identity.avatar.length === 0) return undefined;
     let av = identity.avatar;
-    if (av.startsWith('http://') || av.startsWith('https://') || av.startsWith('data:')) {
+    if (av.startsWith('data:')) {
+      return av;
+    }
+    if (av.startsWith('http://') || av.startsWith('https://')) {
       return av;
     }
     let ep = this._endpoint;
@@ -555,6 +570,79 @@ export class NodeRuntime {
     let path = av.startsWith('/') ? av.substring(1) : av;
     let scheme = ep.useTls ? 'https' : 'http';
     return `${scheme}://${ep.host}:${ep.port}/media/${path}`;
+  }
+
+  /** Download avatar image from URL and cache locally. Dispatches identity again with updated avatar. */
+  async downloadAndCacheAvatar(): Promise<void> {
+    // Skip if already cached
+    if (this._cachedAvatarPath.length > 0) return;
+    let ep = this._endpoint;
+    if (!ep) return;
+    let identity = this._agentIdentity;
+    if (!identity || identity.avatar.length === 0) return;
+
+    // Build candidate URLs: try /avatar/{agentId} first (OpenClaw gateway), then /media/{path}
+    let scheme = ep.useTls ? 'https' : 'http';
+    let baseUrl = `${scheme}://${ep.host}:${ep.port}`;
+    let urls: string[] = [
+      `${baseUrl}/avatar/${this._agentId}`,
+      `${baseUrl}/media/${identity.avatar}`,
+    ];
+    // If avatar is already an absolute URL, try that too
+    let av = identity.avatar;
+    if (av.startsWith('http://') || av.startsWith('https://')) {
+      urls = [av, ...urls];
+    }
+
+    this.log.info(TAG, `Downloading avatar, trying ${urls.length} URLs: ${urls.join(' | ')}`);
+
+    for (let url of urls) {
+      let req = http.createHttp();
+      try {
+        this.log.info(TAG, `Trying avatar URL: ${url}`);
+        let response = await req.request(url, {
+          method: http.RequestMethod.GET,
+          expectDataType: http.HttpDataType.ARRAY_BUFFER,
+          connectTimeout: 8000,
+          readTimeout: 10000,
+        });
+        let headers = response.header as Record<string, string>;
+        let ct = headers['content-type'] ?? headers['Content-Type'] ?? '';
+        let data = response.result as ArrayBuffer;
+        this.log.info(TAG, `Avatar response: HTTP ${response.responseCode}, content-type: ${ct}, size: ${data ? data.byteLength : 0}`);
+
+        // Must be HTTP 200 with image content-type
+        if (response.responseCode !== 200 || !data) continue;
+        if (!ct.includes('image/')) {
+          this.log.warn(TAG, `Skipping non-image response: ${ct}`);
+          continue;
+        }
+
+        // Save to local cache
+        let ctx = this._context;
+        if (!ctx) return;
+        let ext = 'jpg';
+        if (ct.includes('png')) ext = 'png';
+        else if (ct.includes('gif')) ext = 'gif';
+        else if (ct.includes('webp')) ext = 'webp';
+        let destPath = `${ctx.cacheDir}/gw_avatar.${ext}`;
+        let file = fileIo.openSync(destPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+        fileIo.writeSync(file.fd, data);
+        fileIo.closeSync(file);
+        this._cachedAvatarPath = destPath;
+        this.log.info(TAG, `Avatar cached to: ${destPath} (${data.byteLength} bytes)`);
+        // Re-dispatch identity so listeners pick up the cached avatar
+        if (this._agentIdentity) {
+          this.dispatchIdentity(this._agentIdentity);
+        }
+        return; // Success — stop trying
+      } catch (err) {
+        this.log.warn(TAG, `Avatar URL failed: ${url} — ${(err as Error).message ?? ''}`);
+      } finally {
+        req.destroy();
+      }
+    }
+    this.log.warn(TAG, 'All avatar URLs failed');
   }
 
   /** Fetch agent identity from gateway config via operator session RPC. */
@@ -746,6 +834,11 @@ export class NodeRuntime {
         break;
       }
     }
+    // Save agent ID for avatar URL construction
+    let agentId = (target['id'] as string) ?? 'main';
+    this._agentId = agentId;
+    this.log.info(TAG, `Agent id: "${agentId}"`);
+
     let identityObj = target['identity'] as Record<string, string> | undefined;
     if (identityObj) {
       let identity: AgentIdentity = {
@@ -754,11 +847,10 @@ export class NodeRuntime {
         emoji: identityObj['emoji'] ?? '',
         avatar: identityObj['avatar'] ?? '',
       };
-      this.log.info(TAG, `Agent identity: name="${identity.name}" emoji="${identity.emoji}" theme="${identity.theme}"`);
+      this.log.info(TAG, `Agent identity: name="${identity.name}" emoji="${identity.emoji}" theme="${identity.theme}" avatar="${identity.avatar}"`);
       if (identity.name.length > 0) return identity;
     }
     // Use agent id as fallback name
-    let agentId = (target['id'] as string) ?? '';
     if (agentId.length > 0) {
       this.log.info(TAG, `Using agent id as name: "${agentId}"`);
       return { name: agentId, theme: '', emoji: '', avatar: '' };
@@ -977,6 +1069,7 @@ export class NodeRuntime {
     this._nodeState = ConnectionState.Disconnected;
     if (this._agentIdentity) {
       this._agentIdentity = undefined;
+      this._cachedAvatarPath = '';
       this.dispatchIdentity(undefined);
     }
     this.updateStatus();

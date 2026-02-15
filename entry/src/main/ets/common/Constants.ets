@@ -52,12 +52,18 @@ export class Constants {
 - 中文对话用中文回复，英文对话用英文回复
 - 该幽默时幽默，该严肃时严肃`;
 
-  // Embedding API (SiliconFlow bge-m3)
+  // Embedding API (SiliconFlow bge-m3) — cloud fallback
   static readonly EMBEDDING_URL: string = 'https://api.siliconflow.cn/v1/embeddings';
   static readonly EMBEDDING_MODEL: string = 'BAAI/bge-m3';
   static readonly EMBEDDING_DIM: number = 1024;
   static readonly VECTOR_SEARCH_TOP_K: number = 5;
   static readonly VECTOR_SEARCH_THRESHOLD: number = 0.5;
+
+  // Local embedding model (all-MiniLM-L6-v2)
+  static readonly LOCAL_EMBEDDING_MODEL: string = 'local-MiniLM-L6-v2';
+  static readonly LOCAL_EMBEDDING_DIM: number = 384;
+  static readonly LOCAL_EMBEDDING_MAX_SEQ: number = 128;
+  static readonly LOCAL_VECTOR_SEARCH_THRESHOLD: number = 0.4;
 
   static readonly MAX_TOKENS: number = 4096;
   static readonly MAX_HISTORY: number = 50;

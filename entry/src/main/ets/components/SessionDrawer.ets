@@ -17,6 +17,8 @@ export struct SessionDrawer {
   onSessionRename: (sessionId: string, newName: string) => void = () => {};
   onSessionPin: (sessionId: string) => void = () => {};
   onSessionClear: (sessionId: string) => void = () => {};
+  onOpenSettings: () => void = () => {};
+  onOpenLogs: () => void = () => {};
   onClose: () => void = () => {};
 
   @Builder
@@ -211,6 +213,39 @@ export struct SessionDrawer {
           .layoutWeight(1)
           .divider({ strokeWidth: 0.5, color: '#F0F0F0', startMargin: 16, endMargin: 16 })
         }
+
+        // Bottom menu entries
+        Divider()
+          .color('#EEEEEE')
+          .width('100%')
+
+        Row() {
+          Text('\u2699\uFE0F')
+            .fontSize(16)
+            .margin({ right: 8 })
+          Text(t('tab.settings'))
+            .fontSize(14)
+            .fontColor('#666666')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 6 })
+        .onClick(() => {
+          this.onOpenSettings();
+        })
+
+        Row() {
+          Text('\uD83D\uDCDD')
+            .fontSize(16)
+            .margin({ right: 8 })
+          Text(t('tab.logs'))
+            .fontSize(14)
+            .fontColor('#666666')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 6, bottom: 12 })
+        .onClick(() => {
+          this.onOpenLogs();
+        })
       }
       .width('100%')
       .height('100%')

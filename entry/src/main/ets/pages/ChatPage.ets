@@ -2788,7 +2788,7 @@ Keep it short but preserve all important information. Use the same language as t
     }
   }
 
-  /** Hybrid ASR: local speechRecognizer + cloud Whisper based on user's mode setting */
+  /** Hybrid ASR: cloud Whisper (accurate) + local speechRecognizer (offline fallback) */
   private async recognizeSpeech(wavPath: string, pcmBuffers: ArrayBuffer[]): Promise<string> {
     let ctx = getContext(this) as common.UIAbilityContext;
     let store = await preferences.getPreferences(ctx, Constants.PREFS_SETTINGS);
@@ -2796,32 +2796,37 @@ Keep it short but preserve all important information. Use the same language as t
 
     this.asrDebug(`recognizeSpeech: mode=${asrMode}`);
 
+    if (asrMode === 'local') {
+      // Local only mode
+      return await this.callLocalAsr(pcmBuffers);
+    }
+
     if (asrMode === 'cloud') {
       return await this.callAsrApi(wavPath);
     }
 
-    // Try local ASR first (for 'auto' and 'local' modes)
-    let localResult = '';
+    // Auto mode: try cloud first (better accuracy), fall back to local
+    let cloudResult = await this.callAsrApi(wavPath);
+    if (cloudResult.length > 0) {
+      return cloudResult;
+    }
+
+    // Cloud failed or not configured, fall back to local
+    this.asrDebug('Cloud ASR empty, falling back to local');
+    return await this.callLocalAsr(pcmBuffers);
+  }
+
+  /** Call local speechRecognizer */
+  private async callLocalAsr(pcmBuffers: ArrayBuffer[]): Promise<string> {
     try {
       let localAsr = LocalAsrService.getInstance();
-      localResult = await localAsr.recognizeFromPcm(pcmBuffers);
-      this.asrDebug(`Local ASR result: "${localResult}"`);
+      let result = await localAsr.recognizeFromPcm(pcmBuffers);
+      this.asrDebug(`Local ASR result: "${result}"`);
+      return result;
     } catch (err) {
       this.asrDebug(`Local ASR error: ${(err as Error).message}`);
+      return '';
     }
-
-    if (localResult.length > 0) {
-      return localResult;
-    }
-
-    // Fall back to cloud if mode is 'auto' and local returned empty
-    if (asrMode === 'auto') {
-      this.asrDebug('Local ASR empty, falling back to cloud');
-      return await this.callAsrApi(wavPath);
-    }
-
-    // 'local' mode with empty result
-    return '';
   }
 
   /** Send ASR-recognized text to AI without creating a user message bubble. */

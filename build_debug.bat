@@ -11,6 +11,10 @@ if %ERRORLEVEL% NEQ 0 (
     echo Build failed!
     exit /b 1
 )
+if "%1"=="build-only" (
+    echo BUILD SUCCESSFUL
+    exit /b 0
+)
 echo Installing to device...
 hdc install entry\build\default\outputs\default\entry-default-signed.hap
 echo Done!

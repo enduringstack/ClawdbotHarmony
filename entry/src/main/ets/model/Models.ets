@@ -160,7 +160,7 @@ export interface SettingsData {
 // Vector embedding data for semantic memory search
 export interface VectorData {
   id: string;           // corresponds to MemoryItem.id
-  vector: number[];     // embedding vector (1024-dim for bge-m3)
+  vector: number[];     // embedding vector (dimension depends on model)
 }
 
 export interface VectorStore {

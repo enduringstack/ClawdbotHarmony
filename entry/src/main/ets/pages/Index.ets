@@ -1,8 +1,6 @@
 import { ChatPage } from './ChatPage';
 import { SkillsPage } from './SkillsPage';
 import { MemoryPage } from './MemoryPage';
-import { SettingsPage } from './SettingsPage';
-import { LogPage } from './LogPage';
 import { I18n, LangCode } from '../common/I18n';
 import { LogService } from '../common/LogService';
 import { Constants } from '../common/Constants';
@@ -124,27 +122,18 @@ struct Index {
         TabContent() {
           ChatPage()
         }
-        .tabBar(this.TabItem(0, '\uD83D\uDCAC', I18n.t('tab.chat')))
+        .tabBar(this.TabItem(0, '\uD83D\uDCAC', 'tab.chat'))
 
         TabContent() {
           SkillsPage()
         }
-        .tabBar(this.TabItem(1, '\uD83D\uDD27', I18n.t('tab.skills')))
+        .tabBar(this.TabItem(1, '\uD83D\uDD27', 'tab.skills'))
 
         TabContent() {
           MemoryPage({ isActive: this.currentTab === 2 })
         }
-        .tabBar(this.TabItem(2, '\uD83E\uDDE0', I18n.t('tab.memory')))
+        .tabBar(this.TabItem(2, '\uD83E\uDDE0', 'tab.memory'))
 
-        TabContent() {
-          SettingsPage()
-        }
-        .tabBar(this.TabItem(3, '\u2699\uFE0F', I18n.t('tab.settings')))
-
-        TabContent() {
-          LogPage()
-        }
-        .tabBar(this.TabItem(4, '\uD83D\uDCDD', I18n.t('tab.logs')))
       }
       .layoutWeight(1)
       .scrollable(false)
@@ -159,11 +148,11 @@ struct Index {
   }
 
   @Builder
-  TabItem(index: number, icon: string, label: string) {
+  TabItem(index: number, icon: string, labelKey: string) {
     Column({ space: 3 }) {
       Text(icon)
         .fontSize(20)
-      Text(label)
+      Text(this.lang.length > 0 ? I18n.t(labelKey) : '')
         .fontSize(11)
         .fontColor(this.currentTab === index ? '#D2691E' : '#999999')
         .fontWeight(this.currentTab === index ? FontWeight.Medium : FontWeight.Normal)

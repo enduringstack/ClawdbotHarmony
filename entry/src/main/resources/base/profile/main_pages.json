@@ -2,6 +2,8 @@
   "src": [
     "pages/Index",
     "pages/CanvasPage",
-    "pages/LogViewerPage"
+    "pages/LogViewerPage",
+    "pages/LogRoutePage",
+    "pages/SettingsRoutePage"
   ]
 }

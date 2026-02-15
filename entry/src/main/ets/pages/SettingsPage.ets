@@ -34,7 +34,9 @@ export struct SettingsPage {
   private savedUrls: Record<string, string> = {
     'openrouter': '', 'anthropic': '', 'openai': '', 'siliconflow': '', 'local': '', 'custom': ''
   };
-  @State asrEnabled: boolean = false;
+  @State asrMode: string = 'cloud'; // 'auto' | 'local' | 'cloud'
+  @State embeddingMode: string = 'cloud'; // 'auto' | 'local' | 'cloud'
+  @State intentMode: string = 'cloud'; // 'auto' | 'local' | 'cloud'
   @State showKey: boolean = false;
   @State @Watch('onLangChange') lang: string = 'zh';
   @State settingsTab: string = Constants.DEFAULT_MODE; // 'standalone' | 'node' | 'service'
@@ -51,6 +53,10 @@ export struct SettingsPage {
   @State asrApiKey: string = '';
   @State asrModel: string = 'FunAudioLLM/SenseVoiceSmall';
   @State showAsrKey: boolean = false;
+
+  // Embedding (cloud) settings
+  @State embeddingApiKey: string = '';
+  @State showEmbeddingKey: boolean = false;
 
   // Feishu Bot
   @State feishuEnabled: boolean = false;
@@ -171,8 +177,23 @@ export struct SettingsPage {
 
   build() {
     Scroll() {
-      Column() {
-        Text(I18n.t('settings.title'))
+      if (this.lang === 'zh') {
+        this.SettingsBody()
+      } else {
+        this.SettingsBody()
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#F5F5F5')
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
+  }
+
+  @Builder
+  SettingsBody() {
+    Column() {
+      Text(I18n.t('settings.title'))
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
           .fontColor('#1A1A1A')
@@ -345,7 +366,8 @@ export struct SettingsPage {
           Column() {
             Column({ space: 8 }) {
               if (this.gwAgentAvatar.length > 0) {
-                Image(this.gwAgentAvatar)
+                Image(this.gwAgentAvatar.startsWith('http') || this.gwAgentAvatar.startsWith('data:')
+                  ? this.gwAgentAvatar : 'file://' + this.gwAgentAvatar)
                   .width(72)
                   .height(72)
                   .borderRadius(36)
@@ -361,11 +383,16 @@ export struct SettingsPage {
                   .borderRadius(36)
                   .backgroundColor('#4CAF50')
               }
+              Text(this.gwAgentName.length > 0 ? this.gwAgentName : 'OpenClaw Bot')
+                .fontSize(15)
+                .fontWeight(FontWeight.Medium)
+                .fontColor('#1A1A1A')
+                .margin({ top: 4 })
               Row({ space: 4 }) {
                 Circle({ width: 8, height: 8 })
                   .fill('#4CAF50')
-                Text(I18n.t('settings.gatewayBot'))
-                  .fontSize(12)
+                Text(I18n.t('chat.online') + ' · ' + I18n.t('chat.gatewayMode'))
+                  .fontSize(11)
                   .fontColor('#4CAF50')
               }
             }
@@ -388,19 +415,6 @@ export struct SettingsPage {
             .width('100%')
             .height(40)
 
-            if (this.gwAgentEmoji.length > 0) {
-              Divider().margin({ top: 4, bottom: 4 }).color('#F0F0F0')
-              Row() {
-                Text('Emoji')
-                  .fontSize(14)
-                  .fontColor('#1A1A1A')
-                  .layoutWeight(1)
-                Text(this.gwAgentEmoji)
-                  .fontSize(20)
-              }
-              .width('100%')
-              .height(40)
-            }
           }
           .width('100%')
           .padding(16)
@@ -892,88 +906,8 @@ export struct SettingsPage {
           .backgroundColor(Color.White)
           .borderRadius(12)
 
-          // ---- ASR (Speech-to-Text) with toggle ----
-          if (this.provider !== 'anthropic') {
-            this.SectionTitle('ASR')
-            Column() {
-              Row() {
-                Column({ space: 2 }) {
-                  Text(I18n.t('settings.asrEnabled'))
-                    .fontSize(14)
-                    .fontColor('#1A1A1A')
-                  Text(I18n.t('settings.asrEnabledDesc'))
-                    .fontSize(11)
-                    .fontColor('#999999')
-                }
-                .layoutWeight(1)
-                .alignItems(HorizontalAlign.Start)
-
-                Toggle({ type: ToggleType.Switch, isOn: this.asrEnabled })
-                  .selectedColor('#D2691E')
-                  .onChange((isOn: boolean) => { this.asrEnabled = isOn; })
-              }
-              .width('100%')
-
-              if (this.asrEnabled) {
-                Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-                Text('API URL')
-                  .fontSize(14)
-                  .fontColor('#1A1A1A')
-                  .width('100%')
-                TextInput({ text: this.asrApiUrl, placeholder: 'https://api.openai.com/v1/audio/transcriptions' })
-                  .height(40)
-                  .backgroundColor('#F5F5F5')
-                  .borderRadius(8)
-                  .margin({ top: 6 })
-                  .onChange((v: string) => { this.asrApiUrl = v; })
-
-                Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-                Text('API Key')
-                  .fontSize(14)
-                  .fontColor('#1A1A1A')
-                  .width('100%')
-                Row() {
-                  TextInput({ text: this.asrApiKey, placeholder: 'sk-...' })
-                    .layoutWeight(1)
-                    .height(40)
-                    .backgroundColor('#F5F5F5')
-                    .borderRadius(8)
-                    .type(this.showAsrKey ? InputType.Normal : InputType.Password)
-                    .onChange((v: string) => { this.asrApiKey = v; })
-                  Button(this.showAsrKey ? I18n.t('settings.hide') : I18n.t('settings.show'))
-                    .fontSize(12)
-                    .height(34)
-                    .backgroundColor('#F0F0F0')
-                    .fontColor('#666666')
-                    .borderRadius(8)
-                    .margin({ left: 8 })
-                    .onClick(() => { this.showAsrKey = !this.showAsrKey; })
-                }
-                .margin({ top: 6 })
-                .width('100%')
-
-                Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
-
-                Text('Model')
-                  .fontSize(14)
-                  .fontColor('#1A1A1A')
-                  .width('100%')
-                TextInput({ text: this.asrModel, placeholder: 'whisper-1' })
-                  .height(40)
-                  .backgroundColor('#F5F5F5')
-                  .borderRadius(8)
-                  .margin({ top: 6 })
-                  .onChange((v: string) => { this.asrModel = v; })
-              }
-            }
-            .width('100%')
-            .padding(16)
-            .margin({ left: 16, right: 16 })
-            .backgroundColor(Color.White)
-            .borderRadius(12)
-          }
+          // ---- AI Engine: ASR / Embedding / Intent ----
+          this.AIEngineSection()
 
         }
 
@@ -1117,6 +1051,9 @@ export struct SettingsPage {
           .margin({ left: 16, right: 16 })
           .backgroundColor(Color.White)
           .borderRadius(12)
+
+          // ---- AI Engine: ASR / Embedding / Intent ----
+          this.AIEngineSection()
         }
 
         // =============== Service Tab ===============
@@ -1357,12 +1294,6 @@ export struct SettingsPage {
       }
       .width('100%')
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor('#F5F5F5')
-    .scrollBar(BarState.Off)
-    .edgeEffect(EdgeEffect.Spring)
-  }
 
   @Builder
   SectionTitle(title: string) {
@@ -1373,6 +1304,136 @@ export struct SettingsPage {
       .letterSpacing(1)
       .padding({ left: 20, top: 20, bottom: 8 })
       .width('100%')
+  }
+
+  @Builder
+  AIEngineSection() {
+    Column() {
+      this.SectionTitle(I18n.t('settings.aiEngine'))
+      Column() {
+        // --- ASR ---
+        Row() {
+          Text(I18n.t('settings.asrMode'))
+            .fontSize(14).fontColor('#1A1A1A').fontWeight(FontWeight.Medium)
+          Text(I18n.t('settings.asrModeDesc'))
+            .fontSize(11).fontColor('#999999').margin({ left: 8 })
+        }.width('100%')
+
+        Row({ space: 0 }) {
+          ForEach(['auto', 'local', 'cloud'], (mode: string) => {
+            Text(mode === 'auto' ? I18n.t('settings.asrModeAuto') :
+              mode === 'local' ? I18n.t('settings.asrModeLocal') : I18n.t('settings.asrModeCloud'))
+              .fontSize(12)
+              .fontColor(this.asrMode === mode ? Color.White : '#666666')
+              .backgroundColor(this.asrMode === mode ? '#D2691E' : '#F0F0F0')
+              .borderRadius(8)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .layoutWeight(1).textAlign(TextAlign.Center)
+              .onClick(() => { this.asrMode = mode; })
+          })
+        }.width('100%').margin({ top: 8 })
+
+        Text(this.asrMode === 'auto' ? I18n.t('settings.asrModeAutoDesc') :
+          this.asrMode === 'local' ? I18n.t('settings.asrModeLocalDesc') : I18n.t('settings.asrModeCloudDesc'))
+          .fontSize(11).fontColor('#999999').margin({ top: 4 }).width('100%')
+
+        // ASR cloud API fields (not needed in node mode — gateway handles cloud ASR)
+        if (this.settingsTab !== 'node' && (this.asrMode === 'auto' || this.asrMode === 'cloud')) {
+          Divider().margin({ top: 10, bottom: 10 }).color('#F0F0F0')
+          TextInput({ text: this.asrApiUrl, placeholder: 'API URL' })
+            .height(36).fontSize(13).backgroundColor('#F5F5F5').borderRadius(8)
+            .onChange((v: string) => { this.asrApiUrl = v; })
+          Row() {
+            TextInput({ text: this.asrApiKey, placeholder: 'API Key' })
+              .layoutWeight(1).height(36).fontSize(13).backgroundColor('#F5F5F5').borderRadius(8)
+              .type(this.showAsrKey ? InputType.Normal : InputType.Password)
+              .onChange((v: string) => { this.asrApiKey = v; })
+            Button(this.showAsrKey ? I18n.t('settings.hide') : I18n.t('settings.show'))
+              .fontSize(11).height(30).backgroundColor('#F0F0F0').fontColor('#666666')
+              .borderRadius(8).margin({ left: 6 })
+              .onClick(() => { this.showAsrKey = !this.showAsrKey; })
+          }.margin({ top: 6 }).width('100%')
+          TextInput({ text: this.asrModel, placeholder: 'Model' })
+            .height(36).fontSize(13).backgroundColor('#F5F5F5').borderRadius(8).margin({ top: 6 })
+            .onChange((v: string) => { this.asrModel = v; })
+        }
+
+        Divider().margin({ top: 14, bottom: 14 }).color('#E8E8E8')
+
+        // --- Embedding ---
+        Row() {
+          Text(I18n.t('settings.embeddingMode'))
+            .fontSize(14).fontColor('#1A1A1A').fontWeight(FontWeight.Medium)
+          Text(I18n.t('settings.embeddingModeDesc'))
+            .fontSize(11).fontColor('#999999').margin({ left: 8 })
+        }.width('100%')
+
+        Row({ space: 0 }) {
+          ForEach(['auto', 'local', 'cloud'], (mode: string) => {
+            Text(mode === 'auto' ? I18n.t('settings.embeddingModeAuto') :
+              mode === 'local' ? I18n.t('settings.embeddingModeLocal') : I18n.t('settings.embeddingModeCloud'))
+              .fontSize(12)
+              .fontColor(this.embeddingMode === mode ? Color.White : '#666666')
+              .backgroundColor(this.embeddingMode === mode ? '#D2691E' : '#F0F0F0')
+              .borderRadius(8)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .layoutWeight(1).textAlign(TextAlign.Center)
+              .onClick(() => { this.embeddingMode = mode; })
+          })
+        }.width('100%').margin({ top: 8 })
+
+        Text(this.embeddingMode === 'auto' ? I18n.t('settings.embeddingModeAutoDesc') :
+          this.embeddingMode === 'local' ? I18n.t('settings.embeddingModeLocalDesc') : I18n.t('settings.embeddingModeCloudDesc'))
+          .fontSize(11).fontColor('#999999').margin({ top: 4 }).width('100%')
+
+        // Embedding cloud API key
+        if (this.embeddingMode === 'auto' || this.embeddingMode === 'cloud') {
+          Row() {
+            TextInput({ text: this.embeddingApiKey, placeholder: 'API Key' })
+              .layoutWeight(1).height(36).fontSize(13).backgroundColor('#F5F5F5').borderRadius(8)
+              .type(this.showEmbeddingKey ? InputType.Normal : InputType.Password)
+              .onChange((v: string) => { this.embeddingApiKey = v; })
+            Button(this.showEmbeddingKey ? I18n.t('settings.hide') : I18n.t('settings.show'))
+              .fontSize(11).height(30).backgroundColor('#F0F0F0').fontColor('#666666')
+              .borderRadius(8).margin({ left: 6 })
+              .onClick(() => { this.showEmbeddingKey = !this.showEmbeddingKey; })
+          }.margin({ top: 8 }).width('100%')
+        }
+
+        Divider().margin({ top: 14, bottom: 14 }).color('#E8E8E8')
+
+        // --- Intent ---
+        Row() {
+          Text(I18n.t('settings.intentMode'))
+            .fontSize(14).fontColor('#1A1A1A').fontWeight(FontWeight.Medium)
+          Text(I18n.t('settings.intentModeDesc'))
+            .fontSize(11).fontColor('#999999').margin({ left: 8 })
+        }.width('100%')
+
+        Row({ space: 0 }) {
+          ForEach(['auto', 'local', 'cloud'], (mode: string) => {
+            Text(mode === 'auto' ? I18n.t('settings.intentModeAuto') :
+              mode === 'local' ? I18n.t('settings.intentModeLocal') : I18n.t('settings.intentModeCloud'))
+              .fontSize(12)
+              .fontColor(this.intentMode === mode ? Color.White : '#666666')
+              .backgroundColor(this.intentMode === mode ? '#D2691E' : '#F0F0F0')
+              .borderRadius(8)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .layoutWeight(1).textAlign(TextAlign.Center)
+              .onClick(() => { this.intentMode = mode; })
+          })
+        }.width('100%').margin({ top: 8 })
+
+        Text(this.intentMode === 'auto' ? I18n.t('settings.intentModeAutoDesc') :
+          this.intentMode === 'local' ? I18n.t('settings.intentModeLocalDesc') : I18n.t('settings.intentModeCloudDesc'))
+          .fontSize(11).fontColor('#999999').margin({ top: 4 }).width('100%')
+      }
+      .width('100%')
+      .padding(16)
+      .margin({ left: 16, right: 16 })
+      .backgroundColor(Color.White)
+      .borderRadius(12)
+    }
   }
 
   @Builder
@@ -1442,7 +1503,7 @@ export struct SettingsPage {
   }
 
   private gwIsConnected(): boolean {
-    return this.gwState === ConnectionState.Connected;
+    return this.gwState !== ConnectionState.Disconnected;
   }
 
   private getAssistantInitial(): string {
@@ -1580,10 +1641,21 @@ export struct SettingsPage {
       this.apiKey = this.savedKeys[this.provider] ?? '';
       this.baseUrl = this.savedUrls[this.provider] ?? '';
       // ASR settings
-      this.asrEnabled = (await store.get('asr_enabled', false)) as boolean;
+      // Backward compat: migrate asr_enabled boolean to asr_mode string
+      let storedAsrMode = (await store.get('asr_mode', '')) as string;
+      if (storedAsrMode.length > 0) {
+        this.asrMode = storedAsrMode;
+      } else {
+        let oldEnabled = (await store.get('asr_enabled', false)) as boolean;
+        this.asrMode = oldEnabled ? 'cloud' : 'cloud';
+      }
       this.asrApiUrl = (await store.get('asr_url', 'https://api.siliconflow.cn/v1/audio/transcriptions')) as string;
       this.asrApiKey = (await store.get('asr_key', '')) as string;
       this.asrModel = (await store.get('asr_model', 'FunAudioLLM/SenseVoiceSmall')) as string;
+      // Embedding & Intent modes
+      this.embeddingMode = (await store.get('embedding_mode', 'cloud')) as string;
+      this.embeddingApiKey = (await store.get('embedding_key', '')) as string;
+      this.intentMode = (await store.get('intent_mode', 'cloud')) as string;
       // Soul
       this.soul = (await store.get('soul', Constants.DEFAULT_SOUL)) as string;
       // Assistant customization
@@ -1846,10 +1918,14 @@ export struct SettingsPage {
       await store.put('url_local', this.savedUrls['local'] ?? '');
       await store.put('url_custom', this.savedUrls['custom'] ?? '');
       // ASR settings
-      await store.put('asr_enabled', this.asrEnabled);
+      await store.put('asr_mode', this.asrMode);
       await store.put('asr_url', this.asrApiUrl);
       await store.put('asr_key', this.asrApiKey);
       await store.put('asr_model', this.asrModel);
+      // Embedding & Intent modes
+      await store.put('embedding_mode', this.embeddingMode);
+      await store.put('embedding_key', this.embeddingApiKey);
+      await store.put('intent_mode', this.intentMode);
       // Soul
       await store.put('soul', this.soul);
       // Assistant customization
@@ -1950,10 +2026,11 @@ export struct SettingsPage {
       data['model'] = this.model;
       data['apiKey'] = this.apiKey;
       data['baseUrl'] = this.baseUrl;
-      data['asrEnabled'] = this.asrEnabled;
+      data['asrMode'] = this.asrMode;
       data['asrApiUrl'] = this.asrApiUrl;
       data['asrApiKey'] = this.asrApiKey;
       data['asrModel'] = this.asrModel;
+      data['embeddingApiKey'] = this.embeddingApiKey;
       data['soul'] = this.soul;
     } else {
       // Node mode settings
@@ -2000,10 +2077,11 @@ export struct SettingsPage {
         if (data['model'] !== undefined) this.model = data['model'] as string;
         if (data['apiKey'] !== undefined) this.apiKey = data['apiKey'] as string;
         if (data['baseUrl'] !== undefined) this.baseUrl = data['baseUrl'] as string;
-        if (data['asrEnabled'] !== undefined) this.asrEnabled = data['asrEnabled'] as boolean;
+        if (data['asrMode'] !== undefined) this.asrMode = data['asrMode'] as string;
         if (data['asrApiUrl'] !== undefined) this.asrApiUrl = data['asrApiUrl'] as string;
         if (data['asrApiKey'] !== undefined) this.asrApiKey = data['asrApiKey'] as string;
         if (data['asrModel'] !== undefined) this.asrModel = data['asrModel'] as string;
+        if (data['embeddingApiKey'] !== undefined) this.embeddingApiKey = data['embeddingApiKey'] as string;
         if (data['soul'] !== undefined) this.soul = data['soul'] as string;
         // Update per-provider maps
         this.savedModels[this.provider] = this.model;

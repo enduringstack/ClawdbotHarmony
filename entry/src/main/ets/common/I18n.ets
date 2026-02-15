@@ -85,8 +85,31 @@ function buildZh(): Map<string, string> {
 
   // Custom provider & ASR
   m.set('settings.customProvider', '定制化');
-  m.set('settings.asrEnabled', '云端 ASR');
-  m.set('settings.asrEnabledDesc', '使用云端语音识别服务（如不启用则使用本地离线识别）');
+  m.set('settings.aiEngine', 'AI 引擎');
+  m.set('settings.asrMode', '语音识别');
+  m.set('settings.asrModeDesc', '选择语音识别方式');
+  m.set('settings.asrModeAuto', '自动');
+  m.set('settings.asrModeLocal', '仅本地');
+  m.set('settings.asrModeCloud', '仅云端');
+  m.set('settings.asrModeAutoDesc', '优先云端识别，无API时使用本地');
+  m.set('settings.asrModeLocalDesc', '使用本地离线识别（仅中文）');
+  m.set('settings.asrModeCloudDesc', '使用云端语音识别服务');
+  m.set('settings.embeddingMode', '语义嵌入');
+  m.set('settings.embeddingModeDesc', '记忆搜索使用的嵌入方式');
+  m.set('settings.embeddingModeAuto', '自动');
+  m.set('settings.embeddingModeLocal', '仅本地');
+  m.set('settings.embeddingModeCloud', '仅云端');
+  m.set('settings.embeddingModeAutoDesc', '优先本地 MiniLM 模型，失败时使用云端');
+  m.set('settings.embeddingModeLocalDesc', '使用本地 MiniLM 模型（无需网络）');
+  m.set('settings.embeddingModeCloudDesc', '使用 SiliconFlow bge-m3 云端嵌入');
+  m.set('settings.intentMode', '意图识别');
+  m.set('settings.intentModeDesc', '用户意图的识别方式');
+  m.set('settings.intentModeAuto', '自动');
+  m.set('settings.intentModeLocal', '仅本地');
+  m.set('settings.intentModeCloud', '仅云端');
+  m.set('settings.intentModeAutoDesc', '本地关键词匹配 + LLM 工具调用');
+  m.set('settings.intentModeLocalDesc', '仅使用本地关键词匹配（快速，离线）');
+  m.set('settings.intentModeCloudDesc', '完全依赖 LLM 识别意图并调用工具');
 
   // SettingsPage - Unread message notification
   m.set('settings.unreadNotification', '未读消息通知');
@@ -387,8 +410,31 @@ function buildEn(): Map<string, string> {
 
   // Custom provider & ASR
   m.set('settings.customProvider', 'Custom');
-  m.set('settings.asrEnabled', 'Cloud ASR');
-  m.set('settings.asrEnabledDesc', 'Use cloud speech recognition (disable for local offline ASR)');
+  m.set('settings.aiEngine', 'AI Engine');
+  m.set('settings.asrMode', 'Speech Recognition');
+  m.set('settings.asrModeDesc', 'Choose speech recognition method');
+  m.set('settings.asrModeAuto', 'Auto');
+  m.set('settings.asrModeLocal', 'Local Only');
+  m.set('settings.asrModeCloud', 'Cloud Only');
+  m.set('settings.asrModeAutoDesc', 'Cloud first, local fallback when offline');
+  m.set('settings.asrModeLocalDesc', 'Use local offline recognition (Chinese only)');
+  m.set('settings.asrModeCloudDesc', 'Use cloud speech recognition service');
+  m.set('settings.embeddingMode', 'Embedding');
+  m.set('settings.embeddingModeDesc', 'Embedding method for memory search');
+  m.set('settings.embeddingModeAuto', 'Auto');
+  m.set('settings.embeddingModeLocal', 'Local Only');
+  m.set('settings.embeddingModeCloud', 'Cloud Only');
+  m.set('settings.embeddingModeAutoDesc', 'Local MiniLM first, cloud fallback');
+  m.set('settings.embeddingModeLocalDesc', 'Use local MiniLM model (offline)');
+  m.set('settings.embeddingModeCloudDesc', 'Use SiliconFlow bge-m3 cloud embedding');
+  m.set('settings.intentMode', 'Intent Detection');
+  m.set('settings.intentModeDesc', 'User intent recognition method');
+  m.set('settings.intentModeAuto', 'Auto');
+  m.set('settings.intentModeLocal', 'Local Only');
+  m.set('settings.intentModeCloud', 'Cloud Only');
+  m.set('settings.intentModeAutoDesc', 'Local keyword match + LLM tool calls');
+  m.set('settings.intentModeLocalDesc', 'Local keyword matching only (fast, offline)');
+  m.set('settings.intentModeCloudDesc', 'Rely on LLM for intent recognition and tool calls');
 
   // SettingsPage - Unread message notification
   m.set('settings.unreadNotification', 'Unread Notifications');

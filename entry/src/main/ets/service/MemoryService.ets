@@ -5,6 +5,7 @@ import { util } from '@kit.ArkTS';
 import { MemoryItem, MemoryData, VectorData, VectorStore } from '../model/Models';
 import { Constants } from '../common/Constants';
 import { LogService } from '../common/LogService';
+import { LocalEmbedding } from './embedding/LocalEmbedding';
 
 interface ScoredMemory {
   item: MemoryItem;
@@ -23,12 +24,14 @@ interface EmbeddingDataItem {
  * Persistent memory service with vector embedding support.
  * Stores facts, preferences, and instructions across sessions.
  * Memory is injected into the system prompt for personalisation.
- * Supports semantic search via embedding API (SiliconFlow bge-m3).
+ * Supports semantic search via local embedding (MiniLM-L6) with cloud API fallback.
  */
 export class MemoryService {
   private static instance: MemoryService | undefined = undefined;
   private log: LogService = LogService.getInstance();
   private readonly TAG = 'MemoryService';
+  private localEmb: LocalEmbedding = LocalEmbedding.getInstance();
+  private migrationDone: boolean = false;
 
   static getInstance(): MemoryService {
     if (!MemoryService.instance) {
@@ -203,8 +206,19 @@ export class MemoryService {
    * Call embedding API to generate a vector for the given text.
    * Returns empty array on failure.
    */
-  async embed(text: string, apiKey: string): Promise<number[]> {
-    if (apiKey.length === 0 || text.length === 0) return [];
+  async embed(text: string, apiKey: string, mode: string = 'auto'): Promise<number[]> {
+    if (text.length === 0) return [];
+    // Local embedding (for 'auto' or 'local' modes)
+    if (mode !== 'cloud' && this.localEmb.isReady()) {
+      let vec = await this.localEmb.embed(text);
+      if (vec.length > 0) {
+        return vec;
+      }
+      if (mode === 'local') return []; // local-only, don't fall back
+    }
+    if (mode === 'local') return []; // local mode but model not ready
+    // Cloud API (for 'auto' or 'cloud' modes)
+    if (apiKey.length === 0) return [];
     try {
       let bodyStr = JSON.stringify({ model: Constants.EMBEDDING_MODEL, input: text });
       let req = http.createHttp();
@@ -275,12 +289,22 @@ export class MemoryService {
    * Embed a memory item and store its vector.
    */
   private async embedAndStore(context: Context, item: MemoryItem): Promise<void> {
-    let apiKey = await this.getEmbeddingApiKey(context);
-    if (apiKey.length === 0) {
-      this.log.info(this.TAG, 'No embedding API key configured, skipping embed');
+    // Lazy-init local embedding model
+    if (!this.localEmb.isReady()) {
+      await this.localEmb.init(context);
+    }
+    // Check for model migration (dimension change)
+    if (!this.migrationDone) {
+      await this.checkModelMigration(context);
+      this.migrationDone = true;
+    }
+    let mode = await this.getEmbeddingMode(context);
+    let apiKey = mode !== 'local' ? await this.getEmbeddingApiKey(context) : '';
+    if (!this.localEmb.isReady() && apiKey.length === 0) {
+      this.log.info(this.TAG, 'No local model or API key, skipping embed');
       return;
     }
-    let vector = await this.embed(item.content, apiKey);
+    let vector = await this.embed(item.content, apiKey, mode);
     if (vector.length === 0) return;
 
     let store = await this.loadVectors(context);
@@ -335,8 +359,13 @@ export class MemoryService {
   async vectorSearch(context: Context, query: string, apiKey: string,
     topK: number = Constants.VECTOR_SEARCH_TOP_K,
     filterType: string = ''): Promise<MemoryItem[]> {
-    // Get query embedding
-    let queryVec = await this.embed(query, apiKey);
+    // Lazy-init local model
+    if (!this.localEmb.isReady()) {
+      await this.localEmb.init(context);
+    }
+    // Get query embedding (respect mode setting)
+    let mode = await this.getEmbeddingMode(context);
+    let queryVec = await this.embed(query, apiKey, mode);
     if (queryVec.length === 0) {
       this.log.info(this.TAG, 'vectorSearch: embed failed, falling back to keyword search');
       return [];
@@ -363,7 +392,8 @@ export class MemoryService {
       let item = itemMap.get(vd.id);
       if (!item) continue;
       let sim = this.cosineSimilarity(queryVec, vd.vector);
-      if (sim >= Constants.VECTOR_SEARCH_THRESHOLD) {
+      let threshold = this.localEmb.isReady() ? Constants.LOCAL_VECTOR_SEARCH_THRESHOLD : Constants.VECTOR_SEARCH_THRESHOLD;
+      if (sim >= threshold) {
         scored.push({ item: item, score: sim });
       }
     }
@@ -396,6 +426,47 @@ export class MemoryService {
     } catch {
       return '';
     }
+  }
+
+  async getEmbeddingMode(context: Context): Promise<string> {
+    try {
+      let store = await preferences.getPreferences(context, Constants.PREFS_SETTINGS);
+      return (await store.get('embedding_mode', 'auto')) as string;
+    } catch {
+      return 'auto';
+    }
+  }
+
+  // ==================== Model Migration ====================
+
+  private async checkModelMigration(context: Context): Promise<void> {
+    let store = await this.loadVectors(context);
+    let currentModel = this.localEmb.isReady()
+      ? this.localEmb.getModelName()
+      : Constants.EMBEDDING_MODEL;
+    if (store.vectors.length > 0 && store.model !== currentModel) {
+      this.log.info(this.TAG, `Model changed: ${store.model} -> ${currentModel}, clearing vectors`);
+      store.model = currentModel;
+      store.vectors = [];
+      await this.saveVectors(context, store);
+      this.reembedAll(context).catch((): void => {});
+    }
+  }
+
+  private async reembedAll(context: Context): Promise<void> {
+    let items = await this.loadAll(context);
+    this.log.info(this.TAG, `Re-embedding ${items.length} memories with local model...`);
+    let count = 0;
+    for (let item of items) {
+      await this.embedAndStore(context, item);
+      count++;
+      if (count < items.length) {
+        await new Promise<void>((resolve): void => {
+          setTimeout((): void => resolve(), 100);
+        });
+      }
+    }
+    this.log.info(this.TAG, `Re-embedding complete: ${count} items`);
   }
 
   // ==================== memory.md generation ====================
