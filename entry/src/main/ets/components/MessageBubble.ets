@@ -21,7 +21,7 @@ export struct MessageBubble {
   @State audioPlaying: boolean = false;
   @State a2uiHeight: number = 280;
   private avPlayer: media.AVPlayer | undefined = undefined;
-  private a2uiController: webview.WebviewController = new webview.WebviewController();
+  private a2uiController: webview.WebviewController | undefined = undefined;
   private log: LogService = LogService.getInstance();
 
   build() {
@@ -54,7 +54,7 @@ export struct MessageBubble {
         Blank()
         Column() {
           // User attached images
-          if (this.message.userImagePaths.length > 1) {
+          if (this.message.userImagePaths !== undefined && this.message.userImagePaths !== null && this.message.userImagePaths.length > 1) {
             // Multiple images — 2-column grid using nested Rows
             Column({ space: 4 }) {
               ForEach(this.getImageRows(), (row: string[]) => {
@@ -72,7 +72,7 @@ export struct MessageBubble {
               }, (row: string[], idx?: number) => `row_${idx}`)
             }
             .padding(6)
-          } else if (this.message.userImagePaths.length === 1 || this.message.userImagePath.length > 0) {
+          } else if ((this.message.userImagePaths !== undefined && this.message.userImagePaths !== null && this.message.userImagePaths.length === 1) || this.message.userImagePath.length > 0) {
             // Single image
             Image(this.getSingleImageSrc())
               .constraintSize({ maxHeight: 240 })
@@ -80,7 +80,8 @@ export struct MessageBubble {
               .borderRadius(8)
               .margin({ top: 8, bottom: 4 })
               .onClick(() => {
-                let p = this.message.userImagePaths.length > 0 ? this.message.userImagePaths[0] : this.message.userImagePath;
+                let paths = this.message.userImagePaths;
+                let p = (paths !== undefined && paths !== null && paths.length > 0) ? paths[0] : this.message.userImagePath;
                 this.onImageClick(p);
               })
           }
@@ -228,44 +229,7 @@ export struct MessageBubble {
 
           // Inline A2UI rendering
           if (this.message.a2uiContent.length > 0) {
-            Web({ src: 'resource://rawfile/a2ui/index.html?mode=inline', controller: this.a2uiController })
-              .width('100%')
-              .height(this.a2uiHeight)
-              .borderRadius(8)
-              .margin({ top: 6 })
-              .backgroundColor('#0F0F1A')
-              .javaScriptAccess(true)
-              .domStorageAccess(true)
-              .onPageEnd(() => {
-                // Set inline mode styles: remove min-height, hide empty placeholder
-                this.a2uiController.runJavaScript(
-                  "document.getElementById('a2ui-root').style.minHeight='auto';" +
-                  "document.getElementById('a2ui-root').style.padding='8px';" +
-                  "var emp=document.querySelector('.a2ui-empty');if(emp)emp.style.display='none';"
-                );
-                // Inject accumulated A2UI content
-                let escaped = this.escapeForJS(this.message.a2uiContent);
-                this.a2uiController.runJavaScript(`window.a2ui.push('${escaped}')`);
-                // Provide injection function to ChatPage for live updates
-                this.onA2UIReady((content: string) => {
-                  let esc = this.escapeForJS(content);
-                  this.a2uiController.runJavaScript(`window.a2ui.push('${esc}')`);
-                });
-              })
-              .onConsole((event) => {
-                if (event && event.message) {
-                  let msg: string = event.message.getMessage();
-                  if (msg.startsWith('A2UI_HEIGHT:')) {
-                    let h: number = parseInt(msg.substring(12));
-                    if (h > 0) {
-                      this.a2uiHeight = Math.min(h + 24, 600);
-                    }
-                  } else if (msg.startsWith('A2UI_ACTION:')) {
-                    this.onA2UIAction(msg.substring(12));
-                  }
-                }
-                return false;
-              })
+            this.A2UIView()
           }
 
           // Inline buttons
@@ -365,6 +329,59 @@ export struct MessageBubble {
     }
     .width('100%')
     .padding({ left: 16, right: 20, top: 2, bottom: 2 })
+  }
+
+  private getA2UIController(): webview.WebviewController {
+    if (!this.a2uiController) {
+      this.a2uiController = new webview.WebviewController();
+    }
+    return this.a2uiController;
+  }
+
+  @Builder
+  A2UIView() {
+    Web({ src: 'resource://rawfile/a2ui/index.html', controller: this.getA2UIController() })
+      .width('100%')
+      .height(this.a2uiHeight)
+      .borderRadius(8)
+      .margin({ top: 6 })
+      .backgroundColor('#0F0F1A')
+      .javaScriptAccess(true)
+      .domStorageAccess(true)
+      .onPageEnd(() => {
+        let ctrl = this.a2uiController;
+        if (!ctrl) return;
+        // Set inline mode styles
+        ctrl.runJavaScript(
+          "document.getElementById('a2ui-root').style.minHeight='auto';" +
+          "document.getElementById('a2ui-root').style.padding='8px';" +
+          "var emp=document.querySelector('.a2ui-empty');if(emp)emp.style.display='none';"
+        );
+        // Inject accumulated A2UI content
+        let escaped = this.escapeForJS(this.message.a2uiContent);
+        ctrl.runJavaScript(`window.a2ui.push('${escaped}')`);
+        // Provide injection function to ChatPage for live updates
+        this.onA2UIReady((content: string) => {
+          let c = this.a2uiController;
+          if (!c) return;
+          let esc = this.escapeForJS(content);
+          c.runJavaScript(`window.a2ui.push('${esc}')`);
+        });
+      })
+      .onConsole((event) => {
+        if (event && event.message) {
+          let msg: string = event.message.getMessage();
+          if (msg.startsWith('A2UI_HEIGHT:')) {
+            let h: number = parseInt(msg.substring(12));
+            if (h > 0) {
+              this.a2uiHeight = Math.min(h + 24, 600);
+            }
+          } else if (msg.startsWith('A2UI_ACTION:')) {
+            this.onA2UIAction(msg.substring(12));
+          }
+        }
+        return false;
+      })
   }
 
   @Builder
@@ -548,6 +565,9 @@ export struct MessageBubble {
   /** Split image paths into rows of 2 for grid display */
   private getImageRows(): string[][] {
     let paths = this.message.userImagePaths;
+    if (paths === undefined || paths === null) {
+      return [];
+    }
     let rows: string[][] = [];
     for (let i = 0; i < paths.length; i += 2) {
       if (i + 1 < paths.length) {
@@ -561,7 +581,8 @@ export struct MessageBubble {
 
   /** Get image source string for single image display */
   private getSingleImageSrc(): string {
-    let p = this.message.userImagePaths.length > 0 ? this.message.userImagePaths[0] : this.message.userImagePath;
+    let paths = this.message.userImagePaths;
+    let p = (paths !== undefined && paths !== null && paths.length > 0) ? paths[0] : this.message.userImagePath;
     return p.startsWith('file://') ? p : 'file://' + p;
   }
 
