@@ -55,6 +55,7 @@ export struct ChatPage {
   @State pendingImagePath: string = '';   // user-selected image ready to send (single)
   @State pendingImagePaths: string[] = [];  // multiple images ready to send
   @State pendingFileName: string = '';    // user-selected file name
+  @State replyingToMessage: ChatMessage | null = null;  // message being replied to
   private pendingFileContent: string = '';  // file text content to attach
   @StorageLink('share_timestamp') @Watch('onShareReceived') shareTimestamp: number = 0;
   private lastConsumedShareTs: number = 0;
@@ -489,7 +490,8 @@ export struct ChatPage {
                 onA2UIReady: (inject: (content: string) => void): void => { this.a2uiInjectFn = inject; },
                 onA2UIAction: (json: string): void => { NodeRuntime.getInstance().sendA2UIAction(json); },
                 onCanvasReady: (ctrl: webview.WebviewController): void => { NodeRuntime.getInstance().setInlineCanvasController(ctrl); },
-                onCanvasAction: (_json: string): void => { /* future use */ }
+                onCanvasAction: (_json: string): void => { /* future use */ },
+                onReply: (message: ChatMessage): void => { this.replyingToMessage = message; }
               })
             }
           }, (msg: ChatMessage): string => msg.id)
@@ -544,6 +546,39 @@ export struct ChatPage {
 
       // -- input bar (hidden in history mode) --
       if (!this.showHistory) {
+      // Reply preview
+      if (this.replyingToMessage !== null) {
+        Row() {
+          Column()
+            .width(4)
+            .height('100%')
+            .backgroundColor('#D2691E')
+            .borderRadius(2)
+          Column() {
+            Text(this.replyingToMessage.role === 'user' ? I18n.t('chat.you') : this.getAssistantDisplayName())
+              .fontSize(12)
+              .fontColor('#D2691E')
+              .fontWeight(FontWeight.Medium)
+            Text(this.replyingToMessage.content)
+              .fontSize(13)
+              .fontColor('#666666')
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          .margin({ left: 10 })
+          Text('\u2715')
+            .fontSize(16)
+            .fontColor('#999999')
+            .onClick(() => { this.replyingToMessage = null; })
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+        .backgroundColor('#F8F8F8')
+        .alignItems(VerticalAlign.Top)
+      }
+
       // Attachment preview (image or file)
       if (this.pendingImagePath.length > 0 || this.pendingImagePaths.length > 0 || this.pendingFileName.length > 0) {
         Row() {
@@ -1169,6 +1204,18 @@ Keep it short but preserve all important information. Use the same language as t
         let prefix = `[File: ${fileName}]\n${fileContent}\n\n`;
         text = prefix + text;
       }
+    }
+    // Handle reply
+    if (this.replyingToMessage !== null) {
+      userMsg.replyToId = this.replyingToMessage.id;
+      userMsg.replyToRole = this.replyingToMessage.role;
+      // Truncate reply preview
+      let previewContent = this.replyingToMessage.content;
+      userMsg.replyToContent = previewContent.length > 100 ? previewContent.substring(0, 100) + '...' : previewContent;
+      // Prepend reply context to the message text for AI context
+      let replyPrefix = `[Replying to: "${userMsg.replyToContent}"]\n`;
+      text = replyPrefix + text;
+      this.replyingToMessage = null;
     }
     this.messages.push(userMsg);
     this.scrollToEnd();

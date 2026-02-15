@@ -1,0 +1,4 @@
+ninja: Entering directory `C:\Users\Liuho\ClawdbotHarmony\entry\.cxx\default\default\debug\arm64-v8a'
+[1/2] Building CXX object CMakeFiles/exec.dir/napi_exec.cpp.o
+clang++: warning: argument unused during compilation: '--gcc-toolchain=C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native/llvm' [-Wunused-command-line-argument]
+[2/2] Linking CXX shared library C:\Users\Liuho\ClawdbotHarmony\entry\build\default\intermediates\cmake\default\obj\arm64-v8a\libexec.so

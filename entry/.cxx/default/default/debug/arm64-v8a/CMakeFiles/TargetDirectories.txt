@@ -1,0 +1,3 @@
+C:/Users/Liuho/ClawdbotHarmony/entry/.cxx/default/default/debug/arm64-v8a/CMakeFiles/exec.dir
+C:/Users/Liuho/ClawdbotHarmony/entry/.cxx/default/default/debug/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/Liuho/ClawdbotHarmony/entry/.cxx/default/default/debug/arm64-v8a/CMakeFiles/rebuild_cache.dir

@@ -47,6 +47,9 @@ function buildZh(): Map<string, string> {
   m.set('chat.audioPlaying', '正在播放...');
   m.set('chat.recording', '正在录音...');
   m.set('chat.voiceMessage', '语音消息');
+  m.set('chat.copy', '复制');
+  m.set('chat.reply', '引用回复');
+  m.set('chat.you', '你');
   m.set('chat.voiceNoText', '[语音消息]');
   m.set('chat.speechError', '语音识别失败');
   m.set('chat.rateLimited', '免费模型已达到速率限制，请稍后重试。\n\n如需更稳定的服务，请注册自己的 API Key：\n\n📝 OpenRouter 注册步骤：\n1. 打开 openrouter.ai 并点击注册\n2. 使用 Google 账号或邮箱注册\n3. 注册后进入 openrouter.ai/settings/keys\n4. 点击 "Create Key" 创建一个新密钥\n5. 复制密钥，回到本 App 的设置页\n6. 在 "AI 提供商" 选择 OpenRouter\n7. 将密钥粘贴到 "API Key" 输入框\n\n💡 OpenRouter 提供免费和付费模型，注册后免费额度更高，也可按需充值使用 GPT-4o、Claude 等高级模型。');
@@ -329,6 +332,9 @@ function buildEn(): Map<string, string> {
   m.set('chat.audioPlaying', 'Playing...');
   m.set('chat.recording', 'Recording...');
   m.set('chat.voiceMessage', 'Voice message');
+  m.set('chat.copy', 'Copy');
+  m.set('chat.reply', 'Reply');
+  m.set('chat.you', 'You');
   m.set('chat.voiceNoText', '[Voice message]');
   m.set('chat.speechError', 'Speech recognition failed');
   m.set('chat.rateLimited', 'Free model rate limited. Please retry shortly.\n\nFor stable service, register your own API Key:\n\n📝 OpenRouter Registration:\n1. Go to openrouter.ai and sign up\n2. Register with Google or email\n3. After sign-up, go to openrouter.ai/settings/keys\n4. Click "Create Key" to generate a new key\n5. Copy the key, then open Settings in this app\n6. Select "OpenRouter" as AI Provider\n7. Paste the key into the "API Key" field\n\n💡 OpenRouter offers free and paid models. After registration you get higher free limits, and can top up to use premium models like GPT-4o, Claude, etc.');

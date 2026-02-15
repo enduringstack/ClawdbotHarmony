@@ -20,6 +20,7 @@ export struct MessageBubble {
   onA2UIAction: (json: string) => void = () => {};
   onCanvasReady: (ctrl: webview.WebviewController) => void = () => {};
   onCanvasAction: (json: string) => void = () => {};
+  onReply: (message: ChatMessage) => void = () => {};
   @State audioPlaying: boolean = false;
   @State a2uiHeight: number = 280;
   @State canvasHeight: number = 400;
@@ -57,6 +58,34 @@ export struct MessageBubble {
       Row() {
         Blank()
         Column() {
+          // Reply preview if replying to another message
+          if (this.sLen(this.message.replyToId) > 0) {
+            Row() {
+              Column()
+                .width(3)
+                .height('100%')
+                .backgroundColor('rgba(255,255,255,0.5)')
+                .borderRadius(1.5)
+              Column() {
+                Text(this.message.replyToRole === 'user' ? I18n.t('chat.you') : this.assistantName || 'Assistant')
+                  .fontSize(11)
+                  .fontColor('rgba(255,255,255,0.8)')
+                  .fontWeight(FontWeight.Medium)
+                Text(this.message.replyToContent)
+                  .fontSize(12)
+                  .fontColor('rgba(255,255,255,0.6)')
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              .margin({ left: 8 })
+            }
+            .width('100%')
+            .padding({ left: 10, right: 10, top: 8, bottom: 6 })
+            .alignItems(VerticalAlign.Top)
+          }
+
           // User attached images
           if (this.aLen(this.message.userImagePaths) > 1) {
             // Multiple images — 2-column grid using nested Rows
@@ -146,7 +175,7 @@ export struct MessageBubble {
         .gesture(
           GestureGroup(GestureMode.Exclusive,
             LongPressGesture().onAction(() => {
-              this.copyToClipboard(this.message.content);
+              this.showMessageMenu();
             }),
             TapGesture().onAction(() => {
               if (this.sLen(this.message.audioPath) > 0) {
@@ -160,6 +189,22 @@ export struct MessageBubble {
     }
     .width('100%')
     .padding({ left: 16, right: 20, top: 4, bottom: 4 })
+  }
+
+  private showMessageMenu(): void {
+    promptAction.showActionMenu({
+      title: '',
+      buttons: [
+        { text: I18n.t('chat.copy'), color: '#333333' },
+        { text: I18n.t('chat.reply'), color: '#333333' }
+      ]
+    }).then((result) => {
+      if (result.index === 0) {
+        this.copyToClipboard(this.message.content);
+      } else if (result.index === 1) {
+        this.onReply(this.message);
+      }
+    }).catch(() => { /* cancelled */ });
   }
 
   @Builder
@@ -201,6 +246,34 @@ export struct MessageBubble {
         .margin({ right: 8, top: 2 })
 
         Column() {
+          // Reply preview if replying to another message
+          if (this.sLen(this.message.replyToId) > 0) {
+            Row() {
+              Column()
+                .width(3)
+                .height('100%')
+                .backgroundColor('#D2691E')
+                .borderRadius(1.5)
+              Column() {
+                Text(this.message.replyToRole === 'user' ? I18n.t('chat.you') : this.assistantName || 'Assistant')
+                  .fontSize(11)
+                  .fontColor('#D2691E')
+                  .fontWeight(FontWeight.Medium)
+                Text(this.message.replyToContent)
+                  .fontSize(12)
+                  .fontColor('#888888')
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              .margin({ left: 8 })
+            }
+            .width('100%')
+            .padding({ left: 2, right: 2, bottom: 8 })
+            .alignItems(VerticalAlign.Top)
+          }
+
           MarkdownText({
             content: this.sLen(this.message.imagePath) > 0 ? this.stripImagePaths(this.message.content) : this.message.content,
             textColor: '#1A1A1A',
@@ -290,7 +363,7 @@ export struct MessageBubble {
         })
         .layoutWeight(1)
         .gesture(LongPressGesture().onAction(() => {
-          this.copyToClipboard(this.message.content);
+          this.showMessageMenu();
         }))
 
         Blank()

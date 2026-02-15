@@ -33,6 +33,9 @@ export class ChatMessage {
   attachmentName: string;   // file attachment display name
   a2uiContent: string;      // accumulated A2UI JSONL content for inline rendering
   canvasUrl: string;        // URL for inline canvas rendering (data: or http:)
+  replyToId: string;        // ID of the message being replied to
+  replyToContent: string;   // Preview content of the replied message
+  replyToRole: string;      // Role of the replied message ('user' | 'assistant')
 
   constructor(role: string, content: string) {
     this.id = `m_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
@@ -53,6 +56,9 @@ export class ChatMessage {
     this.attachmentName = '';
     this.a2uiContent = '';
     this.canvasUrl = '';
+    this.replyToId = '';
+    this.replyToContent = '';
+    this.replyToRole = '';
   }
 }
 
