@@ -1,5 +1,6 @@
 import { UIAbility, AbilityConstant, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
+import { NodeRuntime } from '../service/gateway/NodeRuntime';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -227,9 +228,11 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     console.info('[ClawdBot] onForeground');
+    NodeRuntime.getInstance().setForegroundState(true);
   }
 
   onBackground(): void {
     console.info('[ClawdBot] onBackground');
+    NodeRuntime.getInstance().setForegroundState(false);
   }
 }

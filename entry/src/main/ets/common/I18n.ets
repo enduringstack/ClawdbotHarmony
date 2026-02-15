@@ -85,6 +85,10 @@ function buildZh(): Map<string, string> {
   m.set('settings.asrEnabled', '云端 ASR');
   m.set('settings.asrEnabledDesc', '使用云端语音识别服务（如不启用则使用本地离线识别）');
 
+  // SettingsPage - Unread message notification
+  m.set('settings.unreadNotification', '未读消息通知');
+  m.set('settings.unreadNotificationDesc', '当应用在后台时，新消息将显示在状态栏');
+
   // SettingsPage - TTS auto-read
   m.set('settings.ttsAutoRead', '语音朗读');
   m.set('settings.ttsAutoReadDesc', '自动朗读 AI 回复（使用本地 TTS）');
@@ -362,6 +366,10 @@ function buildEn(): Map<string, string> {
   m.set('settings.customProvider', 'Custom');
   m.set('settings.asrEnabled', 'Cloud ASR');
   m.set('settings.asrEnabledDesc', 'Use cloud speech recognition (disable for local offline ASR)');
+
+  // SettingsPage - Unread message notification
+  m.set('settings.unreadNotification', 'Unread Notifications');
+  m.set('settings.unreadNotificationDesc', 'Show new messages in status bar when app is in background');
 
   // SettingsPage - TTS auto-read
   m.set('settings.ttsAutoRead', 'Auto Read Aloud');

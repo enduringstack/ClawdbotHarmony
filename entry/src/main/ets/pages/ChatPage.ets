@@ -103,6 +103,8 @@ export struct ChatPage {
   private gwAccumulatedText: string = ''; // accumulated text from delta events
 
   aboutToAppear(): void {
+    // Mark chat page as visible for unread message notifications
+    NodeRuntime.getInstance().setChatPageVisible(true);
     this.loadHistory();
     this.loadTtsAutoReadSetting();
     this.loadAssistantSettings();
@@ -187,6 +189,8 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
+    // Mark chat page as not visible
+    NodeRuntime.getInstance().setChatPageVisible(false);
     // Auto-save conversation if there are enough messages
     if (this.messages.length > 2) {
       let msgCopy = this.messages.slice();

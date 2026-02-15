@@ -125,6 +125,11 @@ export class NodeRuntime {
   private _agentIdentity: AgentIdentity | undefined = undefined;
   private _identityListeners: Array<(identity: AgentIdentity | undefined) => void> = [];
 
+  // App foreground/background state and chat page visibility for message notifications
+  private _isInForeground: boolean = true;
+  private _isChatPageVisible: boolean = false;
+  private _unreadMessageNotifEnabled: boolean = true;
+
   static getInstance(): NodeRuntime {
     if (!NodeRuntime.instance) {
       NodeRuntime.instance = new NodeRuntime();
@@ -198,6 +203,30 @@ export class NodeRuntime {
     this.log.info(TAG, `Capabilities updated: location=${location} camera=${camera} canvas=${canvas} screen=${screen} notification=${notification} sms=${this._capSms} mic=${this._capMicrophone} speaker=${this._capSpeaker} email=${this._capEmail}`);
   }
 
+  // ---- App foreground/background and chat page visibility ----
+
+  /** Called by EntryAbility when app goes to foreground */
+  setForegroundState(inForeground: boolean): void {
+    this._isInForeground = inForeground;
+    this.log.info(TAG, `Foreground state: ${inForeground}`);
+  }
+
+  /** Called by ChatPage when it appears/disappears */
+  setChatPageVisible(visible: boolean): void {
+    this._isChatPageVisible = visible;
+    this.log.info(TAG, `Chat page visible: ${visible}`);
+  }
+
+  /** Enable/disable unread message notifications (called from settings) */
+  setUnreadNotificationEnabled(enabled: boolean): void {
+    this._unreadMessageNotifEnabled = enabled;
+    this.log.info(TAG, `Unread message notification: ${enabled}`);
+  }
+
+  get isUnreadNotificationEnabled(): boolean {
+    return this._unreadMessageNotifEnabled;
+  }
+
   addStateListener(listener: (state: ConnectionState, text: string) => void): void {
     this._listeners.push(listener);
   }
@@ -267,6 +296,54 @@ export class NodeRuntime {
         // ignore
       }
     }
+
+    // Send system notification for new messages when app is in background or chat page is not visible
+    if (this._unreadMessageNotifEnabled && event.state === 'final' && event.message) {
+      let shouldNotify = !this._isInForeground || !this._isChatPageVisible;
+      if (shouldNotify) {
+        this.sendMessageNotification(event);
+      }
+    }
+  }
+
+  /** Send a system notification for a new chat message */
+  private sendMessageNotification(event: GatewayChatEvent): void {
+    if (!event.message || !event.message.content) {
+      return;
+    }
+
+    // Extract text from message content blocks
+    let textParts: string[] = [];
+    for (let block of event.message.content) {
+      if (block.type === 'text' && block.text) {
+        textParts.push(block.text);
+      }
+    }
+    let messageText = textParts.join('\n');
+    if (messageText.length === 0) {
+      return;
+    }
+
+    // Truncate long messages for notification
+    let notifText = messageText.length > 200 ? messageText.substring(0, 200) + '…' : messageText;
+
+    // Get agent name for notification title
+    let title = this._agentIdentity?.name ?? 'OpenClaw';
+    if (this._agentIdentity?.emoji) {
+      title = `${this._agentIdentity.emoji} ${title}`;
+    }
+
+    this.log.info(TAG, `Sending message notification: title="${title}" text="${notifText.substring(0, 50)}..."`);
+
+    // Use NotificationCapability to publish notification
+    let params = JSON.stringify({
+      title: title,
+      body: notifText,
+      sender: 'assistant'
+    });
+    this.notificationCapability.execute(params).catch((err: Error) => {
+      this.log.warn(TAG, `Failed to send message notification: ${err.message ?? ''}`);
+    });
   }
 
   // ---- Notification-to-chat listeners ----

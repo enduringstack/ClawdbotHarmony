@@ -89,6 +89,7 @@ export struct SettingsPage {
   @State capMicrophone: boolean = true;
   @State capSpeaker: boolean = true;
   @State capEmail: boolean = true;
+  @State unreadNotification: boolean = true;
   @State ttsAutoRead: boolean = false;
 
   // Profiles
@@ -470,6 +471,26 @@ export struct SettingsPage {
           this.CapToggle(I18n.t('settings.capEmail'), this.capEmail, (v: boolean) => { this.capEmail = v; })
 
           Divider().margin({ top: 10, bottom: 10 }).color('#F0F0F0')
+          Row() {
+            Column({ space: 2 }) {
+              Text(I18n.t('settings.unreadNotification'))
+                .fontSize(13)
+                .fontColor('#1A1A1A')
+              Text(I18n.t('settings.unreadNotificationDesc'))
+                .fontSize(11)
+                .fontColor('#999999')
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+            Toggle({ type: ToggleType.Switch, isOn: this.unreadNotification })
+              .selectedColor('#D2691E')
+              .onChange((v: boolean) => {
+                this.unreadNotification = v;
+                NodeRuntime.getInstance().setUnreadNotificationEnabled(v);
+              })
+          }
+          .width('100%')
+
           Row() {
             Column({ space: 2 }) {
               Text(I18n.t('settings.ttsAutoRead'))
@@ -1595,6 +1616,8 @@ export struct SettingsPage {
       this.capMicrophone = (await store.get('capMicrophone', true)) as boolean;
       this.capSpeaker = (await store.get('capSpeaker', true)) as boolean;
       this.capEmail = (await store.get('capEmail', true)) as boolean;
+      this.unreadNotification = (await store.get('unreadNotification', true)) as boolean;
+      NodeRuntime.getInstance().setUnreadNotificationEnabled(this.unreadNotification);
       this.ttsAutoRead = (await store.get('ttsAutoRead', false)) as boolean;
     } catch { /* first launch defaults */ }
   }
@@ -1853,6 +1876,7 @@ export struct SettingsPage {
       await gwStore.put('capMicrophone', this.capMicrophone);
       await gwStore.put('capSpeaker', this.capSpeaker);
       await gwStore.put('capEmail', this.capEmail);
+      await gwStore.put('unreadNotification', this.unreadNotification);
       await gwStore.put('ttsAutoRead', this.ttsAutoRead);
       await gwStore.flush();
 
@@ -1946,6 +1970,7 @@ export struct SettingsPage {
       data['capMicrophone'] = this.capMicrophone;
       data['capSpeaker'] = this.capSpeaker;
       data['capEmail'] = this.capEmail;
+      data['unreadNotification'] = this.unreadNotification;
       data['ttsAutoRead'] = this.ttsAutoRead;
     }
 
@@ -1998,6 +2023,10 @@ export struct SettingsPage {
         if (data['capMicrophone'] !== undefined) this.capMicrophone = data['capMicrophone'] as boolean;
         if (data['capSpeaker'] !== undefined) this.capSpeaker = data['capSpeaker'] as boolean;
         if (data['capEmail'] !== undefined) this.capEmail = data['capEmail'] as boolean;
+        if (data['unreadNotification'] !== undefined) {
+          this.unreadNotification = data['unreadNotification'] as boolean;
+          NodeRuntime.getInstance().setUnreadNotificationEnabled(this.unreadNotification);
+        }
         if (data['ttsAutoRead'] !== undefined) this.ttsAutoRead = data['ttsAutoRead'] as boolean;
       }
       promptAction.showToast({ message: I18n.t('settings.profileLoaded'), duration: 1500 });
