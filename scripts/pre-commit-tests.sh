@@ -34,7 +34,7 @@ echo ""
 # ------------------------------------------
 # Test 1: Version Consistency
 # ------------------------------------------
-echo -e "${YELLOW}[1/4] Checking version consistency...${NC}"
+echo -e "${YELLOW}[1/5] Checking version consistency...${NC}"
 
 V_APP=$(grep -o '"versionName"[[:space:]]*:[[:space:]]*"[^"]*"' "$PROJECT_ROOT/AppScope/app.json5" | grep -o '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*')
 V_NODE=$(grep -o "APP_VERSION[[:space:]]*=[[:space:]]*'[^']*'" "$PROJECT_ROOT/entry/src/main/ets/service/gateway/NodeRuntime.ets" | grep -o '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*')
@@ -63,7 +63,7 @@ fi
 # ------------------------------------------
 # Test 2: Critical Files Exist
 # ------------------------------------------
-echo -e "${YELLOW}[2/4] Checking critical files...${NC}"
+echo -e "${YELLOW}[2/5] Checking critical files...${NC}"
 
 CRITICAL_FILES=(
   "AppScope/app.json5"
@@ -95,9 +95,62 @@ if [ "$FILES_OK" = true ]; then
 fi
 
 # ------------------------------------------
-# Test 3: Sensitive Data Check
+# Test 3: UI Resource Files Check
 # ------------------------------------------
-echo -e "${YELLOW}[3/4] Checking for sensitive data in staged files...${NC}"
+echo -e "${YELLOW}[3/5] Checking UI resource files...${NC}"
+
+RESOURCE_DIR="entry/src/main/resources/base/media"
+REQUIRED_RESOURCES=(
+  "${RESOURCE_DIR}/icon.png"
+  "${RESOURCE_DIR}/startIcon.png"
+  "${RESOURCE_DIR}/talkmode.jpg"
+  "${RESOURCE_DIR}/ic_talk_mode.png"
+  "${RESOURCE_DIR}/ic_hangup.png"
+)
+
+RESOURCE_OK=true
+MISSING_RESOURCES=()
+UNTRACKED_RESOURCES=()
+
+for res in "${REQUIRED_RESOURCES[@]}"; do
+  if [ ! -f "$PROJECT_ROOT/$res" ]; then
+    RESOURCE_OK=false
+    MISSING_RESOURCES+=("$res")
+  elif ! git -C "$PROJECT_ROOT" ls-files --error-unmatch "$res" >/dev/null 2>&1; then
+    RESOURCE_OK=false
+    UNTRACKED_RESOURCES+=("$res")
+  fi
+done
+
+# Also check if any resource was deleted in staged changes
+DELETED_RESOURCES=$(git -C "$PROJECT_ROOT" diff --cached --name-only --diff-filter=D 2>/dev/null | grep "^${RESOURCE_DIR}/" || true)
+if [ -n "$DELETED_RESOURCES" ]; then
+  RESOURCE_OK=false
+fi
+
+if [ "$RESOURCE_OK" = true ]; then
+  echo -e "  ${PASS} All ${#REQUIRED_RESOURCES[@]} UI resources present and tracked"
+else
+  for res in "${MISSING_RESOURCES[@]}"; do
+    echo -e "  ${FAIL} Missing on disk: $res"
+    ERRORS=$((ERRORS + 1))
+  done
+  for res in "${UNTRACKED_RESOURCES[@]}"; do
+    echo -e "  ${FAIL} Not tracked by git: $res"
+    ERRORS=$((ERRORS + 1))
+  done
+  if [ -n "$DELETED_RESOURCES" ]; then
+    echo "$DELETED_RESOURCES" | while read -r del; do
+      echo -e "  ${FAIL} Staged for deletion: $del"
+    done
+    ERRORS=$((ERRORS + 1))
+  fi
+fi
+
+# ------------------------------------------
+# Test 4: Sensitive Data Check
+# ------------------------------------------
+echo -e "${YELLOW}[4/5] Checking for sensitive data in staged files...${NC}"
 
 SENSITIVE_OK=true
 # Check staged .ets/.ts files for hardcoded secrets
@@ -129,7 +182,7 @@ fi
 # ------------------------------------------
 # Test 4: Build Verification
 # ------------------------------------------
-echo -e "${YELLOW}[4/4] Building project (compile check)...${NC}"
+echo -e "${YELLOW}[5/5] Building project (compile check)...${NC}"
 
 # Convert WSL project path to Windows path for PowerShell
 WIN_PROJECT="C:\\Users\\Liuho\\ClawdbotHarmony"
