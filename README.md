@@ -116,6 +116,21 @@ ClawdBot 是一款运行在 HarmonyOS NEXT 上的全功能个人 AI 助手应用
 - 网页关键词 → 自动调用 `open_webpage`
 - 邮件关键词 → 自动调用 `list_emails`
 
+### 已知问题
+
+**本地 Embedding 模型暂时禁用**
+
+项目包含本地 MiniLM-L6 embedding 模型（6层 Transformer），用于离线语义搜索。但由于 HarmonyOS 的 ANR（应用无响应）阈值为 3 秒，单层 Transformer 计算在主线程上就可能超时导致崩溃。
+
+尝试过的方案：
+- ✅ 异步文件读取 - 解决了模型加载时的 ANR
+- ❌ 每层后 yield 让出主线程 - 单层计算仍然太久
+- ❌ Worker 线程 - ArkTS 严格类型检查导致实现复杂
+
+当前状态：`LocalEmbedding.isReady()` 返回 `false`，强制使用云端 API。
+
+TODO：实现基于 Worker 的后台计算方案。
+
 ### 技术栈
 
 - **平台**: HarmonyOS NEXT (API 12 ~ 22)
@@ -279,6 +294,21 @@ User: What mode are you in? What model are you using?
 - Weather keywords → auto-append GPS coordinates
 - Web keywords → auto-call `open_webpage`
 - Email keywords → auto-call `list_emails`
+
+### Known Issues
+
+**Local Embedding Model Temporarily Disabled**
+
+The project includes a local MiniLM-L6 embedding model (6-layer Transformer) for offline semantic search. However, due to HarmonyOS's 3-second ANR (Application Not Responding) threshold, even a single Transformer layer computation on the main thread can timeout and cause crashes.
+
+Attempted solutions:
+- ✅ Async file reading - Fixed ANR during model loading
+- ❌ Yield after each layer - Single layer computation still too slow
+- ❌ Worker thread - ArkTS strict typing made implementation complex
+
+Current status: `LocalEmbedding.isReady()` returns `false`, forcing cloud API fallback.
+
+TODO: Implement Worker-based background computation solution.
 
 ### Tech Stack
 
