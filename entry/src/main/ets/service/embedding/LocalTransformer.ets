@@ -68,15 +68,18 @@ export class LocalTransformer {
     let rm = (context as common.UIAbilityContext).resourceManager;
     let t0 = Date.now();
 
-    // Load config
-    let cfgRaw = rm.getRawFileContentSync('model/config.json');
+    // Load config (async to avoid blocking main thread)
+    let cfgRaw = await rm.getRawFileContent('model/config.json');
     let cfgStr = uint8ArrayToString(cfgRaw);
     this.config = JSON.parse(cfgStr) as ModelConfig;
     this.log.info(this.TAG, `Config: h=${this.config.hidden_size} layers=${this.config.num_hidden_layers} heads=${this.config.num_attention_heads}`);
 
-    // Load embeddings — use slice() to get a properly-sized copy,
-    // because getRawFileContentSync may return a view into a larger shared buffer
-    let embRaw = rm.getRawFileContentSync('model/embeddings.bin');
+    // Yield to event loop after config load
+    await this.yieldToEventLoop();
+
+    // Load embeddings (async) — use slice() to get a properly-sized copy,
+    // because getRawFileContent may return a view into a larger shared buffer
+    let embRaw = await rm.getRawFileContent('model/embeddings.bin');
     let embData = embRaw.slice();
     let tensors = this.parseBin(embData);
     let tMap = new Map<string, Float32Array>();
@@ -91,10 +94,13 @@ export class LocalTransformer {
     this.embLnW = tMap.get('LayerNorm.weight') ?? new Float32Array(0);
     this.embLnB = tMap.get('LayerNorm.bias') ?? new Float32Array(0);
 
-    // Load transformer layers (yield between layers to avoid UI freeze)
+    // Yield to event loop after embeddings
+    await this.yieldToEventLoop();
+
+    // Load transformer layers (async with yield between each layer to avoid ANR)
     this.layers = [];
     for (let i = 0; i < this.config.num_hidden_layers; i++) {
-      let layerRaw = rm.getRawFileContentSync(`model/layer_${i.toString().padStart(2, '0')}.bin`);
+      let layerRaw = await rm.getRawFileContent(`model/layer_${i.toString().padStart(2, '0')}.bin`);
       let lt = this.parseBin(layerRaw.slice());
       let lm = new Map<string, Float32Array>();
       for (let t of lt) {
@@ -120,10 +126,8 @@ export class LocalTransformer {
         ln2Bias: lm.get('output.LayerNorm.bias') ?? new Float32Array(0),
       };
       this.layers.push(layer);
-      // Yield to event loop every 2 layers to avoid ANR
-      if (i % 2 === 1) {
-        await this.yieldToEventLoop();
-      }
+      // Yield to event loop after each layer to avoid ANR
+      await this.yieldToEventLoop();
     }
 
     this.loaded = true;

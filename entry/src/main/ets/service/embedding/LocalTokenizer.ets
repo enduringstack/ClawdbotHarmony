@@ -16,6 +16,15 @@ interface TokenizerConfig {
   do_lower_case: boolean;
 }
 
+/** Convert Uint8Array to string without spread operator (avoids stack overflow on large arrays) */
+function uint8ArrayToString(arr: Uint8Array): string {
+  let result = '';
+  for (let i = 0; i < arr.length; i++) {
+    result += String.fromCharCode(arr[i]);
+  }
+  return result;
+}
+
 export class LocalTokenizer {
   private vocab: Map<string, number> = new Map();
   private config: TokenizerConfig = {
@@ -33,9 +42,9 @@ export class LocalTokenizer {
   async load(context: common.Context): Promise<void> {
     let rm = (context as common.UIAbilityContext).resourceManager;
 
-    // Load vocabulary
-    let vocabRaw = rm.getRawFileContentSync('model/vocab.json');
-    let vocabStr = String.fromCharCode(...new Uint8Array(vocabRaw.buffer));
+    // Load vocabulary (async to avoid blocking main thread)
+    let vocabRaw = await rm.getRawFileContent('model/vocab.json');
+    let vocabStr = uint8ArrayToString(vocabRaw);
     let vocabObj = JSON.parse(vocabStr) as Record<string, number>;
     this.vocab = new Map<string, number>();
     let keys = Object.keys(vocabObj);
@@ -43,9 +52,9 @@ export class LocalTokenizer {
       this.vocab.set(key, vocabObj[key]);
     }
 
-    // Load tokenizer config
-    let tokRaw = rm.getRawFileContentSync('model/tokenizer.json');
-    let tokStr = String.fromCharCode(...new Uint8Array(tokRaw.buffer));
+    // Load tokenizer config (async)
+    let tokRaw = await rm.getRawFileContent('model/tokenizer.json');
+    let tokStr = uint8ArrayToString(tokRaw);
     this.config = JSON.parse(tokStr) as TokenizerConfig;
 
     this.loaded = true;
