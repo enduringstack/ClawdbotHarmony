@@ -243,9 +243,71 @@
 4. **高准确率**: 3D-Speaker 模型效果优秀
 5. **可扩展**: 同一框架可支持 ASR、TTS、VAD 等
 
-**下一步**: 确认后开始 Phase 1 环境准备。
+**下一步**: Phase 1 环境搭建已完成，进入 Phase 2 NAPI 模块开发。
+
+---
+
+## 9. Phase 1 环境搭建进度
+
+### 9.1 已完成项目
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| 创建 voiceprint NAPI 框架 | ✅ 完成 | `entry/src/main/cpp/voiceprint/voiceprint_napi.cpp` |
+| 创建 CMake 配置 | ✅ 完成 | 独立 CMakeLists.txt + 主 CMakeLists.txt 集成 |
+| 创建 TypeScript 类型定义 | ✅ 完成 | `types/libvoiceprint/index.d.ts` |
+| 创建 sherpa-onnx 下载脚本 | ✅ 完成 | `scripts/download_sherpa_onnx.sh` |
+
+### 9.2 文件结构
+
+```
+entry/src/main/cpp/
+├── CMakeLists.txt                          # 更新: 添加 voiceprint 子目录
+├── napi_exec.cpp                           # 原有: exec 模块
+├── voiceprint/
+│   ├── CMakeLists.txt                      # 新增: voiceprint 编译配置
+│   └── voiceprint_napi.cpp                 # 新增: NAPI 接口 (stub 实现)
+└── types/
+    ├── libexec/                             # 原有: exec 类型定义
+    └── libvoiceprint/                       # 新增: voiceprint 类型定义
+        ├── index.d.ts
+        └── oh-package.json5
+
+scripts/
+└── download_sherpa_onnx.sh                 # 新增: 下载 sherpa-onnx + 模型
+```
+
+### 9.3 NAPI 接口 (Stub 实现)
+
+当前 `voiceprint_napi.cpp` 提供以下接口 (stub，待 sherpa-onnx 集成后实现):
+
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `initModel` | `(modelDir: string) => boolean` | 初始化模型 |
+| `extractEmbedding` | `(pcm: Float32Array, rate: number) => Float32Array` | 提取 192 维声纹向量 |
+| `computeSimilarity` | `(emb1: Float32Array, emb2: Float32Array) => number` | 余弦相似度计算 (已实现) |
+| `getEmbeddingDim` | `() => number` | 返回 192 |
+| `isModelLoaded` | `() => boolean` | 模型是否已加载 |
+
+### 9.4 sherpa-onnx 集成方式
+
+经调研，sherpa-onnx 提供官方 HarmonyOS 支持:
+
+- **ohpm 包**: `ohpm install sherpa_onnx@1.12.1`
+- **HAR 包**: 可通过 DevEco Studio 构建或直接使用 ohpm 安装
+- **模型**: `3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx` (~38MB)
+- **模型下载**: `scripts/download_sherpa_onnx.sh` 自动处理
+
+### 9.5 下一步 (Phase 2)
+
+- [ ] 运行 `scripts/download_sherpa_onnx.sh` 下载 sherpa-onnx 和模型
+- [ ] 在 `oh-package.json5` 中添加 `sherpa_onnx` 依赖
+- [ ] 将 `voiceprint_napi.cpp` 中的 stub 替换为真实 sherpa-onnx 调用
+- [ ] 取消 CMakeLists.txt 中的 sherpa-onnx 链接注释
+- [ ] 编译测试 NAPI 模块
 
 ---
 
 *分析时间: 2026-02-16*
+*更新时间: 2026-02-16 (Phase 1 完成)*
 *分析人: Linda (AI Assistant)*

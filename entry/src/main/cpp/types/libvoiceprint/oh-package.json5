@@ -1,0 +1,6 @@
+{
+  "name": "libvoiceprint",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "Native voiceprint module for speaker embedding extraction via sherpa-onnx"
+}
