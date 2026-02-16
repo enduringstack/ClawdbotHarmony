@@ -1322,6 +1322,59 @@ Respond ONLY with the JSON array.`;
     }
   }
 
+  /**
+   * Auto-update session title based on recent conversation.
+   * Called after each gateway chat response completes.
+   * Uses the most recent user message to update the title dynamically.
+   */
+  private tryAutoUpdateSessionTitle(): void {
+    // Need at least 2 messages to generate a meaningful title
+    if (this.messages.length < 2) return;
+
+    const session = this.sessionSvc.getCurrentSession();
+    if (!session) return;
+
+    // Find the most recent user message (looking at last 6 messages)
+    let recentUserMsg: ChatMessage | undefined;
+    const startIdx = Math.max(0, this.messages.length - 6);
+    for (let i = this.messages.length - 1; i >= startIdx; i--) {
+      if (this.messages[i].role === 'user' && this.messages[i].content.length > 0) {
+        recentUserMsg = this.messages[i];
+        break;
+      }
+    }
+
+    if (!recentUserMsg) return;
+
+    // Clean up user content (remove file/reply prefixes)
+    let cleaned = recentUserMsg.content
+      .replace(/^\[File:.*?\]\n[\s\S]*?\n\n/g, '')
+      .replace(/^\[Replying to:.*?\]\n/g, '')
+      .replace(/^\[.*?张.*?图片\]$/g, '')
+      .trim();
+
+    if (cleaned.length === 0) return;
+
+    // Generate title from recent topic (max 12 chars + ellipsis)
+    let newTitle = cleaned.substring(0, 12).replace(/\n/g, ' ').trim();
+    if (newTitle.length === 0) return;
+
+    if (cleaned.length > 12) {
+      newTitle += '...';
+    }
+
+    // Only update if title actually changed
+    if (session.title === newTitle) return;
+
+    // Update title asynchronously
+    this.sessionSvc.renameSession(this.currentSessionId, newTitle).then(() => {
+      this.sessions = this.sessionSvc.getSessions();
+      this.log.info('ChatPage', `Auto-updated session title: "${newTitle}"`);
+    }).catch((err: Error) => {
+      this.log.error('ChatPage', `Failed to auto-update title: ${err.message}`);
+    });
+  }
+
   /** Extract memorable info from session messages when leaving. */
   private tryExtractMemoryOnLeave(sessionId: string, messages: ChatMessage[]): void {
     // Only extract if there are enough messages
@@ -1961,6 +2014,9 @@ Respond ONLY with the JSON array.`;
         this.autoReadAloud(accText);
       }
     }
+
+    // Auto-update session title based on recent conversation
+    this.tryAutoUpdateSessionTitle();
 
     this.doCleanupGatewayChat();
   }
