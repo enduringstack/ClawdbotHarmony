@@ -108,7 +108,7 @@ struct Index {
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor('#D2691E')
-        Text('v2.10.9')
+        Text('v2.10.13')
           .fontSize(11)
           .fontColor('#999999')
           .margin({ left: 6, top: 3 })

@@ -20,6 +20,7 @@ export struct MessageBubble {
   onCanvasReady: (ctrl: webview.WebviewController) => void = () => {};
   onCanvasAction: (json: string) => void = () => {};
   onReply: (message: ChatMessage) => void = () => {};
+  onQuoteClick: (replyToId: string) => void = () => {};
   @State audioPlaying: boolean = false;
   @State showMenu: boolean = false;
   @State a2uiHeight: number = 280;
@@ -190,6 +191,7 @@ export struct MessageBubble {
           .borderRadius(8)
           .constraintSize({ maxWidth: '75%' })
           .alignItems(VerticalAlign.Center)
+          .onClick(() => { this.onQuoteClick(this.message.replyToId); })
         }
         .width('100%')
         .margin({ top: 2 })
@@ -369,6 +371,7 @@ export struct MessageBubble {
           .backgroundColor('#E8E8E8')
           .borderRadius(8)
           .alignItems(VerticalAlign.Center)
+          .onClick(() => { this.onQuoteClick(this.message.replyToId); })
           Blank()
         }
         .width('100%')

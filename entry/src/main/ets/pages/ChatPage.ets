@@ -63,6 +63,7 @@ export struct ChatPage {
   @State replyingToMessage: ChatMessage | null = null;  // message being replied to
   @State showReplyPreview: boolean = false;  // controls reply preview visibility
   @State currentMood: string = '';  // mood emoji + label displayed in talk mode
+  @State highlightMessageId: string = '';  // briefly highlight a message after scroll-to-quote
   @State showSessionDrawer: boolean = false;  // session list drawer visibility
   @State sessions: ChatSession[] = [];  // all sessions
   @State currentSessionId: string = 'default';  // current active session ID
@@ -404,6 +405,12 @@ export struct ChatPage {
           .layoutWeight(1)
           .clip(true)
 
+          // New conversation button
+          Text('\u270E')
+            .fontSize(20)
+            .padding(8)
+            .onClick(() => { this.createNewSession(); })
+
           // History button
           Text('\uD83D\uDCCB')
             .fontSize(20)
@@ -516,12 +523,15 @@ export struct ChatPage {
                 onA2UIAction: (json: string): void => { NodeRuntime.getInstance().sendA2UIAction(json); },
                 onCanvasReady: (ctrl: webview.WebviewController): void => { NodeRuntime.getInstance().setInlineCanvasController(ctrl); },
                 onCanvasAction: (_json: string): void => { /* future use */ },
-                onReply: (message: ChatMessage): void => { 
-                  this.replyingToMessage = message; 
+                onReply: (message: ChatMessage): void => {
+                  this.replyingToMessage = message;
                   this.showReplyPreview = true;
-                }
+                },
+                onQuoteClick: (replyToId: string): void => { this.scrollToMessage(replyToId); }
               })
             }
+            .backgroundColor(this.highlightMessageId === msg.id ? '#FFF3E0' : Color.Transparent)
+            .animation({ duration: 500 })
           }, (msg: ChatMessage): string => msg.id)
 
           // loading indicator — animated dots while waiting for response
