@@ -39,6 +39,15 @@ interface BinTensor {
 const MAGIC = 0x454D4231;
 const SQRT_2_OVER_PI = 0.7978845608028654; // sqrt(2/pi)
 
+/** Convert Uint8Array to string without spread operator (avoids stack overflow on large arrays) */
+function uint8ArrayToString(arr: Uint8Array): string {
+  let result = '';
+  for (let i = 0; i < arr.length; i++) {
+    result += String.fromCharCode(arr[i]);
+  }
+  return result;
+}
+
 export class LocalTransformer {
   private config: ModelConfig = {
     hidden_size: 384, num_hidden_layers: 6, num_attention_heads: 12,
@@ -61,13 +70,14 @@ export class LocalTransformer {
 
     // Load config
     let cfgRaw = rm.getRawFileContentSync('model/config.json');
-    let cfgStr = String.fromCharCode(...new Uint8Array(cfgRaw.buffer));
+    let cfgStr = uint8ArrayToString(cfgRaw);
     this.config = JSON.parse(cfgStr) as ModelConfig;
     this.log.info(this.TAG, `Config: h=${this.config.hidden_size} layers=${this.config.num_hidden_layers} heads=${this.config.num_attention_heads}`);
 
-    // Load embeddings
+    // Load embeddings — use slice() to get a properly-sized copy,
+    // because getRawFileContentSync may return a view into a larger shared buffer
     let embRaw = rm.getRawFileContentSync('model/embeddings.bin');
-    let embData = new Uint8Array(embRaw.buffer);
+    let embData = embRaw.slice();
     let tensors = this.parseBin(embData);
     let tMap = new Map<string, Float32Array>();
     for (let t of tensors) {
@@ -81,11 +91,11 @@ export class LocalTransformer {
     this.embLnW = tMap.get('LayerNorm.weight') ?? new Float32Array(0);
     this.embLnB = tMap.get('LayerNorm.bias') ?? new Float32Array(0);
 
-    // Load transformer layers
+    // Load transformer layers (yield between layers to avoid UI freeze)
     this.layers = [];
     for (let i = 0; i < this.config.num_hidden_layers; i++) {
       let layerRaw = rm.getRawFileContentSync(`model/layer_${i.toString().padStart(2, '0')}.bin`);
-      let lt = this.parseBin(new Uint8Array(layerRaw.buffer));
+      let lt = this.parseBin(layerRaw.slice());
       let lm = new Map<string, Float32Array>();
       for (let t of lt) {
         lm.set(t.name, t.data);
@@ -110,10 +120,20 @@ export class LocalTransformer {
         ln2Bias: lm.get('output.LayerNorm.bias') ?? new Float32Array(0),
       };
       this.layers.push(layer);
+      // Yield to event loop every 2 layers to avoid ANR
+      if (i % 2 === 1) {
+        await this.yieldToEventLoop();
+      }
     }
 
     this.loaded = true;
     this.log.info(this.TAG, `Model loaded in ${Date.now() - t0}ms`);
+  }
+
+  private yieldToEventLoop(): Promise<void> {
+    return new Promise<void>((resolve): void => {
+      setTimeout((): void => resolve(), 0);
+    });
   }
 
   forward(inputIds: Int32Array, attentionMask: Int32Array, tokenTypeIds: Int32Array): Float32Array {

@@ -1,6 +1,7 @@
 import { UIAbility, AbilityConstant, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
+import { LocalEmbedding } from '../service/embedding/LocalEmbedding';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -173,6 +174,10 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     console.info('[ClawdBot] onWindowStageCreate');
+
+    // Preload local embedding model in background to avoid UI freeze
+    // when user first sends a message
+    LocalEmbedding.getInstance().preload(this.context);
 
     windowStage.getMainWindow().then((win: window.Window) => {
       // 1. Disable full-screen layout so system status bar area is reserved automatically.

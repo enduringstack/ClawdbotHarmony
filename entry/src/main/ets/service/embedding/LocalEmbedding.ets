@@ -10,6 +10,7 @@ export class LocalEmbedding {
   private transformer: LocalTransformer | undefined = undefined;
   private loaded: boolean = false;
   private loading: boolean = false;
+  private loadPromise: Promise<boolean> | undefined = undefined;
   private log: LogService = LogService.getInstance();
   private readonly TAG = 'LocalEmbedding';
 
@@ -20,14 +21,40 @@ export class LocalEmbedding {
     return LocalEmbedding.instance;
   }
 
+  /**
+   * Start preloading the model in background.
+   * Call this early (e.g., in EntryAbility.onWindowStageCreate) to avoid
+   * blocking the UI when the user first sends a message.
+   */
+  preload(context: common.Context): void {
+    if (this.loaded || this.loading) return;
+    this.log.info(this.TAG, 'Starting background preload...');
+    // Use setTimeout to yield to the event loop, avoiding UI freeze
+    setTimeout((): void => {
+      this.init(context).catch((): void => {});
+    }, 100);
+  }
+
   async init(context: common.Context): Promise<boolean> {
     if (this.loaded) return true;
-    if (this.loading) return false;
+    // If already loading, wait for the existing promise
+    if (this.loading && this.loadPromise) {
+      return this.loadPromise;
+    }
     this.loading = true;
+    this.loadPromise = this.doLoad(context);
+    return this.loadPromise;
+  }
+
+  private async doLoad(context: common.Context): Promise<boolean> {
     try {
       let t0 = Date.now();
+      this.log.info(this.TAG, 'Loading tokenizer...');
       this.tokenizer = new LocalTokenizer();
       await this.tokenizer.load(context);
+      // Yield to event loop between heavy operations
+      await this.yieldToEventLoop();
+      this.log.info(this.TAG, 'Loading transformer...');
       this.transformer = new LocalTransformer();
       await this.transformer.load(context);
       this.loaded = true;
@@ -39,7 +66,14 @@ export class LocalEmbedding {
       return false;
     } finally {
       this.loading = false;
+      this.loadPromise = undefined;
     }
+  }
+
+  private yieldToEventLoop(): Promise<void> {
+    return new Promise<void>((resolve): void => {
+      setTimeout((): void => resolve(), 0);
+    });
   }
 
   isReady(): boolean {
