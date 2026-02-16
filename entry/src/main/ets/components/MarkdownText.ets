@@ -330,33 +330,60 @@ export struct MarkdownText {
           .textAlign(TextAlign.Start)
           .wordBreak(WordBreak.BREAK_ALL)
         } else if (block.type === 'table') {
-          // Table rendering: convert to formatted text with bullet points
-          Column({ space: 2 }) {
-            // Headers as bold text
-            if (block.tableHeaders.length > 0) {
-              Text(block.tableHeaders.join(' | '))
-                .fontSize(this.baseFontSize)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(this.textColor)
-                .lineHeight(22)
+          // Table rendering: proper grid layout
+          Scroll() {
+            Column() {
+              // Header row
+              if (block.tableHeaders.length > 0) {
+                Row() {
+                  ForEach(block.tableHeaders, (header: string, colIdx: number) => {
+                    Text(header)
+                      .fontSize(this.baseFontSize - 1)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor('#333333')
+                      .textAlign(TextAlign.Center)
+                      .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+                      .backgroundColor('#E8E8E8')
+                      .borderWidth({ right: colIdx < block.tableHeaders.length - 1 ? 1 : 0 })
+                      .borderColor('#D0D0D0')
+                      .constraintSize({ minWidth: 60 })
+                      .maxLines(2)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }, (header: string, idx: number): string => 'h_' + idx)
+                }
                 .width('100%')
-                .wordBreak(WordBreak.BREAK_ALL)
-              Divider().color('#D0D0D0').strokeWidth(1)
+                .borderWidth({ bottom: 1 })
+                .borderColor('#CCCCCC')
+              }
+              // Data rows
+              ForEach(block.tableRows, (row: string[], rowIdx: number) => {
+                Row() {
+                  ForEach(row, (cell: string, colIdx: number) => {
+                    Text(cell)
+                      .fontSize(this.baseFontSize - 1)
+                      .fontColor(this.textColor)
+                      .textAlign(TextAlign.Start)
+                      .padding({ left: 8, right: 8, top: 5, bottom: 5 })
+                      .backgroundColor(rowIdx % 2 === 0 ? '#FAFAFA' : '#FFFFFF')
+                      .borderWidth({ right: colIdx < row.length - 1 ? 1 : 0 })
+                      .borderColor('#E8E8E8')
+                      .constraintSize({ minWidth: 60 })
+                      .maxLines(3)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }, (cell: string, idx: number): string => 'c_' + idx)
+                }
+                .width('100%')
+                .borderWidth({ bottom: rowIdx < block.tableRows.length - 1 ? 1 : 0 })
+                .borderColor('#EEEEEE')
+              }, (row: string[], idx: number): string => 'r_' + idx)
             }
-            // Rows as bullet points
-            ForEach(block.tableRows, (row: string[], rowIdx: number) => {
-              Text('\u2022 ' + row.join(' | '))
-                .fontSize(this.baseFontSize)
-                .fontColor(this.textColor)
-                .lineHeight(22)
-                .width('100%')
-                .wordBreak(WordBreak.BREAK_ALL)
-            }, (row: string[], idx: number): string => '' + idx)
+            .borderWidth(1)
+            .borderColor('#D0D0D0')
+            .borderRadius(6)
           }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
           .width('100%')
-          .padding({ left: 4, right: 4 })
-          .backgroundColor('#F5F5F5')
-          .borderRadius(6)
           .margin({ top: 4, bottom: 4 })
         } else if (block.type === 'hr') {
           Divider().color('#D0D0D0').margin({ top: 6, bottom: 6 })
