@@ -3245,6 +3245,19 @@ Adjust your tone accordingly:
     }, 100);
   }
 
+  private scrollToMessage(messageId: string): void {
+    let idx = this.messages.findIndex((m: ChatMessage) => m.id === messageId);
+    if (idx < 0) return;
+    this.scroller.scrollToIndex(idx);
+    // Brief highlight effect
+    setTimeout(() => {
+      this.highlightMessageId = messageId;
+      setTimeout(() => {
+        this.highlightMessageId = '';
+      }, 1500);
+    }, 200);
+  }
+
   // ---- persistence (simple JSON in preferences) ----
   private async saveHistory(): Promise<void> {
     // Save to session service (new multi-session storage)
