@@ -2823,11 +2823,11 @@ Keep it short but preserve all important information. Use the same language as t
 
     this.asrDebug(`recognizeSpeech: mode=${asrMode} gwConnected=${this.gwConnected}`);
 
-    // In node mode, cloud ASR is handled by the gateway server,
-    // so only local ASR runs on-device. Don't call standalone cloud API.
-    if (this.gwConnected && asrMode !== 'local') {
+    // In node mode with 'auto' setting, prefer local ASR (gateway handles cloud).
+    // But if user explicitly chose 'cloud', respect that choice and use device's cloud API.
+    if (this.gwConnected && asrMode === 'auto') {
       asrMode = 'local';
-      this.asrDebug('Node mode: forcing local ASR (cloud handled by gateway)');
+      this.asrDebug('Node mode + auto: using local ASR (cloud handled by gateway)');
     }
 
     if (asrMode === 'local') {
