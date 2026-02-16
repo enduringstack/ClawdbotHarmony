@@ -1,8 +1,0 @@
-[
-{
-  "directory": "C:/Users/Liuho/ClawdbotHarmony/entry/.cxx/default/default/debug/arm64-v8a",
-  "command": "C:\\PROGRA~1\\Huawei\\DEVECO~1\\sdk\\default\\OPENHA~1\\native\\llvm\\bin\\CLANG_~1.EXE --target=aarch64-linux-ohos --gcc-toolchain=\"C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native/llvm\" --sysroot=\"C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native/sysroot\" -Dexec_EXPORTS -I\"C:/Program Files/Huawei/DevEco Studio/sdk/default/hms/native/sysroot/usr/include\" -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -fno-addrsig -Wa,--noexecstack -Wformat -Werror=format-security   -D__MUSL__ -O0 -g -fno-limit-debug-info  -fPIC -o CMakeFiles\\exec.dir\\napi_exec.cpp.o -c C:\\Users\\Liuho\\ClawdbotHarmony\\entry\\src\\main\\cpp\\napi_exec.cpp",
-  "file": "C:\\Users\\Liuho\\ClawdbotHarmony\\entry\\src\\main\\cpp\\napi_exec.cpp",
-  "output": "CMakeFiles\\exec.dir\\napi_exec.cpp.o"
-}
-]
