@@ -332,7 +332,7 @@ export struct MarkdownText {
           .textAlign(TextAlign.Start)
           .wordBreak(WordBreak.BREAK_ALL)
         } else if (block.type === 'table') {
-          // Table rendering: proper grid layout
+          // Table rendering: horizontal scroll for wide tables
           Scroll() {
             Column() {
               // Header row
@@ -344,16 +344,13 @@ export struct MarkdownText {
                       .fontWeight(FontWeight.Bold)
                       .fontColor('#333333')
                       .textAlign(TextAlign.Center)
-                      .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+                      .padding({ left: 10, right: 10, top: 6, bottom: 6 })
                       .backgroundColor('#E8E8E8')
                       .borderWidth({ right: colIdx < block.tableHeaders.length - 1 ? 1 : 0 })
                       .borderColor('#D0D0D0')
-                      .layoutWeight(1)
-                      .maxLines(2)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .constraintSize({ minWidth: 80 })
                   }, (header: string, idx: number): string => 'h_' + idx)
                 }
-                .width('100%')
                 .borderWidth({ bottom: 1 })
                 .borderColor('#CCCCCC')
               }
@@ -365,16 +362,13 @@ export struct MarkdownText {
                       .fontSize(this.baseFontSize - 1)
                       .fontColor(this.textColor)
                       .textAlign(TextAlign.Start)
-                      .padding({ left: 8, right: 8, top: 5, bottom: 5 })
+                      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                       .backgroundColor(rowIdx % 2 === 0 ? '#FAFAFA' : '#FFFFFF')
                       .borderWidth({ right: colIdx < row.length - 1 ? 1 : 0 })
                       .borderColor('#E8E8E8')
-                      .layoutWeight(1)
-                      .maxLines(3)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .constraintSize({ minWidth: 80 })
                   }, (cell: string, idx: number): string => 'c_' + idx)
                 }
-                .width('100%')
                 .borderWidth({ bottom: rowIdx < block.tableRows.length - 1 ? 1 : 0 })
                 .borderColor('#EEEEEE')
               }, (row: string[], idx: number): string => 'r_' + idx)
@@ -384,7 +378,7 @@ export struct MarkdownText {
             .borderRadius(6)
           }
           .scrollable(ScrollDirection.Horizontal)
-          .scrollBar(BarState.Off)
+          .scrollBar(BarState.Auto)
           .width('100%')
           .margin({ top: 4, bottom: 4 })
         } else if (block.type === 'hr') {
