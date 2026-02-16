@@ -26,9 +26,22 @@ Thumbs.db
 *.cer
 *.p7b
 
+# Native build cache
+/entry/.cxx/
+
 # Hvigor cache
 /.hvigor/
 /entry/.hvigor/
+
+# Temp build/debug scripts
+build_debug2.bat
+build_hap.bat
+build_now.bat
+build_release.bat
+check_cwd.bat
+check_cwd.js
+check_path.js
+fix_cwd_build.js
 
 # Windows reserved names
 nul

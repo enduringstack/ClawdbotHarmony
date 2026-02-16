@@ -1499,6 +1499,9 @@ export class NodeRuntime {
               for (let i = 0; i < arr.length; i++) {
                 let block: Record<string, string> = arr[i] as Record<string, string>;
                 if (block['type'] === 'text' && block['text']) {
+                  if (fullText.length > 0) {
+                    fullText += '\n\n';
+                  }
                   fullText += block['text'];
                 }
               }
@@ -1515,6 +1518,9 @@ export class NodeRuntime {
             for (let i = 0; i < arr.length; i++) {
               let block: Record<string, string> = arr[i] as Record<string, string>;
               if (block['type'] === 'text' && block['text']) {
+                if (fullText.length > 0) {
+                  fullText += '\n\n';
+                }
                 fullText += block['text'];
               }
             }

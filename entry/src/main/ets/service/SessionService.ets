@@ -23,7 +23,6 @@ interface MessageData {
   audioPath: string;
   userImagePath: string;
   userImagePaths: string[];
-  feedback: string;
   videoPath: string;
   attachmentName: string;
   replyToId: string;
@@ -240,7 +239,6 @@ export class SessionService {
         msg.audioPath = d['audioPath'] as string || '';
         msg.userImagePath = d['userImagePath'] as string || '';
         msg.userImagePaths = d['userImagePaths'] as string[] || [];
-        msg.feedback = d['feedback'] as string || '';
         msg.videoPath = d['videoPath'] as string || '';
         msg.attachmentName = d['attachmentName'] as string || '';
         msg.replyToId = d['replyToId'] as string || '';
@@ -274,7 +272,6 @@ export class SessionService {
           audioPath: msg.audioPath,
           userImagePath: msg.userImagePath,
           userImagePaths: msg.userImagePaths,
-          feedback: msg.feedback,
           videoPath: msg.videoPath,
           attachmentName: msg.attachmentName,
           replyToId: msg.replyToId,

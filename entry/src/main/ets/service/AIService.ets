@@ -463,7 +463,13 @@ export class AIService {
     let raw = new RawResponse();
     for (let block of data.content) {
       if (block.type === 'text') {
-        raw.text += block.text ?? '';
+        let blockText = block.text ?? '';
+        if (blockText.length > 0) {
+          if (raw.text.length > 0) {
+            raw.text += '\n\n';
+          }
+          raw.text += blockText;
+        }
       } else if (block.type === 'tool_use') {
         let tc = new RawToolCall();
         tc.id = block.id ?? '';

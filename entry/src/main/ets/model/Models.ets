@@ -27,7 +27,6 @@ export class ChatMessage {
   audioPath: string;   // local file path for audio playback in chat
   userImagePath: string;      // user-attached image path (first/primary, for API compat)
   userImagePaths: string[];   // all user-attached image paths (for multi-image display)
-  feedback: string;           // 'up' | 'down' | ''
   videoPath: string;      // local file path for video playback
   buttons: InlineButton[];  // inline action buttons
   attachmentName: string;   // file attachment display name
@@ -50,7 +49,6 @@ export class ChatMessage {
     this.audioPath = '';
     this.userImagePath = '';
     this.userImagePaths = [];
-    this.feedback = '';
     this.videoPath = '';
     this.buttons = [];
     this.attachmentName = '';
