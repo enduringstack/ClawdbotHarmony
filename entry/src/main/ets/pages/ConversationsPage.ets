@@ -4,6 +4,7 @@ import { I18n, t } from '../common/I18n';
 import { ConversationStore } from '../service/ConversationStore';
 import { SilentModeService } from '../service/SilentModeService';
 import { ConversationCard } from '../components/ConversationCard';
+import { MarkdownText } from '../components/MarkdownText';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 
@@ -275,9 +276,7 @@ export struct ConversationsPage {
                     .fontWeight(FontWeight.Medium)
                     .fontColor('#333333')
                     .margin({ bottom: 4 })
-                  Text(this.detailRecord.summary)
-                    .fontSize(13)
-                    .fontColor('#666666')
+                  MarkdownText({ content: this.detailRecord.summary, baseFontSize: 13 })
                     .width('100%')
                 }
                 .width('100%')
@@ -338,6 +337,9 @@ export struct ConversationsPage {
         }
         .width('100%')
         .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+        .scrollable(ScrollDirection.Vertical)
       }
     }
     .width('100%')
