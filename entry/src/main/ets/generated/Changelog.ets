@@ -8,9 +8,19 @@ export interface ChangelogEntry {
   fixes: string[];
 }
 
-export const APP_VERSION: string = '2.21.9';
+export const APP_VERSION: string = '2.21.10';
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.21.10',
+    date: '2026-02-17',
+    features: [
+
+    ],
+    fixes: [
+      '修复表格单元格不解析粗体/斜体的问题',
+    ],
+  },
   {
     version: '2.21.9',
     date: '2026-02-17',
@@ -205,4 +215,4 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export const LATEST_VERSION: string = '2.21.9';
+export const LATEST_VERSION: string = '2.21.10';

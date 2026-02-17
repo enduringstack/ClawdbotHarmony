@@ -339,9 +339,15 @@ export struct MarkdownText {
               if (block.tableHeaders.length > 0) {
                 Row() {
                   ForEach(block.tableHeaders, (header: string, colIdx: number) => {
-                    Text(header)
+                    Text() {
+                      ForEach(parseInline(header), (span: MdSpan) => {
+                        Span(span.text)
+                          .fontWeight(FontWeight.Bold)  // headers always bold
+                          .fontStyle(span.italic ? FontStyle.Italic : FontStyle.Normal)
+                          .fontFamily(span.code ? 'monospace' : '')
+                      }, (span: MdSpan): string => span.key)
+                    }
                       .fontSize(this.baseFontSize - 1)
-                      .fontWeight(FontWeight.Bold)
                       .fontColor('#333333')
                       .textAlign(TextAlign.Start)
                       .padding({ left: 10, right: 10, top: 6, bottom: 6 })
@@ -361,7 +367,15 @@ export struct MarkdownText {
               ForEach(block.tableRows, (row: string[], rowIdx: number) => {
                 Row() {
                   ForEach(row, (cell: string, colIdx: number) => {
-                    Text(cell)
+                    Text() {
+                      ForEach(parseInline(cell), (span: MdSpan) => {
+                        Span(span.text)
+                          .fontWeight(span.bold ? FontWeight.Bold : FontWeight.Normal)
+                          .fontStyle(span.italic ? FontStyle.Italic : FontStyle.Normal)
+                          .fontFamily(span.code ? 'monospace' : '')
+                          .backgroundColor(span.code ? '#E8E8E8' : Color.Transparent)
+                      }, (span: MdSpan): string => span.key)
+                    }
                       .fontSize(this.baseFontSize - 1)
                       .fontColor(this.textColor)
                       .textAlign(TextAlign.Start)
