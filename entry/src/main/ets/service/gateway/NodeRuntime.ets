@@ -565,7 +565,10 @@ export class NodeRuntime {
   }
 
   private dispatchA2UI(type: string, content: string): void {
-    this.log.info(TAG, `dispatchA2UI: type=${type} contentLen=${content.length}`);
+    this.log.info(TAG, `dispatchA2UI: type=${type} contentLen=${content.length} listenerCount=${this._a2uiListeners.length}`);
+    if (this._a2uiListeners.length === 0) {
+      this.log.warn(TAG, '⚠️ No A2UI listeners registered! A2UI content will not be displayed.');
+    }
     for (let listener of this._a2uiListeners) {
       try {
         listener(type, content);
