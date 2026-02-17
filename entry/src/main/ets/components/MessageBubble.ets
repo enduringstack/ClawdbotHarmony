@@ -13,6 +13,7 @@ export struct MessageBubble {
   @ObjectLink message: ChatMessage;
   @Prop assistantAvatar: string = '';
   @Prop assistantName: string = '';
+  @Prop showTimestamp: boolean = true;
   onImageClick: (path: string) => void = () => {};
   onButtonClick: (action: string) => void = () => {};
   onA2UIReady: (inject: (content: string) => void) => void = () => {};
@@ -50,12 +51,14 @@ export struct MessageBubble {
   @Builder
   UserBubble() {
     Column() {
-      Text(this.formatTime(this.message.timestamp))
-        .fontSize(10)
-        .fontColor('#BBBBBB')
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .margin({ bottom: 4 })
+      if (this.showTimestamp) {
+        Text(this.formatTime(this.message.timestamp))
+          .fontSize(10)
+          .fontColor('#BBBBBB')
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ bottom: 4 })
+      }
 
       Row() {
         Blank()
@@ -266,12 +269,14 @@ export struct MessageBubble {
   @Builder
   AssistantBubble() {
     Column() {
-      Text(this.formatTime(this.message.timestamp))
-        .fontSize(10)
-        .fontColor('#BBBBBB')
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .margin({ bottom: 4 })
+      if (this.showTimestamp) {
+        Text(this.formatTime(this.message.timestamp))
+          .fontSize(10)
+          .fontColor('#BBBBBB')
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ bottom: 4 })
+      }
 
       Row() {
         Column() {

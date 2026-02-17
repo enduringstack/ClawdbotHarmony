@@ -511,8 +511,92 @@ body{font-family:-apple-system,HarmonyOS Sans,sans-serif;background:#0F0F1A;colo
     reportHeight();
   }
 
+  // ===== Convert Simplified Format =====
+  // Converts {"type":"form","children":[...]} to proper A2UI format
+  function convertSimplified(msg) {
+    if (!msg.type || !msg.children) return null;
+    var surfaceId = msg.id || 'simplified_' + Date.now();
+    var components = [];
+    var childIds = [];
+    var idCounter = 0;
+    
+    function processChild(child) {
+      var cid = child.id || ('c' + idCounter++);
+      childIds.push(cid);
+      var comp = {id: cid};
+      
+      // Map simplified types to A2UI components
+      switch (child.type) {
+        case 'text':
+          comp.component = 'Text';
+          comp.text = child.text || '';
+          if (child.style) {
+            if (child.style.fontSize >= 20) comp.usageHint = 'h2';
+            else if (child.style.fontWeight === 'bold') comp.usageHint = 'h3';
+          }
+          break;
+        case 'input':
+          comp.component = 'TextField';
+          comp.label = child.label || '';
+          comp.placeholder = child.placeholder || '';
+          if (child.multiline) comp.type = 'longText';
+          break;
+        case 'button':
+          comp.component = 'Button';
+          comp.text = child.text || 'Button';
+          comp.variant = child.style && child.style.backgroundColor ? 'primary' : 'default';
+          if (child.action) {
+            comp.action = {event: {name: child.action}};
+          } else {
+            comp.action = {event: {name: 'button_click', context: {id: cid}}};
+          }
+          break;
+        case 'checkbox':
+          comp.component = 'CheckBox';
+          comp.label = child.label || child.text || '';
+          break;
+        case 'select':
+        case 'choice':
+          comp.component = 'ChoicePicker';
+          comp.label = child.label || '';
+          comp.choices = (child.options || []).map(function(o) {
+            return typeof o === 'string' ? {label: o, value: o} : o;
+          });
+          break;
+        default:
+          comp.component = 'Text';
+          comp.text = child.text || '[' + child.type + ']';
+      }
+      components.push(comp);
+    }
+    
+    msg.children.forEach(processChild);
+    
+    // Create root Column component
+    components.unshift({
+      id: 'root',
+      component: 'Column',
+      children: childIds
+    });
+    
+    // Return as proper A2UI messages
+    return [
+      {beginRendering: {surfaceId: surfaceId, root: 'root'}},
+      {surfaceUpdate: {surfaceId: surfaceId, components: components}}
+    ];
+  }
+
   // ===== Process Messages =====
   function processMessage(msg) {
+    // Handle simplified format ({"type":"form","children":[...]})
+    if (msg.type && msg.children && !msg.beginRendering && !msg.surfaceUpdate) {
+      var converted = convertSimplified(msg);
+      if (converted) {
+        converted.forEach(function(m) { processMessage(m); });
+        return;
+      }
+    }
+    
     if (msg.beginRendering || msg.createSurface) {
       var br = msg.beginRendering || msg.createSurface;
       var sid = br.surfaceId || 'default';

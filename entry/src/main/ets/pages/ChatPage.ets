@@ -479,12 +479,13 @@ export struct ChatPage {
         this.EmptyState()
       } else {
         List({ scroller: this.scroller }) {
-          ForEach(this.messages, (msg: ChatMessage) => {
+          ForEach(this.messages, (msg: ChatMessage, index: number) => {
             ListItem() {
               MessageBubble({
                 message: msg,
                 assistantAvatar: this.getEffectiveAvatar(),
                 assistantName: this.getAssistantDisplayName(),
+                showTimestamp: this.shouldShowTimestamp(index),
                 onImageClick: (path: string): void => { this.previewImagePath = path; },
                 onButtonClick: (action: string): void => { this.handleButtonAction(action); },
                 onA2UIReady: (inject: (content: string) => void): void => { this.a2uiInjectFn = inject; },
@@ -1244,7 +1245,7 @@ Respond ONLY with the JSON array.`;
     await this.saveSessionMessages();
     await this.saveSessionQueue();
 
-    // Create new session
+    // Create new session (use display name which may come from gateway)
     const newSession = await this.sessionSvc.createSession(this.assistantName);
 
     // Switch to new session
@@ -3622,6 +3623,21 @@ Adjust your tone accordingly:
       this.messages.push(errMsg);
       this.scrollToEnd();
     });
+  }
+
+  /**
+   * Determine if a message should show its timestamp.
+   * Returns false if the previous message is within the same minute.
+   */
+  private shouldShowTimestamp(index: number): boolean {
+    if (index === 0) return true;
+    let current = this.messages[index];
+    let previous = this.messages[index - 1];
+    if (!current || !previous) return true;
+    // Compare timestamps truncated to minute
+    let currentMinute = Math.floor(current.timestamp / 60000);
+    let previousMinute = Math.floor(previous.timestamp / 60000);
+    return currentMinute !== previousMinute;
   }
 
   private formatTimer(seconds: number): string {
