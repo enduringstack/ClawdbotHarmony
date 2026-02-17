@@ -1,7 +1,7 @@
 /**
- * VoiceprintService - Speaker identification using sherpa_onnx.
+ * VoiceprintService - Speaker identification using libvoiceprint NAPI.
  *
- * Uses official sherpa_onnx HarmonyOS package for:
+ * Provides:
  * - Speaker enrollment (register voice samples)
  * - Speaker identification (1:N search)
  * - Speaker verification (1:1 match)
@@ -10,25 +10,27 @@
  */
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
-import {
-  OnlineStream,
-  SpeakerEmbeddingExtractor,
-  SpeakerEmbeddingExtractorConfig,
-  SpeakerEmbeddingManager
-} from 'sherpa_onnx';
+import { BusinessError } from '@kit.BasicServicesKit';
+import voiceprint from 'libvoiceprint.so';
 
 const TAG = '[VoiceprintService]';
 const PREFS_NAME = 'voiceprint_db';
 const PROFILES_KEY = 'voiceprint_profiles';
 
-// Model file in rawfile/voiceprint/
-const MODEL_FILENAME = 'voiceprint/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx';
+// Model path (relative to rawfile)
+const MODEL_DIR = 'voiceprint';
+
+// Types for NAPI module
+interface SpeakerMatch {
+  name: string;
+  score: number;
+}
 
 export interface VoiceprintProfile {
   name: string;
   enrolledAt: number;
   sampleCount: number;
-  embedding: number[];  // Persisted as JSON array
+  embedding: number[];
 }
 
 interface VoiceprintStore {
@@ -42,9 +44,58 @@ export interface IdentifyResult {
   confidence: 'high' | 'medium' | 'low' | 'unknown';
 }
 
-export interface Samples {
-  samples: Float32Array;
-  sampleRate: number;
+interface VerifyResult {
+  match: boolean;
+  score: number;
+}
+
+// Typed wrapper for NAPI functions
+function napiInitModel(dir: string): boolean {
+  return voiceprint.initModel(dir) as boolean;
+}
+
+function napiGetEmbeddingDim(): number {
+  return voiceprint.getEmbeddingDim() as number;
+}
+
+function napiIsModelLoaded(): boolean {
+  return voiceprint.isModelLoaded() as boolean;
+}
+
+function napiExtractEmbedding(samples: Float32Array, rate: number): Float32Array {
+  return voiceprint.extractEmbedding(samples, rate) as Float32Array;
+}
+
+function napiRegisterSpeaker(name: string, embeddings: Float32Array[]): boolean {
+  return voiceprint.registerSpeaker(name, embeddings) as boolean;
+}
+
+function napiRemoveSpeaker(name: string): boolean {
+  return voiceprint.removeSpeaker(name) as boolean;
+}
+
+function napiContainsSpeaker(name: string): boolean {
+  return voiceprint.containsSpeaker(name) as boolean;
+}
+
+function napiGetAllSpeakers(): string[] {
+  return voiceprint.getAllSpeakers() as string[];
+}
+
+function napiIdentifySpeaker(emb: Float32Array, threshold: number): SpeakerMatch {
+  return voiceprint.identifySpeaker(emb, threshold) as SpeakerMatch;
+}
+
+function napiVerifySpeaker(name: string, emb: Float32Array, threshold: number): boolean {
+  return voiceprint.verifySpeaker(name, emb, threshold) as boolean;
+}
+
+function napiComputeSimilarity(emb1: Float32Array, emb2: Float32Array): number {
+  return voiceprint.computeSimilarity(emb1, emb2) as number;
+}
+
+function napiImportSpeakerEmbedding(name: string, emb: Float32Array): boolean {
+  return voiceprint.importSpeakerEmbedding(name, emb) as boolean;
 }
 
 export class VoiceprintService {
@@ -53,15 +104,12 @@ export class VoiceprintService {
   private store: preferences.Preferences | null = null;
   private profiles: VoiceprintProfile[] = [];
 
-  private extractor: SpeakerEmbeddingExtractor | null = null;
-  private manager: SpeakerEmbeddingManager | null = null;
-
-  // Thresholds (adjust based on testing)
+  // Thresholds
   private readonly IDENTIFY_THRESHOLD = 0.5;
   private readonly HIGH_CONFIDENCE = 0.75;
   private readonly MEDIUM_CONFIDENCE = 0.6;
   private readonly LOW_CONFIDENCE = 0.45;
-  private readonly MIN_DURATION_SEC = 0.5;  // Minimum audio duration
+  private readonly MIN_DURATION_SEC = 0.5;
 
   static getInstance(): VoiceprintService {
     if (!VoiceprintService.instance) {
@@ -74,88 +122,65 @@ export class VoiceprintService {
     return this.initialized;
   }
 
-  /**
-   * Initialize the service with context.
-   * Must be called before any other methods.
-   */
   async init(context: common.UIAbilityContext): Promise<boolean> {
     if (this.initialized) return true;
 
     try {
-      // 1. Load Preferences store
       this.store = await preferences.getPreferences(context, PREFS_NAME);
 
-      // 2. Initialize speaker embedding extractor
-      const config = new SpeakerEmbeddingExtractorConfig();
-      config.model = MODEL_FILENAME;
-      config.numThreads = 2;
-      config.debug = false;
-
-      this.extractor = new SpeakerEmbeddingExtractor(config, context.resourceManager);
-      if (!this.extractor) {
-        console.error(TAG, 'Failed to create SpeakerEmbeddingExtractor');
+      // Initialize native model
+      const ok: boolean = napiInitModel(MODEL_DIR);
+      if (!ok) {
+        console.error(TAG, 'Failed to init voiceprint model');
         return false;
       }
 
-      // 3. Create speaker manager
-      const dim = this.extractor.dim;
-      console.info(TAG, `Embedding dimension: ${dim}`);
-      this.manager = new SpeakerEmbeddingManager(dim);
+      const dim: number = napiGetEmbeddingDim();
+      console.info(TAG, `Model loaded. Embedding dim: ${dim}`);
 
-      // 4. Restore persisted profiles
+      // Restore persisted profiles
       await this.restoreProfiles();
 
       this.initialized = true;
       console.info(TAG, `Initialized. ${this.profiles.length} speaker(s) loaded.`);
       return true;
-    } catch (e) {
-      console.error(TAG, 'Init failed:', (e as Error).message ?? String(e));
+    } catch (error) {
+      const e: BusinessError = error as BusinessError;
+      console.error(TAG, `Init failed: ${e.message}`);
       return false;
     }
   }
 
-  /**
-   * Extract embedding from audio samples.
-   * Audio should be Float32Array in [-1, 1] range.
-   */
   extractEmbedding(samples: Float32Array, sampleRate: number): Float32Array | null {
-    if (!this.initialized || !this.extractor) {
+    if (!this.initialized || !napiIsModelLoaded()) {
       console.error(TAG, 'Service not initialized');
       return null;
     }
 
-    const duration = samples.length / sampleRate;
+    const duration: number = samples.length / sampleRate;
     if (duration < this.MIN_DURATION_SEC) {
-      console.warn(TAG, `Audio too short: ${duration.toFixed(2)}s (min: ${this.MIN_DURATION_SEC}s)`);
+      console.warn(TAG, `Audio too short: ${duration.toFixed(2)}s`);
       return null;
     }
 
     try {
-      const stream: OnlineStream = this.extractor.createStream();
-      stream.acceptWaveform({ samples, sampleRate });
-      const embedding = this.extractor.compute(stream);
-      return embedding;
-    } catch (e) {
-      console.error(TAG, 'extractEmbedding error:', (e as Error).message ?? String(e));
+      const result: Float32Array = napiExtractEmbedding(samples, sampleRate);
+      return result;
+    } catch (error) {
+      const e: BusinessError = error as BusinessError;
+      console.error(TAG, `extractEmbedding error: ${e.message}`);
       return null;
     }
   }
 
-  /**
-   * Enroll a new speaker with audio samples.
-   * @param name Speaker name (unique identifier)
-   * @param audioSamples Array of audio samples (Float32Array, [-1,1], preferably 16kHz)
-   * @param sampleRate Sample rate of the audio
-   */
   async enrollSpeaker(name: string, audioSamples: Float32Array[], sampleRate: number = 16000): Promise<boolean> {
-    if (!this.initialized || !this.manager) return false;
+    if (!this.initialized) return false;
     if (audioSamples.length === 0) return false;
 
     try {
-      // Extract embeddings from each audio sample
       const embeddings: Float32Array[] = [];
       for (const samples of audioSamples) {
-        const emb = this.extractEmbedding(samples, sampleRate);
+        const emb: Float32Array | null = this.extractEmbedding(samples, sampleRate);
         if (emb && emb.length > 0) {
           embeddings.push(emb);
         }
@@ -166,22 +191,21 @@ export class VoiceprintService {
         return false;
       }
 
-      // Compute average embedding
-      const avgEmbedding = this.averageEmbeddings(embeddings);
-
-      // Remove existing speaker if any
-      if (this.manager.contains(name)) {
-        this.manager.remove(name);
+      // Remove existing if any
+      if (napiContainsSpeaker(name)) {
+        napiRemoveSpeaker(name);
       }
 
-      // Add to manager
-      const ok = this.manager.add({ name, v: avgEmbedding });
+      // Register with native
+      const ok: boolean = napiRegisterSpeaker(name, embeddings);
       if (!ok) {
-        console.error(TAG, `Failed to add speaker "${name}" to manager`);
+        console.error(TAG, `Failed to register speaker "${name}"`);
         return false;
       }
 
-      // Create profile for persistence
+      // Compute average for persistence
+      const avgEmbedding: Float32Array = this.averageEmbeddings(embeddings);
+
       const profile: VoiceprintProfile = {
         name: name,
         enrolledAt: Date.now(),
@@ -189,178 +213,123 @@ export class VoiceprintService {
         embedding: Array.from(avgEmbedding),
       };
 
-      // Update local profiles
-      this.profiles = this.profiles.filter((p: VoiceprintProfile) => p.name !== name);
+      this.profiles = this.profiles.filter((p: VoiceprintProfile): boolean => p.name !== name);
       this.profiles.push(profile);
-
-      // Persist
       await this.saveProfiles();
 
       console.info(TAG, `Enrolled speaker "${name}" with ${embeddings.length} sample(s)`);
       return true;
-    } catch (e) {
-      console.error(TAG, 'enrollSpeaker error:', (e as Error).message ?? String(e));
+    } catch (error) {
+      const e: BusinessError = error as BusinessError;
+      console.error(TAG, `enrollSpeaker error: ${e.message}`);
       return false;
     }
   }
 
-  /**
-   * Identify speaker from audio.
-   * Returns best match above threshold.
-   */
   identify(samples: Float32Array, sampleRate: number = 16000, threshold?: number): IdentifyResult {
     const unknown: IdentifyResult = { speaker: '', score: 0, confidence: 'unknown' };
-    if (!this.initialized || !this.manager) return unknown;
+    if (!this.initialized) return unknown;
 
-    const actualThreshold = threshold ?? this.IDENTIFY_THRESHOLD;
+    const actualThreshold: number = threshold ?? this.IDENTIFY_THRESHOLD;
 
     try {
-      const embedding = this.extractEmbedding(samples, sampleRate);
+      const embedding: Float32Array | null = this.extractEmbedding(samples, sampleRate);
       if (!embedding || embedding.length === 0) return unknown;
 
-      const result = this.manager.search({ threshold: actualThreshold, v: embedding });
-
-      if (!result || result === '' || result === undefined) {
-        return unknown;
-      }
-
-      // Get the actual score by computing similarity with the matched speaker
-      const score = this.getSpeakerScore(result, embedding);
+      const match: SpeakerMatch = napiIdentifySpeaker(embedding, actualThreshold);
+      if (!match.name || match.name === '') return unknown;
 
       let confidence: 'high' | 'medium' | 'low' | 'unknown';
-      if (score >= this.HIGH_CONFIDENCE) {
+      if (match.score >= this.HIGH_CONFIDENCE) {
         confidence = 'high';
-      } else if (score >= this.MEDIUM_CONFIDENCE) {
+      } else if (match.score >= this.MEDIUM_CONFIDENCE) {
         confidence = 'medium';
-      } else if (score >= this.LOW_CONFIDENCE) {
+      } else if (match.score >= this.LOW_CONFIDENCE) {
         confidence = 'low';
       } else {
         confidence = 'unknown';
       }
 
-      return { speaker: result, score, confidence };
-    } catch (e) {
-      console.error(TAG, 'identify error:', (e as Error).message ?? String(e));
+      return { speaker: match.name, score: match.score, confidence };
+    } catch (error) {
+      const e: BusinessError = error as BusinessError;
+      console.error(TAG, `identify error: ${e.message}`);
       return unknown;
     }
   }
 
-  /**
-   * Verify if audio matches a specific speaker.
-   */
-  verify(name: string, samples: Float32Array, sampleRate: number = 16000, threshold?: number): { match: boolean; score: number } {
-    if (!this.initialized || !this.manager) {
-      return { match: false, score: 0 };
-    }
+  verify(name: string, samples: Float32Array, sampleRate: number = 16000, threshold?: number): VerifyResult {
+    const fail: VerifyResult = { match: false, score: 0 };
+    if (!this.initialized) return fail;
 
-    const actualThreshold = threshold ?? this.MEDIUM_CONFIDENCE;
+    const actualThreshold: number = threshold ?? this.MEDIUM_CONFIDENCE;
 
     try {
-      const embedding = this.extractEmbedding(samples, sampleRate);
-      if (!embedding || embedding.length === 0) {
-        return { match: false, score: 0 };
-      }
+      const embedding: Float32Array | null = this.extractEmbedding(samples, sampleRate);
+      if (!embedding || embedding.length === 0) return fail;
 
-      const score = this.getSpeakerScore(name, embedding);
-      const match = score >= actualThreshold;
+      const match: boolean = napiVerifySpeaker(name, embedding, actualThreshold);
+      const score: number = this.getSpeakerScore(name, embedding);
 
       return { match, score };
-    } catch (e) {
-      console.error(TAG, 'verify error:', (e as Error).message ?? String(e));
-      return { match: false, score: 0 };
+    } catch (error) {
+      const e: BusinessError = error as BusinessError;
+      console.error(TAG, `verify error: ${e.message}`);
+      return fail;
     }
   }
 
-  /**
-   * Remove a speaker from the database.
-   */
   async removeSpeaker(name: string): Promise<boolean> {
-    if (!this.initialized || !this.manager) return false;
+    if (!this.initialized) return false;
 
     try {
-      this.manager.remove(name);
-      this.profiles = this.profiles.filter((p: VoiceprintProfile) => p.name !== name);
+      napiRemoveSpeaker(name);
+      this.profiles = this.profiles.filter((p: VoiceprintProfile): boolean => p.name !== name);
       await this.saveProfiles();
       console.info(TAG, `Removed speaker "${name}"`);
       return true;
-    } catch (e) {
-      console.error(TAG, 'removeSpeaker error:', (e as Error).message ?? String(e));
+    } catch (error) {
+      const e: BusinessError = error as BusinessError;
+      console.error(TAG, `removeSpeaker error: ${e.message}`);
       return false;
     }
   }
 
-  /**
-   * List all registered speakers.
-   */
   listSpeakers(): VoiceprintProfile[] {
     return this.profiles.slice();
   }
 
-  /**
-   * Get all speaker names.
-   */
   getAllSpeakerNames(): string[] {
-    if (!this.manager) return [];
-    return this.manager.getAllSpeakerNames();
+    return napiGetAllSpeakers();
   }
 
-  /**
-   * Get number of registered speakers.
-   */
   getSpeakerCount(): number {
     return this.profiles.length;
   }
 
-  /**
-   * Check if a speaker is registered.
-   */
   containsSpeaker(name: string): boolean {
-    if (!this.manager) return false;
-    return this.manager.contains(name);
+    return napiContainsSpeaker(name);
   }
 
-  /**
-   * Get embedding dimension.
-   */
   getEmbeddingDim(): number {
-    if (!this.extractor) return 192;  // Default for 3dspeaker
-    return this.extractor.dim;
+    return napiGetEmbeddingDim();
   }
 
   // ---- Private Methods ----
 
   private getSpeakerScore(name: string, embedding: Float32Array): number {
-    // Find the profile and compute cosine similarity
-    const profile = this.profiles.find((p: VoiceprintProfile) => p.name === name);
-    if (!profile || !profile.embedding || profile.embedding.length === 0) {
-      return 0;
-    }
+    const profile: VoiceprintProfile | undefined = this.profiles.find((p: VoiceprintProfile): boolean => p.name === name);
+    if (!profile || !profile.embedding || profile.embedding.length === 0) return 0;
 
-    const stored = new Float32Array(profile.embedding);
-    return this.cosineSimilarity(embedding, stored);
-  }
-
-  private cosineSimilarity(a: Float32Array, b: Float32Array): number {
-    if (a.length !== b.length) return 0;
-
-    let dot = 0, normA = 0, normB = 0;
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-
-    if (normA > 0 && normB > 0) {
-      return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-    }
-    return 0;
+    const stored: Float32Array = new Float32Array(profile.embedding);
+    return napiComputeSimilarity(embedding, stored);
   }
 
   private averageEmbeddings(embeddings: Float32Array[]): Float32Array {
     if (embeddings.length === 0) return new Float32Array(0);
 
-    const dim = embeddings[0].length;
-    const avg = new Float32Array(dim);
+    const dim: number = embeddings[0].length;
+    const avg: Float32Array = new Float32Array(dim);
 
     for (const emb of embeddings) {
       for (let i = 0; i < dim; i++) {
@@ -386,10 +355,10 @@ export class VoiceprintService {
   }
 
   private async restoreProfiles(): Promise<void> {
-    if (!this.store || !this.manager) return;
+    if (!this.store) return;
 
     try {
-      const raw = await this.store.get(PROFILES_KEY, '') as string;
+      const raw: string = await this.store.get(PROFILES_KEY, '') as string;
       if (!raw || raw.length === 0) {
         this.profiles = [];
         return;
@@ -398,17 +367,18 @@ export class VoiceprintService {
       const data: VoiceprintStore = JSON.parse(raw) as VoiceprintStore;
       this.profiles = data.speakers || [];
 
-      // Restore each speaker into manager
+      // Restore each speaker into native
       for (const profile of this.profiles) {
         if (profile.embedding && profile.embedding.length > 0) {
-          const emb = new Float32Array(profile.embedding);
-          this.manager.add({ name: profile.name, v: emb });
+          const emb: Float32Array = new Float32Array(profile.embedding);
+          napiImportSpeakerEmbedding(profile.name, emb);
         }
       }
 
       console.info(TAG, `Restored ${this.profiles.length} speaker profile(s)`);
-    } catch (e) {
-      console.error(TAG, 'restoreProfiles error:', (e as Error).message ?? String(e));
+    } catch (error) {
+      const e: BusinessError = error as BusinessError;
+      console.error(TAG, `restoreProfiles error: ${e.message}`);
       this.profiles = [];
     }
   }

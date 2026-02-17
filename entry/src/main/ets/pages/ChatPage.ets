@@ -1658,23 +1658,8 @@ Respond ONLY with the JSON array.`;
     try {
       this.log.info('ChatPage', `Sending via gateway: ${text.substring(0, 100)}`);
 
-      // Inject local memory context based on embedding mode setting.
-      // In node mode, cloud embedding is handled by the gateway server,
-      // so only local embedding runs on-device (pass empty apiKey to prevent cloud API calls).
-      try {
-        let ctx = getContext(this) as common.UIAbilityContext;
-        let embMode = await this.memSvc.getEmbeddingMode(ctx);
-        if (embMode !== 'cloud') {
-          let memories = await this.memSvc.vectorSearch(ctx, text, '', 3);
-          if (memories.length > 0) {
-            let memContext = memories.map((m: MemoryItem): string => `[${m.memType}] ${m.content}`).join('\n');
-            text = text + '\n\n[local_memory]\n' + memContext;
-            this.log.info('ChatPage', `Injected ${memories.length} local memories (mode=${embMode})`);
-          }
-        }
-      } catch (memErr) {
-        this.log.warn('ChatPage', `Local memory search failed: ${(memErr as Error).message}`);
-      }
+      // Note: In node mode, embedding/memory is handled entirely by the Gateway server.
+      // No local memory injection needed here.
 
       // Reset state flags
       this.gwEarlyFinish = false;
