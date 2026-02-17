@@ -1,5 +1,7 @@
 // Lightweight Markdown renderer for ArkUI
-// Supports: headers, code blocks, lists, bold, italic, inline code, HR
+// Supports: headers, code blocks, lists, bold, italic, inline code, HR, clickable URLs
+
+import { common, Want } from '@kit.AbilityKit';
 
 // ---------- Data interfaces ----------
 
@@ -8,6 +10,7 @@ interface MdSpan {
   bold: boolean;
   italic: boolean;
   code: boolean;
+  url: string;  // non-empty if this span is a clickable URL
   key: string;
 }
 
@@ -21,6 +24,46 @@ interface MdBlock {
   key: string;
   tableHeaders: string[];
   tableRows: string[][];
+}
+
+// ---------- URL detection ----------
+
+function isUrlChar(c: string): boolean {
+  // Characters that can appear in URLs
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+    (c >= '0' && c <= '9') || '-_.~:/?#[]@!$&\'()*+,;=%'.includes(c);
+}
+
+function extractUrl(text: string, startIdx: number): string {
+  // Extract URL starting from startIdx (after http:// or https://)
+  let end = startIdx;
+  let parenDepth = 0;
+  while (end < text.length) {
+    let c = text.charAt(end);
+    if (c === '(') parenDepth++;
+    else if (c === ')') {
+      if (parenDepth > 0) parenDepth--;
+      else break; // Unmatched closing paren - end of URL
+    }
+    if (!isUrlChar(c)) break;
+    end++;
+  }
+  // Remove trailing punctuation that's likely not part of URL
+  while (end > startIdx && '.,;:!?)\'\"'.includes(text.charAt(end - 1))) {
+    if (text.charAt(end - 1) === ')' && parenDepth >= 0) break; // Keep matched parens
+    end--;
+  }
+  return text.substring(startIdx, end);
+}
+
+function findUrlStart(text: string, fromIdx: number): number {
+  // Find next http:// or https://
+  let httpIdx = text.indexOf('http://', fromIdx);
+  let httpsIdx = text.indexOf('https://', fromIdx);
+  if (httpIdx < 0 && httpsIdx < 0) return -1;
+  if (httpIdx < 0) return httpsIdx;
+  if (httpsIdx < 0) return httpIdx;
+  return Math.min(httpIdx, httpsIdx);
 }
 
 // ---------- Inline parser ----------
@@ -42,7 +85,7 @@ function parseInline(text: string): MdSpan[] {
       if (buf.length > 0) {
         let s: MdSpan = {
           text: buf, bold: inCode ? false : bold,
-          italic: inCode ? false : italic, code: inCode, key: '' + idx++
+          italic: inCode ? false : italic, code: inCode, url: '', key: '' + idx++
         };
         spans.push(s);
         buf = '';
@@ -58,10 +101,29 @@ function parseInline(text: string): MdSpan[] {
       continue;
     }
 
+    // Check for URL (http:// or https://)
+    if ((ch === 'h' && text.substring(i, i + 7) === 'http://') ||
+        (ch === 'h' && text.substring(i, i + 8) === 'https://')) {
+      // Flush buffer before URL
+      if (buf.length > 0) {
+        let s: MdSpan = { text: buf, bold: bold, italic: italic, code: false, url: '', key: '' + idx++ };
+        spans.push(s);
+        buf = '';
+      }
+      // Extract full URL
+      let urlEnd = i + (text.charAt(i + 4) === 's' ? 8 : 7); // past http:// or https://
+      let urlPath = extractUrl(text, urlEnd);
+      let fullUrl = text.substring(i, urlEnd) + urlPath;
+      let urlSpan: MdSpan = { text: fullUrl, bold: false, italic: false, code: false, url: fullUrl, key: '' + idx++ };
+      spans.push(urlSpan);
+      i += fullUrl.length;
+      continue;
+    }
+
     // ** → toggle bold
     if (ch === '*' && i + 1 < text.length && text.charAt(i + 1) === '*') {
       if (buf.length > 0) {
-        let s: MdSpan = { text: buf, bold: bold, italic: italic, code: false, key: '' + idx++ };
+        let s: MdSpan = { text: buf, bold: bold, italic: italic, code: false, url: '', key: '' + idx++ };
         spans.push(s);
         buf = '';
       }
@@ -73,7 +135,7 @@ function parseInline(text: string): MdSpan[] {
     // single * → toggle italic
     if (ch === '*') {
       if (buf.length > 0) {
-        let s: MdSpan = { text: buf, bold: bold, italic: italic, code: false, key: '' + idx++ };
+        let s: MdSpan = { text: buf, bold: bold, italic: italic, code: false, url: '', key: '' + idx++ };
         spans.push(s);
         buf = '';
       }
@@ -87,12 +149,12 @@ function parseInline(text: string): MdSpan[] {
   }
 
   if (buf.length > 0) {
-    let s: MdSpan = { text: buf, bold: bold, italic: italic, code: inCode, key: '' + idx++ };
+    let s: MdSpan = { text: buf, bold: bold, italic: italic, code: inCode, url: '', key: '' + idx++ };
     spans.push(s);
   }
 
   if (spans.length === 0) {
-    let empty: MdSpan = { text: '', bold: false, italic: false, code: false, key: '0' };
+    let empty: MdSpan = { text: '', bold: false, italic: false, code: false, url: '', key: '0' };
     spans.push(empty);
   }
   return spans;
@@ -296,6 +358,27 @@ export struct MarkdownText {
   @Prop content: string = '';
   textColor: ResourceColor = '#1A1A1A';
   baseFontSize: number = 15;
+  onLinkClick: (url: string) => void = (url: string) => {
+    // Default: open URL in browser
+    try {
+      let ctx = getContext() as common.UIAbilityContext;
+      let want: Want = {
+        action: 'ohos.want.action.viewData',
+        uri: url
+      };
+      ctx.startAbility(want);
+    } catch (e) {
+      console.error('Failed to open URL: ' + url);
+    }
+  };
+
+  // Check if spans contain any URLs
+  private hasUrls(spans: MdSpan[]): boolean {
+    for (let i = 0; i < spans.length; i++) {
+      if (spans[i].url.length > 0) return true;
+    }
+    return false;
+  }
 
   build() {
     Column({ space: 2 }) {
@@ -429,23 +512,50 @@ export struct MarkdownText {
           .width('100%')
           .alignItems(VerticalAlign.Top)
         } else {
-          // paragraph
-          Text() {
-            ForEach(block.spans, (span: MdSpan) => {
-              Span(span.text)
-                .fontWeight(span.bold ? FontWeight.Bold : FontWeight.Normal)
-                .fontStyle(span.italic ? FontStyle.Italic : FontStyle.Normal)
-                .fontFamily(span.code ? 'monospace' : '')
-                .backgroundColor(span.code ? '#E0E0E0' : Color.Transparent)
-            }, (span: MdSpan): string => span.key)
+          // paragraph - check if it has URLs
+          if (this.hasUrls(block.spans)) {
+            // Use Flex layout for clickable URLs
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(block.spans, (span: MdSpan) => {
+                if (span.url.length > 0) {
+                  Text(span.text)
+                    .fontSize(this.baseFontSize)
+                    .fontColor('#007AFF')
+                    .decoration({ type: TextDecorationType.Underline, color: '#007AFF' })
+                    .lineHeight(22)
+                    .onClick(() => { this.onLinkClick(span.url); })
+                } else {
+                  Text(span.text)
+                    .fontSize(this.baseFontSize)
+                    .fontColor(this.textColor)
+                    .fontWeight(span.bold ? FontWeight.Bold : FontWeight.Normal)
+                    .fontStyle(span.italic ? FontStyle.Italic : FontStyle.Normal)
+                    .fontFamily(span.code ? 'monospace' : '')
+                    .backgroundColor(span.code ? '#E0E0E0' : Color.Transparent)
+                    .lineHeight(22)
+                }
+              }, (span: MdSpan): string => span.key)
+            }
+            .width('100%')
+          } else {
+            // No URLs - use regular Text with Span (more efficient)
+            Text() {
+              ForEach(block.spans, (span: MdSpan) => {
+                Span(span.text)
+                  .fontWeight(span.bold ? FontWeight.Bold : FontWeight.Normal)
+                  .fontStyle(span.italic ? FontStyle.Italic : FontStyle.Normal)
+                  .fontFamily(span.code ? 'monospace' : '')
+                  .backgroundColor(span.code ? '#E0E0E0' : Color.Transparent)
+              }, (span: MdSpan): string => span.key)
+            }
+            .fontSize(this.baseFontSize)
+            .fontColor(this.textColor)
+            .lineHeight(22)
+            .width('100%')
+            .textAlign(TextAlign.Start)
+            .wordBreak(WordBreak.BREAK_ALL)
           }
-          .fontSize(this.baseFontSize)
-          .fontColor(this.textColor)
-          .lineHeight(22)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .wordBreak(WordBreak.BREAK_ALL)
-                  }
+        }
       }, (block: MdBlock): string => '' + this.content.length + '_' + block.key)
     }
     .alignItems(HorizontalAlign.Start)
