@@ -98,6 +98,10 @@ export class SilentModeService {
     // Init VoiceprintService
     try {
       await VoiceprintService.getInstance().init(context);
+      // Log registered speakers
+      let speakers = VoiceprintService.getInstance().listSpeakers();
+      let names = speakers.map(s => s.name).join(', ');
+      this.log.info(this.TAG, `VoiceprintService ready. Registered speakers: [${names}] (${speakers.length} total)`);
     } catch (err) {
       this.log.warn(this.TAG, `VoiceprintService init warning: ${err}`);
     }
@@ -368,9 +372,11 @@ export class SilentModeService {
         }
         // Try to identify speaker
         let result = vpService.identify(float32, 16000);
-        if (result.speaker && result.speaker !== 'unknown') {
+        this.log.info(this.TAG, `Identify result: speaker="${result.speaker}" score=${result.score.toFixed(3)} conf=${result.confidence}`);
+        if (result.speaker && result.speaker !== 'unknown' && result.speaker !== '') {
           speakerId = result.speaker;
           confidence = result.score;
+          this.log.info(this.TAG, `Matched registered speaker: ${speakerId}`);
         }
       } catch (err) {
         this.log.warn(this.TAG, `Speaker ID error: ${err}`);
