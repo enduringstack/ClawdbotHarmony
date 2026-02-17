@@ -12,6 +12,26 @@ export const APP_VERSION: string = '2.19.6';
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.19.6',
+    date: '2026-02-16',
+    features: [
+
+    ],
+    fixes: [
+      '统一所有版本号显示',
+    ],
+  },
+  {
+    version: '2.19.5',
+    date: '2026-02-16',
+    features: [
+
+    ],
+    fixes: [
+      '修复Token统计不显示问题（使用正确的sessions.list API）',
+    ],
+  },
+  {
     version: '2.19.4',
     date: '2026-02-16',
     features: [
@@ -108,4 +128,4 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export const LATEST_VERSION: string = '2.19.4';
+export const LATEST_VERSION: string = '2.19.6';
