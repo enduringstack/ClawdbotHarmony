@@ -1,5 +1,6 @@
 // About page with system status
 import { router } from '@kit.ArkUI';
+import { hidebug } from '@kit.PerformanceAnalysisKit';
 import { I18n, t } from '../common/I18n';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
 
@@ -41,6 +42,8 @@ const CHANGELOG: ChangelogEntry[] = [
 struct AboutRoutePage {
   @State lang: string = 'zh';
   @State memoryUsage: string = '-';
+  @State cpuUsage: string = '-';
+  @State nativeHeap: string = '-';
   @State activeSessions: number = 0;
   @State tokenUsage: string = '-';
   @State gatewayStatus: string = '-';
@@ -71,6 +74,42 @@ struct AboutRoutePage {
     } else {
       this.gatewayStatus = t('chat.offline');
       this.activeSessions = 0;
+    }
+
+    // Memory usage (PSS - Proportional Set Size)
+    try {
+      const pssBig = hidebug.getPss(); // KB (bigint)
+      const pss = Number(pssBig);
+      if (pss > 1024) {
+        this.memoryUsage = `${(pss / 1024).toFixed(1)} MB`;
+      } else {
+        this.memoryUsage = `${pss} KB`;
+      }
+    } catch (e) {
+      this.memoryUsage = '-';
+    }
+
+    // Native heap
+    try {
+      const heapSizeBig = hidebug.getNativeHeapAllocatedSize(); // bytes (bigint)
+      const heapSize = Number(heapSizeBig);
+      if (heapSize > 1024 * 1024) {
+        this.nativeHeap = `${(heapSize / 1024 / 1024).toFixed(1)} MB`;
+      } else if (heapSize > 1024) {
+        this.nativeHeap = `${(heapSize / 1024).toFixed(0)} KB`;
+      } else {
+        this.nativeHeap = `${heapSize} B`;
+      }
+    } catch (e) {
+      this.nativeHeap = '-';
+    }
+
+    // CPU usage (approximate based on CPU time)
+    try {
+      const cpuTime = hidebug.getCpuUsage(); // Returns CPU time ratio (0-1)
+      this.cpuUsage = `${(cpuTime * 100).toFixed(1)}%`;
+    } catch (e) {
+      this.cpuUsage = '-';
     }
   }
 
@@ -202,7 +241,7 @@ struct AboutRoutePage {
           Column() {
             this.InfoRow(t('settings.app'), 'ClawdBot')
             Divider().color('#F0F0F0')
-            this.InfoRow(t('settings.version'), '2.18.16')
+            this.InfoRow(t('settings.version'), '2.18.17')
             Divider().color('#F0F0F0')
             this.InfoRow(t('settings.basedOn'), 'OpenClaw')
             Divider().color('#F0F0F0')
@@ -219,9 +258,11 @@ struct AboutRoutePage {
             Divider().color('#F0F0F0')
             this.InfoRow(t('settings.activeSessions'), `${this.activeSessions}`)
             Divider().color('#F0F0F0')
-            this.InfoRow(t('settings.memoryUsage'), this.memoryUsage)
+            this.InfoRow(this.lang === 'zh' ? 'CPU 使用率' : 'CPU Usage', this.cpuUsage)
             Divider().color('#F0F0F0')
-            this.InfoRow(t('settings.tokenUsage'), this.tokenUsage)
+            this.InfoRow(this.lang === 'zh' ? '内存占用 (PSS)' : 'Memory (PSS)', this.memoryUsage)
+            Divider().color('#F0F0F0')
+            this.InfoRow(this.lang === 'zh' ? 'Native 堆' : 'Native Heap', this.nativeHeap)
           }
           .padding(16)
           .backgroundColor(Color.White)

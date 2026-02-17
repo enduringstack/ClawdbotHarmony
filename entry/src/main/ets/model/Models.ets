@@ -197,6 +197,14 @@ export interface CronTask {
   oneShot: boolean;
 }
 
+// Token usage statistics
+export interface TokenUsage {
+  inputTokens: number;   // cumulative input tokens
+  outputTokens: number;  // cumulative output tokens
+  totalTokens: number;   // total tokens used
+  lastUpdated: number;   // timestamp of last update
+}
+
 // Chat session for multi-conversation support
 @Observed
 export class ChatSession {
@@ -208,6 +216,10 @@ export class ChatSession {
   lastMessage: string;  // last message preview
   isPinned: boolean;    // whether pinned to top
   isClosed: boolean;    // whether closed (hidden from drawer but history preserved)
+  inputTokens: number;  // cumulative input tokens used
+  outputTokens: number; // cumulative output tokens used
+  totalTokens: number;  // total tokens (input + output)
+  isActive: boolean;    // whether this session is currently processing
 
   constructor(title: string = '') {
     this.id = `session_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
@@ -218,6 +230,10 @@ export class ChatSession {
     this.lastMessage = '';
     this.isPinned = false;
     this.isClosed = false;
+    this.inputTokens = 0;
+    this.outputTokens = 0;
+    this.totalTokens = 0;
+    this.isActive = false;
   }
 }
 
@@ -231,6 +247,9 @@ export interface ChatSessionData {
   lastMessage: string;
   isPinned: boolean;
   isClosed: boolean;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
 }
 
 // Queued message waiting to be sent to AI
