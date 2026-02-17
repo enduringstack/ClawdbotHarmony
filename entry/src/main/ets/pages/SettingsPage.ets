@@ -1,7 +1,9 @@
 import { preferences } from '@kit.ArkData';
-import { common } from '@kit.AbilityKit';
+import { common, Want } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { fileIo, picker } from '@kit.CoreFileKit';
+import { http } from '@kit.NetworkKit';
+import { bundleManager } from '@kit.AbilityKit';
 import { Constants } from '../common/Constants';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
 import { ConnectionState, GatewayEndpoint, AgentIdentity } from '../service/gateway/GatewayModels';
@@ -115,6 +117,13 @@ export struct SettingsPage {
   @State gwAgentSoul: string = '';
   // Gateway parallel sessions setting
   @State gwMaxConcurrent: number = 4;
+
+  // Update functionality
+  @State updateChecking: boolean = false;
+  @State updateDownloading: boolean = false;
+  @State updateProgress: number = 0;
+  @State latestVersion: string = '';
+  @State updateAvailable: boolean = false;
 
   private gwListener: ((state: ConnectionState, text: string) => void) | undefined = undefined;
   private langListener: (() => void) | undefined = undefined;
@@ -1354,9 +1363,51 @@ export struct SettingsPage {
         Column() {
           this.InfoRow(I18n.t('settings.appName'), 'ClawdBot')
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
-          this.InfoRow(I18n.t('settings.version'), '2.21.12')
+          this.InfoRow(I18n.t('settings.version'), '2.21.13')
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
           this.InfoRow(I18n.t('settings.developer'), 'OpenClaw')
+          Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
+
+          // Check for updates button
+          Row() {
+            Text('检查更新')
+              .fontSize(14)
+              .fontColor('#1A1A1A')
+              .layoutWeight(1)
+
+            if (this.updateChecking) {
+              LoadingProgress().width(20).height(20).color('#D2691E')
+            } else if (this.updateDownloading) {
+              Row({ space: 8 }) {
+                Progress({ value: this.updateProgress, total: 100, type: ProgressType.Linear })
+                  .width(80)
+                  .height(4)
+                Text(`${this.updateProgress}%`)
+                  .fontSize(12)
+                  .fontColor('#999999')
+              }
+            } else if (this.updateAvailable) {
+              Text(`新版本 ${this.latestVersion}`)
+                .fontSize(12)
+                .fontColor('#D2691E')
+                .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                .backgroundColor('#FFF3E0')
+                .borderRadius(4)
+                .onClick(() => { this.downloadAndInstallUpdate(); })
+            } else {
+              Text('>')
+                .fontSize(14)
+                .fontColor('#CCCCCC')
+            }
+          }
+          .width('100%')
+          .height(44)
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            if (!this.updateChecking && !this.updateDownloading) {
+              this.checkForUpdates();
+            }
+          })
         }
         .width('100%')
         .padding(16)
@@ -2360,5 +2411,153 @@ export struct SettingsPage {
     this.profiles = this.profiles.filter((p: SettingsProfile) => p.createdAt !== profile.createdAt || p.name !== profile.name);
     await this.persistProfiles();
     promptAction.showToast({ message: I18n.t('settings.profileDeleted'), duration: 1500 });
+  }
+
+  // =============== Update Functionality ===============
+
+  private async checkForUpdates(): Promise<void> {
+    this.updateChecking = true;
+    this.updateAvailable = false;
+
+    try {
+      // Fetch latest release info from GitHub API
+      let httpRequest = http.createHttp();
+      let response = await httpRequest.request(
+        'https://api.github.com/repos/lhj1026/ClawdbotHarmony/releases/latest',
+        { method: http.RequestMethod.GET, header: { 'Accept': 'application/vnd.github.v3+json' } }
+      );
+
+      if (response.responseCode === 200 && response.result) {
+        let data = JSON.parse(response.result as string) as Record<string, Object>;
+        let tagName = data['tag_name'] as string; // e.g., "v2.21.12"
+        this.latestVersion = tagName.startsWith('v') ? tagName.substring(1) : tagName;
+
+        // Compare with current version
+        let currentVersion = '2.21.12';
+        if (this.compareVersions(this.latestVersion, currentVersion) > 0) {
+          this.updateAvailable = true;
+          promptAction.showToast({ message: `发现新版本 ${this.latestVersion}`, duration: 2000 });
+        } else {
+          promptAction.showToast({ message: '已是最新版本', duration: 1500 });
+        }
+      }
+      httpRequest.destroy();
+    } catch (e) {
+      console.error(`[SettingsPage] Check update failed: ${(e as Error).message ?? ''}`);
+      promptAction.showToast({ message: '检查更新失败', duration: 1500 });
+    }
+
+    this.updateChecking = false;
+  }
+
+  private compareVersions(v1: string, v2: string): number {
+    let parts1 = v1.split('.').map((s: string) => parseInt(s) || 0);
+    let parts2 = v2.split('.').map((s: string) => parseInt(s) || 0);
+    let maxLen = Math.max(parts1.length, parts2.length);
+    for (let i = 0; i < maxLen; i++) {
+      let p1 = i < parts1.length ? parts1[i] : 0;
+      let p2 = i < parts2.length ? parts2[i] : 0;
+      if (p1 > p2) return 1;
+      if (p1 < p2) return -1;
+    }
+    return 0;
+  }
+
+  private async downloadAndInstallUpdate(): Promise<void> {
+    this.updateDownloading = true;
+    this.updateProgress = 0;
+
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let filesDir = ctx.filesDir;
+      let hapPath = `${filesDir}/ClawdBot-${this.latestVersion}.hap`;
+
+      // Get download URL from GitHub release
+      let httpRequest = http.createHttp();
+      let response = await httpRequest.request(
+        'https://api.github.com/repos/lhj1026/ClawdbotHarmony/releases/latest',
+        { method: http.RequestMethod.GET, header: { 'Accept': 'application/vnd.github.v3+json' } }
+      );
+
+      let downloadUrl = '';
+      if (response.responseCode === 200 && response.result) {
+        let data = JSON.parse(response.result as string) as Record<string, Object>;
+        let assets = data['assets'] as Object[];
+        if (assets && assets.length > 0) {
+          let asset = assets[0] as Record<string, Object>;
+          downloadUrl = asset['browser_download_url'] as string;
+        }
+      }
+      httpRequest.destroy();
+
+      if (downloadUrl.length === 0) {
+        promptAction.showToast({ message: '未找到下载链接', duration: 1500 });
+        this.updateDownloading = false;
+        return;
+      }
+
+      // Download HAP file
+      promptAction.showToast({ message: '开始下载...', duration: 1500 });
+
+      let downloadRequest = http.createHttp();
+      let downloadResponse = await downloadRequest.request(downloadUrl, {
+        method: http.RequestMethod.GET,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER
+      });
+
+      if (downloadResponse.responseCode === 200 && downloadResponse.result) {
+        let fileData = downloadResponse.result as ArrayBuffer;
+        let file = fileIo.openSync(hapPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
+        fileIo.writeSync(file.fd, fileData);
+        fileIo.closeSync(file);
+
+        this.updateProgress = 100;
+        promptAction.showToast({ message: '下载完成，正在安装...', duration: 2000 });
+
+        // Trigger system installer
+        setTimeout(() => {
+          this.installHap(hapPath);
+        }, 500);
+      } else {
+        promptAction.showToast({ message: `下载失败: HTTP ${downloadResponse.responseCode}`, duration: 2000 });
+      }
+      downloadRequest.destroy();
+    } catch (e) {
+      console.error(`[SettingsPage] Download update failed: ${(e as Error).message ?? ''}`);
+      promptAction.showToast({ message: `下载失败: ${(e as Error).message ?? ''}`, duration: 2000 });
+    }
+
+    this.updateDownloading = false;
+  }
+
+  private installHap(hapPath: string): void {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      // Use Want to trigger system package installer
+      let want: Want = {
+        action: 'ohos.want.action.install',
+        uri: `file://${hapPath}`,
+        parameters: {
+          'ohos.extra.param.key.hapPath': hapPath
+        }
+      };
+      ctx.startAbility(want).then(() => {
+        console.info('[SettingsPage] Install dialog opened');
+      }).catch((err: Error) => {
+        console.error(`[SettingsPage] Failed to open installer: ${err.message ?? ''}`);
+        // Fallback: try viewData action
+        let fallbackWant: Want = {
+          action: 'ohos.want.action.viewData',
+          uri: `file://${hapPath}`,
+          type: 'application/vnd.ohos.hap'
+        };
+        ctx.startAbility(fallbackWant).catch((e: Error) => {
+          promptAction.showToast({ message: `无法打开安装器: ${e.message ?? ''}`, duration: 2000 });
+        });
+      });
+    } catch (e) {
+      console.error(`[SettingsPage] Install error: ${(e as Error).message ?? ''}`);
+      promptAction.showToast({ message: `安装出错: ${(e as Error).message ?? ''}`, duration: 2000 });
+    }
   }
 }
