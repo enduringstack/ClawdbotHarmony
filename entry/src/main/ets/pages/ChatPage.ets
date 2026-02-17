@@ -63,6 +63,7 @@ export struct ChatPage {
   @State showSessionDrawer: boolean = false;  // session list drawer visibility
   @State sessions: ChatSession[] = [];  // all sessions
   @State currentSessionId: string = 'default';  // current active session ID
+  @State currentSessionTitle: string = '';  // current session title for header display
   @State queuedMessages: QueuedMessage[] = [];  // persisted message queue
   private pendingFileContent: string = '';  // file text content to attach
   private sessionSvc: SessionService = SessionService.getInstance();
@@ -333,7 +334,7 @@ export struct ChatPage {
               .margin({ right: 10 })
           }
           Column() {
-            Text(this.getCurrentSessionTitle())
+            Text(this.currentSessionTitle.length > 0 ? this.currentSessionTitle : I18n.t('session.newChat'))
               .fontSize(16)
               .fontWeight(FontWeight.Bold)
               .fontColor('#1A1A1A')
@@ -1091,6 +1092,7 @@ Respond ONLY with the JSON array.`;
       await this.sessionSvc.initialize(ctx);
       this.sessions = this.sessionSvc.getSessions();
       this.currentSessionId = this.sessionSvc.getCurrentSessionId();
+      this.currentSessionTitle = this.getCurrentSessionTitle();
       // Load messages and queue for current session
       await this.loadSessionMessages();
       await this.loadSessionQueue();
@@ -1199,6 +1201,7 @@ Respond ONLY with the JSON array.`;
     // Switch to new session
     await this.sessionSvc.setCurrentSession(sessionId);
     this.currentSessionId = sessionId;
+    this.currentSessionTitle = this.getCurrentSessionTitle();
 
     // Load new session's messages and queue
     await this.loadSessionMessages();
@@ -1230,6 +1233,7 @@ Respond ONLY with the JSON array.`;
     // Switch to new session
     await this.sessionSvc.setCurrentSession(newSession.id);
     this.currentSessionId = newSession.id;
+    this.currentSessionTitle = newSession.title;
     this.messages = [];
     this.queuedMessages = [];
 
@@ -1290,6 +1294,9 @@ Respond ONLY with the JSON array.`;
         if (trimmedTitle.length > 0) {
           await this.sessionSvc.renameSession(sessionId, trimmedTitle);
           this.sessions = this.sessionSvc.getSessions();
+          if (sessionId === this.currentSessionId) {
+            this.currentSessionTitle = trimmedTitle;
+          }
           this.log.info('ChatPage', `AI-generated title for session ${sessionId}: ${trimmedTitle}`);
           return;
         }
@@ -1327,6 +1334,9 @@ Respond ONLY with the JSON array.`;
       }
       await this.sessionSvc.renameSession(sessionId, title);
       this.sessions = this.sessionSvc.getSessions();
+      if (sessionId === this.currentSessionId) {
+        this.currentSessionTitle = title;
+      }
     }
   }
 
@@ -1375,8 +1385,12 @@ Respond ONLY with the JSON array.`;
     if (session.title === newTitle) return;
 
     // Update title asynchronously
-    this.sessionSvc.renameSession(this.currentSessionId, newTitle).then(() => {
+    const sessionId = this.currentSessionId;
+    this.sessionSvc.renameSession(sessionId, newTitle).then(() => {
       this.sessions = this.sessionSvc.getSessions();
+      if (sessionId === this.currentSessionId) {
+        this.currentSessionTitle = newTitle;
+      }
       this.log.info('ChatPage', `Auto-updated session title: "${newTitle}"`);
     }).catch((err: Error) => {
       this.log.error('ChatPage', `Failed to auto-update title: ${err.message}`);
@@ -1465,6 +1479,7 @@ Respond ONLY with the JSON array.`;
       // If current session was closed, switch to the new current session
       if (sessionId === this.currentSessionId) {
         this.currentSessionId = this.sessionSvc.getCurrentSessionId();
+        this.currentSessionTitle = this.getCurrentSessionTitle();
         await this.loadSessionMessages();
       }
       this.sessions = this.sessionSvc.getSessions();
@@ -1475,6 +1490,9 @@ Respond ONLY with the JSON array.`;
   private async renameSession(sessionId: string, newName: string): Promise<void> {
     await this.sessionSvc.renameSession(sessionId, newName);
     this.sessions = this.sessionSvc.getSessions();
+    if (sessionId === this.currentSessionId) {
+      this.currentSessionTitle = newName;
+    }
   }
 
   private async togglePinSession(sessionId: string): Promise<void> {

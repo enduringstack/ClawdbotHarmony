@@ -9,7 +9,7 @@ import { I18n, LangCode } from '../common/I18n';
 import { SettingsProfile } from '../model/Models';
 import { ImapService } from '../service/ImapService';
 import { FeishuBotService } from '../service/FeishuBotService';
-// import { VoiceprintManager } from '../components/VoiceprintManager'; // Disabled
+// // import { VoiceprintManager } from '../components/VoiceprintManager'; // Disabled: sherpa_onnx not available // TODO: Fix sherpa_onnx types
 import socket from '@ohos.net.socket';
 
 @Component
@@ -1222,7 +1222,7 @@ export struct SettingsPage {
 
           Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
-          // VoiceprintManager() // Disabled
+          // VoiceprintManager() // TODO: Fix sherpa_onnx types
         }
         .width('100%')
         .padding(16)
@@ -1235,7 +1235,7 @@ export struct SettingsPage {
         Column() {
           this.InfoRow(I18n.t('settings.app'), I18n.t('settings.appValue'))
           Divider().color('#F0F0F0')
-          this.InfoRow(I18n.t('settings.version'), '2.18.6')
+          this.InfoRow(I18n.t('settings.version'), '2.18.7')
           Divider().color('#F0F0F0')
           this.InfoRow(I18n.t('settings.basedOn'), 'OpenClaw / ClawdBot')
           Divider().color('#F0F0F0')
