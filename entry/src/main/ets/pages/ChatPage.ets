@@ -861,7 +861,7 @@ export struct ChatPage {
           },
           onOpenAbout: () => {
             this.showSessionDrawer = false;
-            router.pushUrl({ url: 'pages/SettingsRoutePage' });
+            router.pushUrl({ url: 'pages/AboutRoutePage' });
           },
           onClose: () => {
             this.showSessionDrawer = false;

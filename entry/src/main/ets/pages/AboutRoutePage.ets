@@ -97,7 +97,7 @@ struct AboutRoutePage {
           Column() {
             this.InfoRow(t('settings.app'), 'ClawdBot')
             Divider().color('#F0F0F0')
-            this.InfoRow(t('settings.version'), '2.18.13')
+            this.InfoRow(t('settings.version'), '2.18.15')
             Divider().color('#F0F0F0')
             this.InfoRow(t('settings.basedOn'), 'OpenClaw')
             Divider().color('#F0F0F0')
