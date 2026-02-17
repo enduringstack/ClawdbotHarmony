@@ -34,14 +34,21 @@ Thumbs.db
 /entry/.hvigor/
 
 # Temp build/debug scripts
-build_debug2.bat
-build_hap.bat
-build_now.bat
-build_release.bat
+build*.bat
 check_cwd.bat
 check_cwd.js
 check_path.js
 fix_cwd_build.js
+
+# Debug/log output
+build_output.txt
+debug.log
+hilog*.txt
+uidump*.json
+screen.jpeg
+icon_full.png
+webview_tools.html
+package-lock.json
 
 # Windows reserved names
 nul

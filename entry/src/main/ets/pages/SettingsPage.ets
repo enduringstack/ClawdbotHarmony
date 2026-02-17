@@ -5,6 +5,7 @@ import { fileIo, picker } from '@kit.CoreFileKit';
 import { http } from '@kit.NetworkKit';
 import { bundleManager } from '@kit.AbilityKit';
 import { request } from '@kit.BasicServicesKit';
+import { execCmd } from 'libexec.so';
 import { Constants } from '../common/Constants';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
 import { ConnectionState, GatewayEndpoint, AgentIdentity } from '../service/gateway/GatewayModels';
@@ -14,6 +15,12 @@ import { ImapService } from '../service/ImapService';
 import { FeishuBotService } from '../service/FeishuBotService';
 import { VoiceprintManager } from '../components/VoiceprintManager';
 import socket from '@ohos.net.socket';
+
+interface BmExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
 
 @Component
 export struct SettingsPage {
@@ -2549,28 +2556,41 @@ export struct SettingsPage {
 
   private installHap(hapPath: string): void {
     try {
-      let ctx = getContext(this) as common.UIAbilityContext;
-      // Use Want to trigger system package installer
-      let want: Want = {
-        action: 'ohos.want.action.install',
-        uri: `file://${hapPath}`,
-        parameters: {
-          'ohos.extra.param.key.hapPath': hapPath
-        }
-      };
-      ctx.startAbility(want).then(() => {
-        console.info('[SettingsPage] Install dialog opened');
-      }).catch((err: Error) => {
-        console.error(`[SettingsPage] Failed to open installer: ${err.message ?? ''}`);
-        // Fallback: try viewData action
-        let fallbackWant: Want = {
-          action: 'ohos.want.action.viewData',
-          uri: `file://${hapPath}`,
-          type: 'application/vnd.ohos.hap'
-        };
-        ctx.startAbility(fallbackWant).catch((e: Error) => {
-          promptAction.showToast({ message: `无法打开安装器: ${e.message ?? ''}`, duration: 2000 });
+      console.info(`[SettingsPage] Attempting bm install: ${hapPath}`);
+      let result: BmExecResult = execCmd(`bm install -r -p ${hapPath}`) as BmExecResult;
+      console.info(`[SettingsPage] bm install result: exitCode=${result.exitCode} stdout=${result.stdout} stderr=${result.stderr}`);
+
+      if (result.exitCode === 0 && result.stdout.indexOf('successfully') >= 0) {
+        AlertDialog.show({
+          title: '更新成功',
+          message: '新版本已安装，请手动重启应用。',
+          confirm: { value: '确定', action: () => {} }
         });
+        return;
+      }
+
+      // bm install failed - try copying to /data/local/tmp/ first
+      let tmpPath = `/data/local/tmp/ClawdBot-${this.latestVersion}.hap`;
+      execCmd(`cp ${hapPath} ${tmpPath}`);
+      let result2: BmExecResult = execCmd(`bm install -r -p ${tmpPath}`) as BmExecResult;
+      console.info(`[SettingsPage] bm install (tmp) result: exitCode=${result2.exitCode} stdout=${result2.stdout}`);
+
+      if (result2.exitCode === 0 && result2.stdout.indexOf('successfully') >= 0) {
+        execCmd(`rm ${tmpPath}`);
+        AlertDialog.show({
+          title: '更新成功',
+          message: '新版本已安装，请手动重启应用。',
+          confirm: { value: '确定', action: () => {} }
+        });
+        return;
+      }
+
+      // Both failed - show manual instructions
+      let errMsg: string = result2.stderr.length > 0 ? result2.stderr : result.stderr;
+      AlertDialog.show({
+        title: '需要手动安装',
+        message: `自动安装失败: ${errMsg.substring(0, 100)}\n\nHAP已下载，请连接电脑执行:\nhdc shell bm install -r -p ${hapPath}`,
+        confirm: { value: '确定', action: () => {} }
       });
     } catch (e) {
       console.error(`[SettingsPage] Install error: ${(e as Error).message ?? ''}`);
