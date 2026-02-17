@@ -3,39 +3,7 @@ import { router } from '@kit.ArkUI';
 import { hidebug } from '@kit.PerformanceAnalysisKit';
 import { I18n, t } from '../common/I18n';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
-
-interface ChangelogEntry {
-  version: string;
-  date: string;
-  features: string[];
-  fixes: string[];
-}
-
-const CHANGELOG: ChangelogEntry[] = [
-  {
-    version: '2.18.15',
-    date: '2026-02-16',
-    features: [
-      '声纹识别模块 (Voiceprint)',
-      '会话管理设置 (并行会话、空闲超时)',
-      '会话标题自动更新',
-    ],
-    fixes: [
-      '修复关于页面路由',
-      '修复空闲超时设置不生效',
-      '修复 ArkTS 严格模式类型错误',
-    ],
-  },
-  {
-    version: '2.18.0',
-    date: '2026-02-15',
-    features: [
-      '多会话并行处理',
-      '动态 sessionKey',
-    ],
-    fixes: [],
-  },
-];
+import { APP_VERSION, CHANGELOG, ChangelogEntry, LATEST_VERSION } from '../generated/Changelog';
 
 @Entry
 @Component
@@ -47,7 +15,7 @@ struct AboutRoutePage {
   @State activeSessions: number = 0;
   @State tokenUsage: string = '-';
   @State gatewayStatus: string = '-';
-  @State expandedVersions: Set<string> = new Set(['2.18.15']); // Latest expanded by default
+  @State expandedVersions: Set<string> = new Set([LATEST_VERSION]); // Latest expanded by default
   private refreshTimer: number = -1;
 
   aboutToAppear(): void {
@@ -241,7 +209,7 @@ struct AboutRoutePage {
           Column() {
             this.InfoRow(t('settings.app'), 'ClawdBot')
             Divider().color('#F0F0F0')
-            this.InfoRow(t('settings.version'), '2.18.17')
+            this.InfoRow(t('settings.version'), APP_VERSION)
             Divider().color('#F0F0F0')
             this.InfoRow(t('settings.basedOn'), 'OpenClaw')
             Divider().color('#F0F0F0')

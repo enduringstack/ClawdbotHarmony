@@ -41,6 +41,19 @@ export struct SessionDrawer {
     })
   }
 
+  // Format token count for display (e.g., 1234 -> "1.2k", 12345 -> "12k")
+  private formatTokens(count: number): string {
+    if (count < 1000) {
+      return `${count}`;
+    } else if (count < 10000) {
+      return `${(count / 1000).toFixed(1)}k`;
+    } else if (count < 1000000) {
+      return `${Math.round(count / 1000)}k`;
+    } else {
+      return `${(count / 1000000).toFixed(1)}M`;
+    }
+  }
+
   @Builder
   SessionItem(session: ChatSession) {
     Row() {
@@ -52,13 +65,26 @@ export struct SessionDrawer {
       }
 
       Column() {
-        Text(session.title)
-          .fontSize(15)
-          .fontColor(session.id === this.currentSessionId ? '#007AFF' : '#333333')
-          .fontWeight(session.id === this.currentSessionId ? FontWeight.Medium : FontWeight.Normal)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Row() {
+          Text(session.title)
+            .fontSize(15)
+            .fontColor(session.id === this.currentSessionId ? '#007AFF' : '#333333')
+            .fontWeight(session.id === this.currentSessionId ? FontWeight.Medium : FontWeight.Normal)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
 
+          // Active indicator (pulsing dot)
+          if (session.isActive) {
+            Text('●')
+              .fontSize(10)
+              .fontColor('#34C759')
+              .margin({ left: 6 })
+          }
+        }
+        .width('100%')
+
+        // Last message preview
         if (session.lastMessage) {
           Text(session.lastMessage)
             .fontSize(12)
@@ -66,6 +92,27 @@ export struct SessionDrawer {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: 4 })
+        }
+
+        // Token usage display
+        if (session.totalTokens > 0) {
+          Row() {
+            Text('🎯')
+              .fontSize(10)
+            Text(`${this.formatTokens(session.totalTokens)}`)
+              .fontSize(10)
+              .fontColor('#999999')
+              .margin({ left: 2 })
+
+            // Show input/output breakdown on hover or when selected
+            if (session.id === this.currentSessionId) {
+              Text(`(↑${this.formatTokens(session.inputTokens)} ↓${this.formatTokens(session.outputTokens)})`)
+                .fontSize(9)
+                .fontColor('#BBBBBB')
+                .margin({ left: 4 })
+            }
+          }
+          .margin({ top: 4 })
         }
       }
       .alignItems(HorizontalAlign.Start)

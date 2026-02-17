@@ -110,6 +110,13 @@ export interface GatewayChatMessage {
   timestamp?: number;
 }
 
+// Token usage statistics from agent response
+export interface GatewayTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 export interface GatewayChatEvent {
   runId: string;
   sessionKey: string;
@@ -119,6 +126,7 @@ export interface GatewayChatEvent {
   errorMessage?: string;
   stopReason?: string;
   chatSessionId?: string;  // client-side session ID for multi-session routing
+  usage?: GatewayTokenUsage;  // token usage (usually in final event)
 }
 
 // --------------- Exec approval ---------------

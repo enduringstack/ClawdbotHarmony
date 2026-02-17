@@ -1675,6 +1675,9 @@ Respond ONLY with the JSON array.`;
       // Note: In node mode, embedding/memory is handled entirely by the Gateway server.
       // No local memory injection needed here.
 
+      // Mark current session as active (processing)
+      this.setSessionActive(this.currentSessionId, true);
+
       // Reset state flags
       this.gwEarlyFinish = false;
       this.gwReceivedDelta = false;
@@ -1957,6 +1960,12 @@ Respond ONLY with the JSON array.`;
         }
         // If final event has no text and no accumulated text, keep placeholder "..."
       }
+
+      // Update session token usage if available
+      if (event.usage) {
+        this.updateSessionTokenUsage(event.usage.inputTokens, event.usage.outputTokens);
+      }
+
       this.log.info('ChatPage', `Gateway chat FINAL: chunkLen=${text.length} accLen=${this.gwAccumulatedText.length} text(200)="${this.gwAccumulatedText.substring(0, 200)}"`);
       this.finishGatewayChat();
     } else if (event.state === 'error' || event.state === 'aborted') {
@@ -2048,6 +2057,28 @@ Respond ONLY with the JSON array.`;
     this.doCleanupGatewayChat();
   }
 
+  /** Update current session's token usage */
+  private updateSessionTokenUsage(inputTokens: number, outputTokens: number): void {
+    let sessionIdx = this.sessions.findIndex(s => s.id === this.currentSessionId);
+    if (sessionIdx >= 0) {
+      let session = this.sessions[sessionIdx];
+      session.inputTokens += inputTokens;
+      session.outputTokens += outputTokens;
+      session.totalTokens = session.inputTokens + session.outputTokens;
+      this.log.info('ChatPage', `Token usage updated: session=${this.currentSessionId} input=${session.inputTokens} output=${session.outputTokens} total=${session.totalTokens}`);
+      // Persist session data
+      this.sessionSvc.updateSession(session);
+    }
+  }
+
+  /** Set session active state (shows pulsing indicator when processing) */
+  private setSessionActive(sessionId: string, active: boolean): void {
+    let sessionIdx = this.sessions.findIndex(s => s.id === sessionId);
+    if (sessionIdx >= 0) {
+      this.sessions[sessionIdx].isActive = active;
+    }
+  }
+
   /** Actually reset all gateway chat state */
   private doCleanupGatewayChat(): void {
     // Clean up cross-session tracking for this run
@@ -2055,6 +2086,8 @@ Respond ONLY with the JSON array.`;
       this.crossSessionMsgIds.delete(this.gwRunId);
       this.crossSessionTexts.delete(this.gwRunId);
     }
+    // Mark session as inactive
+    this.setSessionActive(this.currentSessionId, false);
     this.isLoading = false;
     this.loadingSessionId = '';
     this.stopDotAnimation();

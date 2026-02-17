@@ -81,6 +81,9 @@ export class SessionService {
         session.lastMessage = data.lastMessage;
         session.isPinned = data.isPinned || false;
         session.isClosed = data.isClosed || false;
+        session.inputTokens = data.inputTokens || 0;
+        session.outputTokens = data.outputTokens || 0;
+        session.totalTokens = data.totalTokens || 0;
         return session;
       });
     } catch (err) {
@@ -102,7 +105,10 @@ export class SessionService {
           messageCount: s.messageCount,
           lastMessage: s.lastMessage,
           isPinned: s.isPinned,
-          isClosed: s.isClosed
+          isClosed: s.isClosed,
+          inputTokens: s.inputTokens,
+          outputTokens: s.outputTokens,
+          totalTokens: s.totalTokens
         };
       });
       
@@ -110,6 +116,16 @@ export class SessionService {
       await this.prefs.flush();
     } catch (err) {
       this.log.error('SessionService', `Save sessions failed: ${err}`);
+    }
+  }
+
+  /** Update a session and persist changes */
+  async updateSession(session: ChatSession): Promise<void> {
+    let idx = this.sessions.findIndex(s => s.id === session.id);
+    if (idx >= 0) {
+      // Update properties (the session object is @Observed, UI will update)
+      this.sessions[idx] = session;
+      await this.saveSessions();
     }
   }
 

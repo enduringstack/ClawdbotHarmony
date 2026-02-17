@@ -29,6 +29,7 @@ import {
   InvokeResult,
   GatewayChatEvent,
   GatewayChatContentBlock,
+  GatewayTokenUsage,
   ExecApprovalRequest,
   AgentIdentity,
 } from './GatewayModels';
@@ -44,7 +45,7 @@ import { Constants } from '../../common/Constants';
 import { NotificationHelper } from '../NotificationHelper';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.18.17';
+const APP_VERSION = '2.18.18';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -1696,6 +1697,21 @@ export class NodeRuntime {
         let msgRole: string = stream.length > 0 ? stream : 'assistant';
         let msgTs: number | undefined = (raw['ts'] as number) ?? undefined;
 
+        // Extract token usage from response (usually present in final event)
+        let usage: GatewayTokenUsage | undefined = undefined;
+        if (raw['usage'] !== undefined) {
+          let usageRaw = raw['usage'] as Record<string, number>;
+          let inputToks = usageRaw['input_tokens'] ?? usageRaw['inputTokens'] ?? usageRaw['prompt_tokens'] ?? 0;
+          let outputToks = usageRaw['output_tokens'] ?? usageRaw['outputTokens'] ?? usageRaw['completion_tokens'] ?? 0;
+          let totalToks = usageRaw['total_tokens'] ?? usageRaw['totalTokens'] ?? (inputToks + outputToks);
+          usage = {
+            inputTokens: inputToks,
+            outputTokens: outputToks,
+            totalTokens: totalToks
+          };
+          this.log.info(TAG, `Token usage: input=${inputToks} output=${outputToks} total=${totalToks}`);
+        }
+
         let chatEvent: GatewayChatEvent = {
           runId: runId,
           sessionKey: sessionKey,
@@ -1704,6 +1720,7 @@ export class NodeRuntime {
           message: { role: msgRole, content: blocks, timestamp: msgTs },
           errorMessage: errorMsg,
           stopReason: stopReason.length > 0 ? stopReason : undefined,
+          usage: usage,
         };
 
         this.log.info(TAG, `agentChat: state=${chatState} runId=${runId} seq=${seq} textLen=${fullText.length} blocks=${blocks.length} text(100)="${fullText.substring(0, 100)}"`);
