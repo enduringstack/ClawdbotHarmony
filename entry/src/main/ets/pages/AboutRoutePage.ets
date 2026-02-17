@@ -3,6 +3,39 @@ import { router } from '@kit.ArkUI';
 import { I18n, t } from '../common/I18n';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
 
+interface ChangelogEntry {
+  version: string;
+  date: string;
+  features: string[];
+  fixes: string[];
+}
+
+const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.18.15',
+    date: '2026-02-16',
+    features: [
+      '声纹识别模块 (Voiceprint)',
+      '会话管理设置 (并行会话、空闲超时)',
+      '会话标题自动更新',
+    ],
+    fixes: [
+      '修复关于页面路由',
+      '修复空闲超时设置不生效',
+      '修复 ArkTS 严格模式类型错误',
+    ],
+  },
+  {
+    version: '2.18.0',
+    date: '2026-02-15',
+    features: [
+      '多会话并行处理',
+      '动态 sessionKey',
+    ],
+    fixes: [],
+  },
+];
+
 @Entry
 @Component
 struct AboutRoutePage {
@@ -11,6 +44,7 @@ struct AboutRoutePage {
   @State activeSessions: number = 0;
   @State tokenUsage: string = '-';
   @State gatewayStatus: string = '-';
+  @State expandedVersions: Set<string> = new Set(['2.18.15']); // Latest expanded by default
   private refreshTimer: number = -1;
 
   aboutToAppear(): void {
@@ -66,6 +100,77 @@ struct AboutRoutePage {
       .width('100%')
   }
 
+  @Builder
+  ChangelogItem(entry: ChangelogEntry) {
+    Column() {
+      // Version header (clickable to expand/collapse)
+      Row() {
+        Text(`v${entry.version}`)
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#333333')
+        Text(entry.date)
+          .fontSize(12)
+          .fontColor('#999999')
+          .margin({ left: 12 })
+        Blank()
+        Text(this.expandedVersions.has(entry.version) ? '▼' : '▶')
+          .fontSize(12)
+          .fontColor('#999999')
+      }
+      .width('100%')
+      .padding({ top: 12, bottom: 12 })
+      .onClick(() => {
+        if (this.expandedVersions.has(entry.version)) {
+          this.expandedVersions.delete(entry.version);
+        } else {
+          this.expandedVersions.add(entry.version);
+        }
+        this.expandedVersions = new Set(this.expandedVersions); // Trigger re-render
+      })
+
+      // Expanded content
+      if (this.expandedVersions.has(entry.version)) {
+        Column() {
+          // Features
+          if (entry.features.length > 0) {
+            Text(this.lang === 'zh' ? '✨ 新功能' : '✨ New Features')
+              .fontSize(12)
+              .fontColor('#4CAF50')
+              .fontWeight(FontWeight.Medium)
+              .margin({ top: 4, bottom: 4 })
+            ForEach(entry.features, (feature: string) => {
+              Text(`• ${feature}`)
+                .fontSize(13)
+                .fontColor('#666666')
+                .margin({ left: 8, top: 2, bottom: 2 })
+                .width('100%')
+            })
+          }
+          // Fixes
+          if (entry.fixes.length > 0) {
+            Text(this.lang === 'zh' ? '🐛 修复' : '🐛 Bug Fixes')
+              .fontSize(12)
+              .fontColor('#FF9800')
+              .fontWeight(FontWeight.Medium)
+              .margin({ top: 8, bottom: 4 })
+            ForEach(entry.fixes, (fix: string) => {
+              Text(`• ${fix}`)
+                .fontSize(13)
+                .fontColor('#666666')
+                .margin({ left: 8, top: 2, bottom: 2 })
+                .width('100%')
+            })
+          }
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding({ bottom: 8 })
+      }
+    }
+    .width('100%')
+  }
+
   build() {
     Column() {
       // Header
@@ -97,7 +202,7 @@ struct AboutRoutePage {
           Column() {
             this.InfoRow(t('settings.app'), 'ClawdBot')
             Divider().color('#F0F0F0')
-            this.InfoRow(t('settings.version'), '2.18.15')
+            this.InfoRow(t('settings.version'), '2.18.16')
             Divider().color('#F0F0F0')
             this.InfoRow(t('settings.basedOn'), 'OpenClaw')
             Divider().color('#F0F0F0')
@@ -117,6 +222,20 @@ struct AboutRoutePage {
             this.InfoRow(t('settings.memoryUsage'), this.memoryUsage)
             Divider().color('#F0F0F0')
             this.InfoRow(t('settings.tokenUsage'), this.tokenUsage)
+          }
+          .padding(16)
+          .backgroundColor(Color.White)
+          .borderRadius(12)
+
+          // ========== Changelog Section ==========
+          this.SectionTitle(this.lang === 'zh' ? '更新日志' : 'Changelog')
+          Column() {
+            ForEach(CHANGELOG, (entry: ChangelogEntry, index: number) => {
+              this.ChangelogItem(entry)
+              if (index < CHANGELOG.length - 1) {
+                Divider().color('#F0F0F0')
+              }
+            })
           }
           .padding(16)
           .backgroundColor(Color.White)
