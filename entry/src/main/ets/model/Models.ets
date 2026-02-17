@@ -35,6 +35,14 @@ export class ChatMessage {
   replyToId: string;        // ID of the message being replied to
   replyToContent: string;   // Preview content of the replied message
   replyToRole: string;      // Role of the replied message ('user' | 'assistant')
+  // File transfer fields
+  filePath: string;         // local file path after download
+  fileName: string;         // original filename from gateway
+  fileUrl: string;          // download URL (http/https or data: URI)
+  fileSize: number;         // file size in bytes
+  fileMimeType: string;     // MIME type
+  fileDownloading: boolean; // download in progress
+  fileDownloaded: boolean;  // download completed
 
   constructor(role: string, content: string) {
     this.id = `m_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
@@ -57,6 +65,14 @@ export class ChatMessage {
     this.replyToId = '';
     this.replyToContent = '';
     this.replyToRole = '';
+    // File transfer
+    this.filePath = '';
+    this.fileName = '';
+    this.fileUrl = '';
+    this.fileSize = 0;
+    this.fileMimeType = '';
+    this.fileDownloading = false;
+    this.fileDownloaded = false;
   }
 }
 

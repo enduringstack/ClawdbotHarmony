@@ -7,6 +7,8 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { LogService } from '../common/LogService';
+import { request } from '@kit.BasicServicesKit';
+import { common } from '@kit.AbilityKit';
 
 @Component
 export struct MessageBubble {
@@ -23,6 +25,8 @@ export struct MessageBubble {
   onReply: (message: ChatMessage) => void = () => {};
   onNewSession: (message: ChatMessage) => void = () => {};
   onQuoteClick: (replyToId: string) => void = () => {};
+  onFileDownload: (message: ChatMessage) => void = () => {};
+  onFileOpen: (filePath: string) => void = () => {};
   @State audioPlaying: boolean = false;
   @State showMenu: boolean = false;
   @State a2uiHeight: number = 280;
@@ -43,7 +47,7 @@ export struct MessageBubble {
         this.ToolResultBubble()
       }
       // else: hide plain JSON tool results
-    } else if (this.sLen(this.message.content) > 0 || this.sLen(this.message.a2uiContent) > 0 || this.sLen(this.message.canvasUrl) > 0) {
+    } else if (this.sLen(this.message.content) > 0 || this.sLen(this.message.a2uiContent) > 0 || this.sLen(this.message.canvasUrl) > 0 || this.sLen(this.message.fileName) > 0) {
       this.AssistantBubble()
     }
   }
@@ -315,6 +319,11 @@ export struct MessageBubble {
               .controls(true)
           }
 
+          // File attachment display
+          if (this.sLen(this.message.fileName) > 0) {
+            this.FileAttachmentView()
+          }
+
           // Inline A2UI rendering
           if (this.sLen(this.message.a2uiContent) > 0) {
             this.A2UIView()
@@ -526,6 +535,93 @@ export struct MessageBubble {
         }
         return false;
       })
+  }
+
+  @Builder
+  FileAttachmentView() {
+    Row({ space: 12 }) {
+      // File icon based on mime type
+      Column() {
+        Text(this.getFileIcon())
+          .fontSize(28)
+      }
+      .width(48)
+      .height(48)
+      .backgroundColor('#E8F4FD')
+      .borderRadius(8)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+
+      // File info
+      Column({ space: 4 }) {
+        Text(this.message.fileName)
+          .fontSize(14)
+          .fontColor('#333333')
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .fontWeight(FontWeight.Medium)
+
+        Text(this.formatFileSize(this.message.fileSize))
+          .fontSize(12)
+          .fontColor('#999999')
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      // Download/Open button
+      if (this.message.fileDownloading) {
+        LoadingProgress()
+          .width(24)
+          .height(24)
+          .color('#007AFF')
+      } else if (this.message.fileDownloaded && this.sLen(this.message.filePath) > 0) {
+        Text('📂')
+          .fontSize(24)
+          .onClick(() => {
+            this.onFileOpen(this.message.filePath);
+          })
+      } else {
+        Text('⬇️')
+          .fontSize(24)
+          .onClick(() => {
+            this.onFileDownload(this.message);
+          })
+      }
+    }
+    .width('100%')
+    .padding(12)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(10)
+    .borderWidth(1)
+    .borderColor('#E0E0E0')
+    .margin({ top: 8 })
+  }
+
+  /** Get file icon emoji based on mime type */
+  private getFileIcon(): string {
+    let mime = this.message.fileMimeType.toLowerCase();
+    let name = this.message.fileName.toLowerCase();
+
+    if (mime.startsWith('image/')) return '🖼️';
+    if (mime.startsWith('video/')) return '🎬';
+    if (mime.startsWith('audio/')) return '🎵';
+    if (mime === 'application/pdf' || name.endsWith('.pdf')) return '📕';
+    if (mime.includes('word') || name.endsWith('.doc') || name.endsWith('.docx')) return '📘';
+    if (mime.includes('excel') || mime.includes('spreadsheet') || name.endsWith('.xls') || name.endsWith('.xlsx')) return '📗';
+    if (mime.includes('powerpoint') || mime.includes('presentation') || name.endsWith('.ppt') || name.endsWith('.pptx')) return '📙';
+    if (mime.includes('zip') || mime.includes('rar') || mime.includes('tar') || mime.includes('7z')) return '📦';
+    if (mime.startsWith('text/') || name.endsWith('.txt') || name.endsWith('.md')) return '📄';
+    if (mime.includes('json') || name.endsWith('.json')) return '📋';
+    return '📎';
+  }
+
+  /** Format file size for display */
+  private formatFileSize(bytes: number): string {
+    if (bytes <= 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   }
 
   @Builder

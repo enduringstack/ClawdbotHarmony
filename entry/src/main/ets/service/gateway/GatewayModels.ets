@@ -100,8 +100,13 @@ export class InvokeResult {
 // --------------- Chat via gateway (operator session) ---------------
 
 export interface GatewayChatContentBlock {
-  type: string;      // 'text' | 'tool_use' | 'tool_result' | ...
+  type: string;      // 'text' | 'tool_use' | 'tool_result' | 'file' | ...
   text?: string;
+  // File transfer fields (type='file')
+  fileName?: string;     // original filename
+  fileUrl?: string;      // download URL (http/https or data: URI)
+  fileSize?: number;     // file size in bytes
+  mimeType?: string;     // MIME type (e.g., 'application/pdf')
 }
 
 export interface GatewayChatMessage {

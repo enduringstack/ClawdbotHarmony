@@ -30,6 +30,14 @@ import { FeishuBotService } from '../service/FeishuBotService';
 import { LocalAsrService } from '../service/LocalAsrService';
 import { detectMood, MoodResult } from '../service/MoodDetector';
 
+// Interface for file info from gateway
+interface GatewayFileInfo {
+  fileName: string;
+  fileUrl: string;
+  fileSize: number;
+  mimeType: string;
+}
+
 @Component
 export struct ChatPage {
   @State messages: ChatMessage[] = [];
@@ -498,7 +506,9 @@ export struct ChatPage {
                   this.showReplyPreview = true;
                 },
                 onNewSession: (message: ChatMessage): void => { this.createNewSession(message); },
-                onQuoteClick: (replyToId: string): void => { this.scrollToMessage(replyToId); }
+                onQuoteClick: (replyToId: string): void => { this.scrollToMessage(replyToId); },
+                onFileDownload: (message: ChatMessage): void => { this.downloadFile(message); },
+                onFileOpen: (filePath: string): void => { this.openFile(filePath); }
               })
             }
             .backgroundColor(this.highlightMessageId === msg.id ? '#FFF3E0' : Color.Transparent)
@@ -1858,8 +1868,9 @@ Respond ONLY with the JSON array.`;
 
   /** Handle incoming gateway chat events (delta / final / error / aborted). */
   private handleGatewayChatEvent(event: GatewayChatEvent): void {
-    // Extract text from content blocks (separate consecutive text blocks with blank line)
+    // Extract text and file info from content blocks
     let text = '';
+    let fileInfo: GatewayFileInfo | null = null;
     if (event.message && event.message.content) {
       for (let block of event.message.content) {
         if (block.type === 'text' && block.text) {
@@ -1867,6 +1878,15 @@ Respond ONLY with the JSON array.`;
             text += '\n\n';
           }
           text += block.text;
+        } else if (block.type === 'file' && block.fileName && block.fileUrl) {
+          // File attachment from gateway
+          fileInfo = {
+            fileName: block.fileName,
+            fileUrl: block.fileUrl,
+            fileSize: block.fileSize ?? 0,
+            mimeType: block.mimeType ?? 'application/octet-stream'
+          };
+          this.log.info('ChatPage', `Received file: ${fileInfo.fileName} size=${fileInfo.fileSize} mime=${fileInfo.mimeType}`);
         }
       }
     }
@@ -1974,6 +1994,15 @@ Respond ONLY with the JSON array.`;
           this.messages[idx].content = finalText;
         }
         // If final event has no text and no accumulated text, keep placeholder "..."
+
+        // Handle file attachment from gateway
+        if (fileInfo) {
+          this.messages[idx].fileName = fileInfo.fileName;
+          this.messages[idx].fileUrl = fileInfo.fileUrl;
+          this.messages[idx].fileSize = fileInfo.fileSize;
+          this.messages[idx].fileMimeType = fileInfo.mimeType;
+          this.log.info('ChatPage', `Attached file to message: ${fileInfo.fileName}`);
+        }
       }
 
       // Update session token usage if available
@@ -3645,6 +3674,118 @@ Adjust your tone accordingly:
     let m = Math.floor(seconds / 60);
     let s = seconds % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  /** Download file from gateway to local storage */
+  private async downloadFile(message: ChatMessage): Promise<void> {
+    if (!message.fileUrl || message.fileUrl.length === 0) {
+      promptAction.showToast({ message: '文件URL无效' });
+      return;
+    }
+
+    this.log.info('ChatPage', `Downloading file: ${message.fileName} from ${message.fileUrl.substring(0, 100)}`);
+
+    // Mark as downloading
+    message.fileDownloading = true;
+
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let filesDir = ctx.filesDir;
+      let downloadDir = `${filesDir}/downloads`;
+
+      // Create downloads directory if not exists
+      try {
+        fileIo.mkdirSync(downloadDir);
+      } catch {
+        // Directory might already exist
+      }
+
+      // Generate unique filename to avoid conflicts
+      let timestamp = Date.now();
+      let safeName = message.fileName.replace(/[^\w\.\-\u4e00-\u9fa5]/g, '_');
+      let localPath = `${downloadDir}/${timestamp}_${safeName}`;
+
+      // Handle data: URL (base64 encoded)
+      if (message.fileUrl.startsWith('data:')) {
+        let base64Data = message.fileUrl.split(',')[1];
+        if (base64Data) {
+          let buffer = this.base64ToArrayBuffer(base64Data);
+          let file = fileIo.openSync(localPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
+          fileIo.writeSync(file.fd, buffer);
+          fileIo.closeSync(file);
+
+          message.filePath = localPath;
+          message.fileDownloaded = true;
+          message.fileDownloading = false;
+          this.log.info('ChatPage', `File downloaded (base64): ${localPath}`);
+          promptAction.showToast({ message: '下载完成' });
+        }
+      } else {
+        // HTTP/HTTPS download using http.createHttp
+        let httpRequest = http.createHttp();
+        httpRequest.request(message.fileUrl, {
+          method: http.RequestMethod.GET,
+          expectDataType: http.HttpDataType.ARRAY_BUFFER
+        }).then((response: http.HttpResponse) => {
+          if (response.responseCode === 200 && response.result) {
+            let fileData = response.result as ArrayBuffer;
+            let file = fileIo.openSync(localPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY);
+            fileIo.writeSync(file.fd, fileData);
+            fileIo.closeSync(file);
+
+            message.filePath = localPath;
+            message.fileDownloaded = true;
+            message.fileDownloading = false;
+            this.log.info('ChatPage', `File downloaded (http): ${localPath}`);
+            promptAction.showToast({ message: '下载完成' });
+          } else {
+            message.fileDownloading = false;
+            this.log.error('ChatPage', `Download failed: HTTP ${response.responseCode}`);
+            promptAction.showToast({ message: `下载失败: HTTP ${response.responseCode}` });
+          }
+          httpRequest.destroy();
+        }).catch((err: Error) => {
+          message.fileDownloading = false;
+          this.log.error('ChatPage', `Download error: ${err.message ?? ''}`);
+          promptAction.showToast({ message: `下载失败: ${err.message ?? ''}` });
+          httpRequest.destroy();
+        });
+      }
+    } catch (e) {
+      message.fileDownloading = false;
+      let errMsg = e instanceof Error ? e.message : String(e);
+      this.log.error('ChatPage', `Download error: ${errMsg}`);
+      promptAction.showToast({ message: `下载出错: ${errMsg}` });
+    }
+  }
+
+  /** Convert base64 string to ArrayBuffer */
+  private base64ToArrayBuffer(base64: string): ArrayBuffer {
+    let helper = new util.Base64Helper();
+    let uint8 = helper.decodeSync(base64);
+    return uint8.buffer as ArrayBuffer;
+  }
+
+  /** Open downloaded file using system file manager or app picker */
+  private openFile(filePath: string): void {
+    if (!filePath || filePath.length === 0) {
+      promptAction.showToast({ message: '文件路径无效' });
+      return;
+    }
+
+    this.log.info('ChatPage', `Opening file: ${filePath}`);
+
+    // For now, just show the file path. HarmonyOS file opening requires Want with specific abilities.
+    // In future: use bundleManager.queryAbilityInfo to find apps that can handle the file type
+    promptAction.showToast({ message: `文件已保存: ${filePath.split('/').pop()}` });
+
+    // TODO: Implement proper file opening with Intent/Want
+    // let want: Want = {
+    //   action: 'ohos.want.action.viewData',
+    //   uri: 'file://' + filePath,
+    //   type: message.fileMimeType
+    // };
+    // context.startAbility(want);
   }
 
   private scrollToEnd(): void {
