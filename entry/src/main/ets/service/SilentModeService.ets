@@ -265,6 +265,63 @@ export class SilentModeService {
     return Math.sqrt(sum / int16.length);
   }
 
+  /**
+   * Find a matching unknown speaker from previous entries in the current conversation.
+   * Uses cosine similarity to compare embeddings.
+   */
+  private findMatchingUnknownSpeaker(newEmbedding: number[]): string | null {
+    if (!this.currentRecord || newEmbedding.length === 0) {
+      return null;
+    }
+
+    const SIMILARITY_THRESHOLD = 0.75;  // Adjust as needed
+    let bestMatch: string | null = null;
+    let bestScore = 0;
+
+    // Check against all previous entries with embeddings
+    for (let entry of this.currentRecord.entries) {
+      if (entry.embedding && entry.embedding.length > 0 && entry.speaker.startsWith('unknown_')) {
+        let similarity = this.cosineSimilarity(newEmbedding, entry.embedding);
+        if (similarity > SIMILARITY_THRESHOLD && similarity > bestScore) {
+          bestScore = similarity;
+          bestMatch = entry.speaker;
+        }
+      }
+    }
+
+    if (bestMatch) {
+      this.log.info(this.TAG, `Matched existing speaker ${bestMatch} with score ${bestScore.toFixed(3)}`);
+    }
+
+    return bestMatch;
+  }
+
+  /**
+   * Calculate cosine similarity between two embedding vectors.
+   */
+  private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length || a.length === 0) {
+      return 0;
+    }
+
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+
+    let denominator = Math.sqrt(normA) * Math.sqrt(normB);
+    if (denominator === 0) {
+      return 0;
+    }
+
+    return dotProduct / denominator;
+  }
+
   private chunksToFloat32(buffers: ArrayBuffer[]): Float32Array {
     // Calculate total Int16 samples
     let totalBytes = 0;
@@ -321,9 +378,22 @@ export class SilentModeService {
 
       // Assign display name for unknown speakers
       let speaker = speakerId;
-      if (!speakerId && this.currentRecord) {
-        // Check if we've seen this voice pattern before (by checking existing unknowns)
-        // For now, assign a new number for each segment without voiceprint match
+      if (!speakerId && this.currentRecord && embeddingArray.length > 0) {
+        // Check if this voice matches a previous unknown speaker in this conversation
+        let matchedSpeaker = this.findMatchingUnknownSpeaker(embeddingArray);
+        if (matchedSpeaker) {
+          speakerId = matchedSpeaker;
+          speaker = speakerId;
+        } else {
+          // New unknown speaker
+          this.unknownSpeakerCount++;
+          speakerId = `unknown_${this.unknownSpeakerCount}`;
+          let displayName = `说话人${this.unknownSpeakerCount}`;
+          this.currentRecord.speakerAliases[speakerId] = displayName;
+          speaker = speakerId;
+        }
+      } else if (!speakerId && this.currentRecord) {
+        // No embedding available, create new speaker
         this.unknownSpeakerCount++;
         speakerId = `unknown_${this.unknownSpeakerCount}`;
         let displayName = `说话人${this.unknownSpeakerCount}`;
