@@ -3,6 +3,8 @@ import { router } from '@kit.ArkUI';
 import { hidebug } from '@kit.PerformanceAnalysisKit';
 import { I18n, t } from '../common/I18n';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
+import { SessionService } from '../service/SessionService';
+import { ChatSession } from '../model/Models';
 import { APP_VERSION, CHANGELOG, ChangelogEntry, LATEST_VERSION } from '../generated/Changelog';
 
 @Entry
@@ -12,11 +14,12 @@ struct AboutRoutePage {
   @State memoryUsage: string = '-';
   @State cpuUsage: string = '-';
   @State nativeHeap: string = '-';
-  @State activeSessions: number = 0;
+  @State sessions: ChatSession[] = [];
   @State tokenUsage: string = '-';
   @State gatewayStatus: string = '-';
-  @State expandedVersions: Set<string> = new Set([LATEST_VERSION]); // Latest expanded by default
+  @State expandedVersions: Set<string> = new Set([LATEST_VERSION]);
   private refreshTimer: number = -1;
+  private sessionSvc: SessionService = SessionService.getInstance();
 
   aboutToAppear(): void {
     this.refreshStatus();
@@ -38,11 +41,12 @@ struct AboutRoutePage {
     let runtime = NodeRuntime.getInstance();
     if (runtime.isConnected) {
       this.gatewayStatus = t('chat.online');
-      this.activeSessions = 1;
     } else {
       this.gatewayStatus = t('chat.offline');
-      this.activeSessions = 0;
     }
+
+    // Get sessions
+    this.sessions = this.sessionSvc.getSessions();
 
     // Memory usage (PSS - Proportional Set Size)
     try {
@@ -81,6 +85,33 @@ struct AboutRoutePage {
     }
   }
 
+  private formatDuration(ms: number): string {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) {
+      return this.lang === 'zh' ? `${days}天${hours % 24}小时` : `${days}d ${hours % 24}h`;
+    } else if (hours > 0) {
+      return this.lang === 'zh' ? `${hours}小时${minutes % 60}分钟` : `${hours}h ${minutes % 60}m`;
+    } else if (minutes > 0) {
+      return this.lang === 'zh' ? `${minutes}分钟` : `${minutes}m`;
+    } else {
+      return this.lang === 'zh' ? `${seconds}秒` : `${seconds}s`;
+    }
+  }
+
+  private getSessionStatus(session: ChatSession): string {
+    if (session.isActive) {
+      return this.lang === 'zh' ? '🔄 处理中' : '🔄 Processing';
+    } else if (session.isPinned) {
+      return this.lang === 'zh' ? '📌 已置顶' : '📌 Pinned';
+    } else {
+      return this.lang === 'zh' ? '💬 空闲' : '💬 Idle';
+    }
+  }
+
   @Builder
   InfoRow(label: string, value: string) {
     Row() {
@@ -105,6 +136,51 @@ struct AboutRoutePage {
       .letterSpacing(1)
       .padding({ left: 4, top: 20, bottom: 8 })
       .width('100%')
+  }
+
+  @Builder
+  SessionItem(session: ChatSession) {
+    Column() {
+      // Title row
+      Row() {
+        Text(session.title || '新对话')
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#333333')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Text(this.getSessionStatus(session))
+          .fontSize(12)
+          .fontColor(session.isActive ? '#4CAF50' : '#999999')
+      }
+      .width('100%')
+
+      // Details row
+      Row() {
+        Text(`${session.messageCount} ${this.lang === 'zh' ? '条消息' : 'messages'}`)
+          .fontSize(12)
+          .fontColor('#999999')
+        Text(' · ')
+          .fontSize(12)
+          .fontColor('#CCCCCC')
+        Text(this.formatDuration(Date.now() - session.createdAt))
+          .fontSize(12)
+          .fontColor('#999999')
+        if (session.totalTokens > 0) {
+          Text(' · ')
+            .fontSize(12)
+            .fontColor('#CCCCCC')
+          Text(`${(session.totalTokens / 1000).toFixed(1)}k tokens`)
+            .fontSize(12)
+            .fontColor('#999999')
+        }
+      }
+      .width('100%')
+      .margin({ top: 4 })
+    }
+    .width('100%')
+    .padding({ top: 10, bottom: 10 })
   }
 
   @Builder
@@ -224,13 +300,32 @@ struct AboutRoutePage {
           Column() {
             this.InfoRow(t('settings.gatewayStatus'), this.gatewayStatus)
             Divider().color('#F0F0F0')
-            this.InfoRow(t('settings.activeSessions'), `${this.activeSessions}`)
-            Divider().color('#F0F0F0')
             this.InfoRow(this.lang === 'zh' ? 'CPU 使用率' : 'CPU Usage', this.cpuUsage)
             Divider().color('#F0F0F0')
             this.InfoRow(this.lang === 'zh' ? '内存占用 (PSS)' : 'Memory (PSS)', this.memoryUsage)
             Divider().color('#F0F0F0')
             this.InfoRow(this.lang === 'zh' ? 'Native 堆' : 'Native Heap', this.nativeHeap)
+          }
+          .padding(16)
+          .backgroundColor(Color.White)
+          .borderRadius(12)
+
+          // ========== Sessions Section ==========
+          this.SectionTitle(this.lang === 'zh' ? `会话 (${this.sessions.length})` : `Sessions (${this.sessions.length})`)
+          Column() {
+            if (this.sessions.length === 0) {
+              Text(this.lang === 'zh' ? '暂无会话' : 'No sessions')
+                .fontSize(14)
+                .fontColor('#999999')
+                .padding({ top: 16, bottom: 16 })
+            } else {
+              ForEach(this.sessions, (session: ChatSession, index: number) => {
+                this.SessionItem(session)
+                if (index < this.sessions.length - 1) {
+                  Divider().color('#F0F0F0')
+                }
+              })
+            }
           }
           .padding(16)
           .backgroundColor(Color.White)
