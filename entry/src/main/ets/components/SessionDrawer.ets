@@ -2,6 +2,7 @@
 import { ChatSession } from '../model/Models';
 import { I18n, t } from '../common/I18n';
 import { promptAction } from '@kit.ArkUI';
+import { hidebug } from '@kit.PerformanceAnalysisKit';
 
 @Component
 export struct SessionDrawer {
@@ -11,6 +12,9 @@ export struct SessionDrawer {
   @State isRenameDialogVisible: boolean = false;
   @State renameSessionId: string = '';
   @State renameText: string = '';
+  @State cpuUsage: string = '-';
+  @State memoryUsage: string = '-';
+  private refreshTimer: number = -1;
   onSessionSelect: (sessionId: string) => void = () => {};
   onSessionCreate: () => void = () => {};
   onSessionClose: (sessionId: string) => void = () => {};
@@ -23,6 +27,53 @@ export struct SessionDrawer {
   onOpenLogs: () => void = () => {};
   onOpenAbout: () => void = () => {};
   onClose: () => void = () => {};
+
+  aboutToAppear(): void {
+    this.refreshSystemStatus();
+    this.refreshTimer = setInterval(() => {
+      this.refreshSystemStatus();
+    }, 2000);
+  }
+
+  aboutToDisappear(): void {
+    if (this.refreshTimer >= 0) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = -1;
+    }
+  }
+
+  private refreshSystemStatus(): void {
+    // Memory usage (PSS)
+    try {
+      const pssBig = hidebug.getPss();
+      const pss = Number(pssBig);
+      if (pss > 1024) {
+        this.memoryUsage = `${(pss / 1024).toFixed(1)}M`;
+      } else {
+        this.memoryUsage = `${pss}K`;
+      }
+    } catch {
+      this.memoryUsage = '-';
+    }
+
+    // CPU usage estimation (based on CPU time delta)
+    try {
+      const cpuBig = hidebug.getCpuUsage();
+      const cpu = Number(cpuBig);
+      this.cpuUsage = `${(cpu * 100).toFixed(0)}%`;
+    } catch {
+      this.cpuUsage = '-';
+    }
+  }
+
+  // Calculate total tokens across all sessions
+  private getTotalTokens(): number {
+    let total = 0;
+    for (let session of this.sessions) {
+      total += session.totalTokens;
+    }
+    return total;
+  }
 
   @Builder
   SwipeCloseButton(session: ChatSession) {
@@ -276,6 +327,42 @@ export struct SessionDrawer {
         Divider()
           .color('#EEEEEE')
           .width('100%')
+
+        // System status bar (CPU & Memory)
+        Row() {
+          Row() {
+            Text('💻')
+              .fontSize(12)
+            Text(this.cpuUsage)
+              .fontSize(11)
+              .fontColor('#666666')
+              .margin({ left: 4 })
+          }
+
+          Row() {
+            Text('💾')
+              .fontSize(12)
+              .margin({ left: 12 })
+            Text(this.memoryUsage)
+              .fontSize(11)
+              .fontColor('#666666')
+              .margin({ left: 4 })
+          }
+
+          // Total tokens across all sessions
+          Row() {
+            Text('🎯')
+              .fontSize(12)
+              .margin({ left: 12 })
+            Text(this.formatTokens(this.getTotalTokens()))
+              .fontSize(11)
+              .fontColor('#666666')
+              .margin({ left: 4 })
+          }
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .backgroundColor('#F8F8F8')
 
         Row() {
           Text('\uD83D\uDD27')
