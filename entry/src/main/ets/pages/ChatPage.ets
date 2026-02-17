@@ -3447,11 +3447,12 @@ Adjust your tone accordingly:
 - Humming: they are relaxed, keep it light
 `;
     }
-    let memBlock = this.memSvc.buildPromptBlock(memItems);
     // Add hybrid search results with scores and citations (OpenClaw-inspired)
     let searchBlock = this.memSvc.buildSearchResultsBlock(this.lastSearchResults);
+    // Only include memBlock when no searchBlock (avoid duplication when auto-inject finds relevant memories)
+    let memBlock = searchBlock.length > 0 ? '' : this.memSvc.buildPromptBlock(memItems);
     let skillBlock = getSkillSystemPrompt(skills, customSkills);
-    return base + (memBlock ? '\n' + memBlock + '\n' : '') + (searchBlock ? '\n' + searchBlock + '\n' : '') + (skillBlock ? '\n' + skillBlock : '');
+    return base + (searchBlock ? '\n' + searchBlock + '\n' : '') + (memBlock ? '\n' + memBlock + '\n' : '') + (skillBlock ? '\n' + skillBlock : '');
   }
 
   private buildSystemPromptFiltered(memItems: MemoryItem[], skills: import('../model/Models').SkillItem[], modelName?: string, skillIds?: string[], customSkills?: CustomSkillDef[]): string {

@@ -265,16 +265,28 @@ export class SilentModeService {
   private async audioReadLoop(): Promise<void> {
     if (!this.audioCapturer) return;
 
+    let loopCount = 0;
+    let lastLogTime = Date.now();
+
     try {
       let bufSize = await this.audioCapturer.getBufferSize();
+      this.log.info(this.TAG, `🎙️ Audio read loop started, bufSize=${bufSize}`);
 
       while (this.reading && this.audioCapturer) {
         let buf: ArrayBuffer = await this.audioCapturer.read(bufSize, true);
         if (buf.byteLength === 0) continue;
 
+        loopCount++;
+        let now = Date.now();
+
+        // Log status every 10 seconds
+        if (now - lastLogTime >= 10000) {
+          this.log.info(this.TAG, `🎙️ Recording active: loops=${loopCount} entries=${this.currentRecord?.entries.length ?? 0}`);
+          lastLogTime = now;
+        }
+
         // Calculate RMS energy for VAD
         let rms = this.calculateRms(buf);
-        let now = Date.now();
 
         if (rms > Constants.SILENT_MODE_VAD_THRESHOLD) {
           // Speech detected
@@ -318,8 +330,9 @@ export class SilentModeService {
           }
         }
       }
+      this.log.info(this.TAG, `🎙️ Audio read loop ended normally, total loops=${loopCount}`);
     } catch (err) {
-      this.log.error(this.TAG, `Audio read loop error: ${(err as Error).message ?? ''}`);
+      this.log.error(this.TAG, `❌ Audio read loop error: ${(err as Error).message ?? ''}`);
     }
   }
 
