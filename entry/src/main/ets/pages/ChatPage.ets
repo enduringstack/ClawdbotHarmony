@@ -1277,20 +1277,20 @@ Respond ONLY with the JSON array.`;
       let ctx = getContext(this) as common.UIAbilityContext;
       let settings = await this.loadSettings(ctx);
 
-      // Build conversation summary from all messages
+      // Build conversation summary from RECENT messages (last 6 messages, prioritize latest)
+      let recentMessages = messages.slice(-6);
       let summary = '';
-      for (let msg of messages) {
+      for (let msg of recentMessages) {
         let role = msg.role === 'user' ? '用户' : '助手';
-        let content = msg.content.substring(0, 200);
+        let content = msg.content.substring(0, 150);
         summary += `${role}: ${content}\n`;
-        if (summary.length > 800) break;
       }
 
       // Only attempt AI title generation when we have a valid API key
       if (settings.apiKey && settings.apiKey.length > 0) {
-        const systemPrompt = '你是标题生成器。根据以下对话内容，生成一个简短的对话标题（10字以内）。只输出标题文字，不要加引号或其他符号。';
+        const systemPrompt = '根据以下对话生成一个简洁准确的标题（8-15字），要能概括对话的核心主题。只输出标题，不加引号或符号。';
         const title = await this.ai.simpleChat(systemPrompt, summary, settings);
-        const trimmedTitle = title.trim().substring(0, 10);
+        const trimmedTitle = title.trim().substring(0, 20);
         if (trimmedTitle.length > 0) {
           await this.sessionSvc.renameSession(sessionId, trimmedTitle);
           this.sessions = this.sessionSvc.getSessions();
@@ -1315,11 +1315,13 @@ Respond ONLY with the JSON array.`;
 
   /** Generate a session title heuristically from conversation messages. */
   private async applyHeuristicTitle(sessionId: string, messages: ChatMessage[]): Promise<void> {
-    let firstUserMsg = messages.find(m => m.role === 'user');
-    if (!firstUserMsg) return;
+    // Use the last user message for more relevant title
+    let userMessages = messages.filter(m => m.role === 'user');
+    let lastUserMsg = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
+    if (!lastUserMsg) return;
 
     // Clean up user content (remove file/reply prefixes)
-    let cleaned = firstUserMsg.content
+    let cleaned = lastUserMsg.content
       .replace(/^\[File:.*?\]\n[\s\S]*?\n\n/g, '')
       .replace(/^\[Replying to:.*?\]\n/g, '')
       .replace(/^\[.*?张.*?图片\]$/g, '')
@@ -1327,9 +1329,9 @@ Respond ONLY with the JSON array.`;
 
     if (cleaned.length === 0) return;
 
-    let title = cleaned.substring(0, 10).replace(/\n/g, ' ').trim();
+    let title = cleaned.substring(0, 15).replace(/\n/g, ' ').trim();
     if (title.length > 0) {
-      if (cleaned.length > 10) {
+      if (cleaned.length > 15) {
         title += '...';
       }
       await this.sessionSvc.renameSession(sessionId, title);
