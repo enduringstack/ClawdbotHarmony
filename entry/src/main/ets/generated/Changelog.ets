@@ -8,16 +8,14 @@ export interface ChangelogEntry {
   fixes: string[];
 }
 
-export const APP_VERSION: string = '2.18.18';
+export const APP_VERSION: string = '2.19.0';
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: '2.18.18',
+    version: '2.19.0',
     date: '2026-02-16',
     features: [
-      'Session 列表显示 Token 使用量',
-      'Session 活跃状态指示器',
-      '实时 Token 统计 (输入/输出)',
+      '更新日志自动生成 (CHANGELOG.json → 构建时生成)',
     ],
     fixes: [
 
@@ -70,4 +68,4 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export const LATEST_VERSION: string = '2.18.18';
+export const LATEST_VERSION: string = '2.19.0';
