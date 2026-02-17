@@ -520,10 +520,7 @@ export struct MessageBubble {
       .onConsole((event) => {
         if (event && event.message) {
           let msg: string = event.message.getMessage();
-          // Show first 50 chars and check result
-          let isAction: boolean = msg.startsWith('A2UI_ACTION:');
-          try { promptAction.showToast({ message: `[${isAction}] ${msg.substring(0, 40)}` }); } catch { /* ignore */ }
-          if (isAction) {
+          if (msg.startsWith('A2UI_ACTION:')) {
             this.onA2UIAction(msg.substring(12));
           }
         }

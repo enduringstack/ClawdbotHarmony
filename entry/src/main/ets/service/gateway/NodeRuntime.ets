@@ -4,7 +4,6 @@
  * Ported from Android NodeRuntime.kt.
  */
 import { common, wantAgent } from '@kit.AbilityKit';
-import { promptAction } from '@kit.ArkUI';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { GatewaySession } from './GatewaySession';
 import { DeviceIdentityStore } from './DeviceIdentityStore';
@@ -690,8 +689,6 @@ export class NodeRuntime {
 
   /** Send A2UI action (user interaction) back to gateway. */
   sendA2UIAction(actionJson: string): void {
-    let hasSession = this.nodeSession !== null && this.nodeSession !== undefined;
-    try { promptAction.showToast({ message: `sendA2UI: session=${hasSession}` }); } catch { /* ignore */ }
     if (this.nodeSession) {
       this.nodeSession.sendNodeEvent('canvas.a2ui.action', actionJson);
     }
