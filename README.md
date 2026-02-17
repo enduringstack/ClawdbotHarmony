@@ -5,22 +5,30 @@
   多模态个人 AI 助手 · Multi-modal Personal AI Assistant
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/version-2.21.7-blue" alt="Version">
+  <img src="https://img.shields.io/badge/HarmonyOS-NEXT-red" alt="HarmonyOS">
+  <img src="https://img.shields.io/badge/API-12~22-green" alt="API Level">
+</p>
+
 ---
 
 ## 中文
 
 ### 简介
 
-ClawdBot 是一款运行在 HarmonyOS NEXT 上的全功能个人 AI 助手应用。支持双工作模式（单机模式 / 节点模式），集成 14 项设备能力、语音交互、持久记忆、定时任务、网页浏览等功能。
+ClawdBot 是一款运行在 HarmonyOS NEXT 上的全功能个人 AI 助手应用。支持双工作模式（单机模式 / 节点模式），集成 15 项设备能力、语音交互、持久记忆、定时任务、网页浏览、A2UI 动态表单等功能。
 
 ### 工作模式
 
 | 模式 | 说明 |
 |------|------|
-| 单机模式 | 直接调用 LLM API（SiliconFlow、OpenAI、Anthropic、OpenRouter、Ollama），本地执行所有工具 |
-| 节点模式 | 通过 WebSocket 连接 OpenClaw Gateway 服务端，双会话架构（operator + node），指数退避自动重连 |
+| **单机模式** | 直接调用 LLM API（SiliconFlow、OpenAI、Anthropic、OpenRouter、Ollama），本地执行所有工具 |
+| **节点模式** | 通过 WebSocket 连接 [OpenClaw](https://github.com/openclaw/openclaw) Gateway 服务端，双会话架构（operator + node），指数退避自动重连 |
 
-### AI 能力
+### 核心特性
+
+#### 🤖 AI 能力
 
 **多模型支持**
 - 提供商：Anthropic (Claude)、OpenAI、OpenRouter、SiliconFlow、本地 Ollama 及任意 OpenAI 兼容 API
@@ -36,24 +44,34 @@ ClawdBot 是一款运行在 HarmonyOS NEXT 上的全功能个人 AI 助手应用
 - 对话模式（Talk Mode）：连续语音对话，自动检测静默
 - 语音消息气泡 UI，WAV 录音保存，支持点击播放
 
-### 设备能力（14 项）
+#### 📱 设备能力（15 项）
 
-| 能力 | 工具名 | 说明 |
-|------|--------|------|
-| 定位 | `get_location` | GPS 定位；天气查询时自动附加位置 |
-| 相机 | `capture_photo` | 前/后摄拍照，自动压缩（1.7MB → 75KB），图片内联显示 |
-| 截屏 | `screen_capture` | App 窗口截图（componentSnapshot），无需系统权限，图片内联显示 |
-| 网页搜索 | `web_search` | 互联网搜索 |
-| 网页浏览 | `open/navigate/eval/snapshot/close_webpage` | 全屏 WebView 浏览器，支持 JS 执行、表单填写、页面截图 |
-| 网页抓取 | `web_fetch` | 抓取 URL 内容 |
-| 日历 | `list_events`, `create_event`, `set_reminder` | 查询日历、创建事件、设置提醒 |
-| 定时任务 | `create/list/cancel_scheduled_task` | 一次性或周期性定时任务（every 30m, daily 09:00 等） |
-| 邮件 | `list/read/search_emails` | IMAP 读取邮箱（列表、详情、搜索） |
-| 文件系统 | `read/write/list/search/pick_file` | 沙箱文件读写、目录列表、内容搜索、系统文件选择器 |
-| 记忆 | `save/search_memory` | 持久化记忆存储与语义搜索 |
-| 智能家居 | `list_devices`, `device_action` | 控制 HarmonyOS 分布式 IoT 设备 |
-| 通知 | 系统通知推送 |
-| 终端 | Shell 命令执行（NAPI C++ popen） |
+| 能力 | 命令 | 说明 |
+|------|------|------|
+| **定位** | `location.get` | GPS 定位；天气查询时自动附加位置 |
+| **相机** | `camera.snap`, `camera.clip` | 前/后摄拍照、录制视频，自动压缩 |
+| **截屏/录屏** | `screen.capture`, `screen.record` | App 窗口截图、屏幕录制 |
+| **通知** | `notification.show`, `system.notify` | 系统通知推送 |
+| **TTS/音频** | `speaker.speak`, `speaker.play`, `speaker.stop` | 文字转语音、播放音频 |
+| **麦克风** | `mic.record` | 录制音频 |
+| **短信** | `sms.send` | 发送短信 |
+| **邮件** | `email.send` | 发送邮件（SMTP） |
+| **日历** | `calendar.add` | 创建日历事件、设置提醒 |
+| **Canvas** | `canvas.present/hide/navigate/eval/snapshot` | WebView 浏览器，支持 JS 执行、截图 |
+| **A2UI** | `canvas.a2ui.push/reset` | 动态表单渲染，用户交互事件回传 |
+| **终端** | `exec.run` | Shell 命令执行（NAPI C++ popen） |
+| **文件系统** | 内置 | 沙箱文件读写、目录列表、内容搜索 |
+| **记忆** | 内置 | 持久化记忆存储与语义搜索 |
+| **定时任务** | 内置 | 一次性或周期性定时任务 |
+
+#### 🎨 A2UI 动态表单
+
+支持 OpenClaw Gateway 推送的 A2UI 动态 UI：
+
+- **组件支持**：Text、Button、TextField、CheckBox、ChoicePicker、Slider、DateTimeInput、Image、Video、Audio、Column、Row、Card、List、Tabs、Modal、Divider
+- **交互事件**：用户点击按钮等交互会自动发送事件到 Gateway，触发 Agent 响应
+- **内联渲染**：表单直接在聊天界面中渲染，无需跳转页面
+- **简化格式兼容**：自动转换 WhatsApp/Telegram 发送的简化 JSON 格式
 
 ### 使用示例
 
@@ -64,8 +82,11 @@ ClawdBot 是一款运行在 HarmonyOS NEXT 上的全功能个人 AI 助手应用
 用户: 拍张照片
 → 调用后置摄像头拍照，照片内联显示在聊天中
 
+用户: 录一段 10 秒的视频
+→ 录制视频并返回
+
 用户: 截屏发给我
-→ 截取当前 App 屏幕，图片内联显示，点击可全屏查看
+→ 截取当前 App 屏幕，图片内联显示
 
 用户: 打开百度
 → 在内置浏览器中打开 baidu.com
@@ -76,23 +97,14 @@ ClawdBot 是一款运行在 HarmonyOS NEXT 上的全功能个人 AI 助手应用
 用户: 明天下午3点提醒我开会
 → 创建日历提醒事件
 
-用户: 每30分钟提醒我喝水
-→ 创建周期性定时任务
+用户: 发短信给 13800138000 说我晚点到
+→ 发送短信
 
-用户: 查一下我的邮件
-→ 通过 IMAP 读取最近邮件列表
-
-用户: 我在哪里？
-→ 获取 GPS 坐标并返回位置信息
+用户: 用语音说 "你好，世界"
+→ TTS 朗读文字
 
 用户: 我叫小明，我喜欢喝咖啡
-→ 自动保存到记忆：姓名（fact）+ 偏好（preference）
-
-用户: 你有什么功能？
-→ 列出所有可用能力
-
-用户: 你现在是什么模式？用的什么模型？
-→ 回答当前工作模式（单机/节点）和 AI 模型名称
+→ 自动保存到记忆
 ```
 
 ### 智能功能
@@ -109,38 +121,26 @@ ClawdBot 是一款运行在 HarmonyOS NEXT 上的全功能个人 AI 助手应用
 - 图片路径自动从文本中清除（不显示冗余路径）
 - 对话历史浏览与管理（Markdown 格式保存）
 
-**自动分发**
+**自动分发（单机模式）**
 - 位置关键词 → 自动调用 `get_location`
 - 截屏关键词 → 自动调用 `screen_capture`
 - 天气关键词 → 自动附加 GPS 坐标
 - 网页关键词 → 自动调用 `open_webpage`
 - 邮件关键词 → 自动调用 `list_emails`
 
-### 已知问题
-
-**本地 Embedding 模型暂时禁用**
-
-项目包含本地 MiniLM-L6 embedding 模型（6层 Transformer），用于离线语义搜索。但由于 HarmonyOS 的 ANR（应用无响应）阈值为 3 秒，单层 Transformer 计算在主线程上就可能超时导致崩溃。
-
-尝试过的方案：
-- ✅ 异步文件读取 - 解决了模型加载时的 ANR
-- ❌ 每层后 yield 让出主线程 - 单层计算仍然太久
-- ❌ Worker 线程 - ArkTS 严格类型检查导致实现复杂
-
-当前状态：`LocalEmbedding.isReady()` 返回 `false`，强制使用云端 API。
-
-TODO：实现基于 Worker 的后台计算方案。
-
 ### 技术栈
 
-- **平台**: HarmonyOS NEXT (API 12 ~ 22)
-- **语言**: ArkTS + C++ (NAPI)
-- **构建**: Hvigor
-- **UI**: ArkUI 声明式
-- **ASR**: sherpa-onnx v1.12.24 + SenseVoice-Small INT8
-- **TTS**: HarmonyOS CoreSpeechKit（在线 + 离线）
-- **最低 SDK**: 5.0.0(12)
-- **目标 SDK**: 6.0.2(22)
+| 组件 | 技术 |
+|------|------|
+| **平台** | HarmonyOS NEXT (API 12 ~ 22) |
+| **语言** | ArkTS + C++ (NAPI) |
+| **构建** | Hvigor |
+| **UI** | ArkUI 声明式 |
+| **ASR** | sherpa-onnx v1.12.24 + SenseVoice-Small INT8 |
+| **TTS** | HarmonyOS CoreSpeechKit（在线 + 离线） |
+| **WebSocket** | @kit.NetworkKit |
+| **最低 SDK** | 5.0.0(12) |
+| **目标 SDK** | 6.0.2(22) |
 
 ### 项目结构
 
@@ -151,38 +151,55 @@ entry/src/main/
 │   ├── components/      # MessageBubble, MarkdownText, SkillCard
 │   ├── entryability/    # EntryAbility (应用入口)
 │   ├── model/           # ChatMessage, MemoryItem 等数据模型
-│   ├── pages/           # ChatPage, SettingsPage, SkillsPage, MemoryPage, LogPage
+│   ├── pages/           # ChatPage, SettingsPage, SkillsPage, MemoryPage
 │   ├── workers/         # SenseVoiceAsrWorker (离线 ASR)
 │   └── service/
-│       ├── AIService.ets       # LLM 调用 + Tool-use 循环 + 自动分发
+│       ├── AIService.ets       # LLM 调用 + Tool-use 循环
 │       ├── MemoryService.ets   # 记忆持久化 + 语义搜索
-│       ├── SkillData.ets       # 技能目录 + 工具 Schema 定义
-│       └── gateway/            # 14 项 Capability 实现
-│           ├── NodeRuntime.ets         # Gateway WebSocket 连接
-│           ├── CameraCapability.ets    # 拍照 + 压缩
-│           ├── ScreenCapability.ets    # App 窗口截图
+│       └── gateway/            # 15 项 Capability 实现
+│           ├── NodeRuntime.ets         # Gateway 双会话连接
+│           ├── GatewaySession.ets      # WebSocket RPC
+│           ├── CameraCapability.ets    # 拍照 + 录像
+│           ├── ScreenCapability.ets    # 截屏 + 录屏
 │           ├── SpeakerCapability.ets   # TTS + 音频播放
-│           ├── CalendarCapability.ets  # 日历事件 + 提醒
-│           ├── CanvasCapability.ets    # WebView 浏览器
-│           ├── ExecCapability.ets      # Shell 执行
-│           └── ...
+│           ├── MicrophoneCapability.ets # 麦克风录音
+│           ├── CalendarCapability.ets  # 日历事件
+│           ├── CanvasCapability.ets    # WebView + A2UI
+│           ├── SmsCapability.ets       # 短信发送
+│           ├── EmailCapability.ets     # 邮件发送
+│           ├── LocationCapability.ets  # GPS 定位
+│           ├── NotificationCapability.ets # 系统通知
+│           └── ExecCapability.ets      # Shell 执行
+├── resources/
+│   └── rawfile/
+│       └── a2ui/index.html    # A2UI 渲染引擎
 └── cpp/
     └── napi_exec.cpp    # Shell 执行（popen）
 ```
 
-### 构建
+### 构建与安装
 
 ```bash
 # 需要安装 DevEco Studio
 export DEVECO_SDK_HOME="/path/to/DevEco Studio/sdk"
-hvigorw assembleHap --no-daemon
-```
 
-### 安装到设备
+# 构建
+hvigorw assembleHap --mode module -p product=default -p buildMode=release --no-daemon
 
-```bash
+# 安装到设备
 hdc install entry/build/default/outputs/default/entry-default-signed.hap
+
+# 启动应用
+hdc shell aa start -a EntryAbility -b com.hongjieliu.clawdbot
 ```
+
+### 已知问题
+
+**本地 Embedding 模型暂时禁用**
+
+项目包含本地 MiniLM-L6 embedding 模型（6层 Transformer），用于离线语义搜索。但由于 HarmonyOS 的 ANR（应用无响应）阈值为 3 秒，单层 Transformer 计算在主线程上就可能超时导致崩溃。
+
+当前状态：`LocalEmbedding.isReady()` 返回 `false`，强制使用云端 API。
 
 ---
 
@@ -190,16 +207,18 @@ hdc install entry/build/default/outputs/default/entry-default-signed.hap
 
 ### Introduction
 
-ClawdBot is a full-featured personal AI assistant for HarmonyOS NEXT. It supports dual work modes (Standalone / Node), integrates 14 device capabilities, voice interaction, persistent memory, scheduled tasks, web browsing, and more.
+ClawdBot is a full-featured personal AI assistant for HarmonyOS NEXT. It supports dual work modes (Standalone / Node), integrates 15 device capabilities, voice interaction, persistent memory, scheduled tasks, web browsing, A2UI dynamic forms, and more.
 
 ### Work Modes
 
 | Mode | Description |
 |------|-------------|
-| Standalone | Direct LLM API calls (SiliconFlow, OpenAI, Anthropic, OpenRouter, Ollama), all tools executed locally |
-| Node | WebSocket connection to OpenClaw Gateway server, dual-session architecture (operator + node), exponential backoff auto-reconnect |
+| **Standalone** | Direct LLM API calls (SiliconFlow, OpenAI, Anthropic, OpenRouter, Ollama), all tools executed locally |
+| **Node** | WebSocket connection to [OpenClaw](https://github.com/openclaw/openclaw) Gateway server, dual-session architecture (operator + node), exponential backoff auto-reconnect |
 
-### AI Capabilities
+### Core Features
+
+#### 🤖 AI Capabilities
 
 **Multi-Model Support**
 - Providers: Anthropic (Claude), OpenAI, OpenRouter, SiliconFlow, local Ollama, and any OpenAI-compatible API
@@ -215,24 +234,34 @@ ClawdBot is a full-featured personal AI assistant for HarmonyOS NEXT. It support
 - Talk Mode: continuous voice conversation with automatic silence detection
 - Voice message bubble UI, WAV recording saved, tap to play
 
-### Device Capabilities (14)
+#### 📱 Device Capabilities (15)
 
-| Capability | Tool Name | Description |
-|------------|-----------|-------------|
-| Location | `get_location` | GPS positioning; auto-appended for weather queries |
-| Camera | `capture_photo` | Front/back camera, auto-compression (1.7MB → 75KB), inline image display |
-| Screenshot | `screen_capture` | App window capture (componentSnapshot), no system permission required, inline display |
-| Web Search | `web_search` | Internet search |
-| Web Browser | `open/navigate/eval/snapshot/close_webpage` | Full-screen WebView browser with JS execution, form filling, page screenshot |
-| Web Fetch | `web_fetch` | Fetch URL content |
-| Calendar | `list_events`, `create_event`, `set_reminder` | List events, create events, set reminders |
-| Scheduler | `create/list/cancel_scheduled_task` | One-shot or recurring tasks (every 30m, daily 09:00, etc.) |
-| Email | `list/read/search_emails` | IMAP inbox reading (list, detail, search) |
-| File System | `read/write/list/search/pick_file` | Sandbox file R/W, directory listing, content search, system file picker |
-| Memory | `save/search_memory` | Persistent memory storage and semantic search |
-| Smart Home | `list_devices`, `device_action` | Control HarmonyOS distributed IoT devices |
-| Notification | System push notifications |
-| Exec | Shell command execution (NAPI C++ popen) |
+| Capability | Commands | Description |
+|------------|----------|-------------|
+| **Location** | `location.get` | GPS positioning; auto-appended for weather queries |
+| **Camera** | `camera.snap`, `camera.clip` | Front/back camera photo, video recording, auto-compression |
+| **Screen** | `screen.capture`, `screen.record` | App window screenshot, screen recording |
+| **Notification** | `notification.show`, `system.notify` | System push notifications |
+| **TTS/Audio** | `speaker.speak`, `speaker.play`, `speaker.stop` | Text-to-speech, audio playback |
+| **Microphone** | `mic.record` | Audio recording |
+| **SMS** | `sms.send` | Send text messages |
+| **Email** | `email.send` | Send emails (SMTP) |
+| **Calendar** | `calendar.add` | Create calendar events, set reminders |
+| **Canvas** | `canvas.present/hide/navigate/eval/snapshot` | WebView browser with JS execution, screenshots |
+| **A2UI** | `canvas.a2ui.push/reset` | Dynamic form rendering with interaction events |
+| **Exec** | `exec.run` | Shell command execution (NAPI C++ popen) |
+| **File System** | Built-in | Sandbox file R/W, directory listing, content search |
+| **Memory** | Built-in | Persistent memory storage and semantic search |
+| **Scheduler** | Built-in | One-shot or recurring scheduled tasks |
+
+#### 🎨 A2UI Dynamic Forms
+
+Supports A2UI dynamic UI pushed from OpenClaw Gateway:
+
+- **Components**: Text, Button, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput, Image, Video, Audio, Column, Row, Card, List, Tabs, Modal, Divider
+- **Interaction Events**: User interactions (button clicks, etc.) automatically send events to Gateway, triggering Agent responses
+- **Inline Rendering**: Forms render directly in chat interface, no page navigation required
+- **Simplified Format**: Auto-converts simplified JSON format from WhatsApp/Telegram
 
 ### Usage Examples
 
@@ -243,128 +272,83 @@ User: What's the weather today?
 User: Take a photo
 → Captures photo with rear camera, displays inline in chat
 
+User: Record a 10-second video
+→ Records video and returns
+
 User: Take a screenshot
-→ Captures current app screen, displays inline, tap for full-screen
+→ Captures current app screen, displays inline
 
 User: Open Google
 → Opens google.com in built-in browser
 
-User: Search for the latest iPhone
-→ Calls web search, returns result summary
-
 User: Remind me about the meeting tomorrow at 3pm
 → Creates a calendar reminder event
 
-User: Remind me to drink water every 30 minutes
-→ Creates a recurring scheduled task
+User: Send a text to 13800138000 saying I'll be late
+→ Sends SMS message
 
-User: Check my email
-→ Reads recent emails via IMAP
-
-User: Where am I?
-→ Gets GPS coordinates and returns location info
+User: Say "Hello, world" out loud
+→ TTS reads the text
 
 User: My name is Alex, I like coffee
-→ Auto-saves to memory: name (fact) + preference
-
-User: What can you do?
-→ Lists all available capabilities
-
-User: What mode are you in? What model are you using?
-→ Replies with current work mode (Standalone/Node) and AI model name
+→ Auto-saves to memory
 ```
-
-### Smart Features
-
-**Memory System**
-- Persistent across sessions: facts, preferences, instructions
-- Auto-extraction from conversations, AI proactively saves user info
-- Semantic search for related memories
-- Bi-directional sync in Gateway mode
-
-**Context Awareness**
-- Weather queries auto-fetch GPS location
-- Screenshot/photo results displayed inline, tap for full-screen preview
-- Image paths auto-stripped from text (no redundant paths shown)
-- Conversation history browsing and management (saved as Markdown)
-
-**Auto-Dispatch**
-- Location keywords → auto-call `get_location`
-- Screenshot keywords → auto-call `screen_capture`
-- Weather keywords → auto-append GPS coordinates
-- Web keywords → auto-call `open_webpage`
-- Email keywords → auto-call `list_emails`
-
-### Known Issues
-
-**Local Embedding Model Temporarily Disabled**
-
-The project includes a local MiniLM-L6 embedding model (6-layer Transformer) for offline semantic search. However, due to HarmonyOS's 3-second ANR (Application Not Responding) threshold, even a single Transformer layer computation on the main thread can timeout and cause crashes.
-
-Attempted solutions:
-- ✅ Async file reading - Fixed ANR during model loading
-- ❌ Yield after each layer - Single layer computation still too slow
-- ❌ Worker thread - ArkTS strict typing made implementation complex
-
-Current status: `LocalEmbedding.isReady()` returns `false`, forcing cloud API fallback.
-
-TODO: Implement Worker-based background computation solution.
 
 ### Tech Stack
 
-- **Platform**: HarmonyOS NEXT (API 12 ~ 22)
-- **Language**: ArkTS + C++ (NAPI)
-- **Build**: Hvigor
-- **UI**: ArkUI declarative
-- **ASR**: sherpa-onnx v1.12.24 + SenseVoice-Small INT8
-- **TTS**: HarmonyOS CoreSpeechKit (online + offline)
-- **Min SDK**: 5.0.0(12)
-- **Target SDK**: 6.0.2(22)
+| Component | Technology |
+|-----------|------------|
+| **Platform** | HarmonyOS NEXT (API 12 ~ 22) |
+| **Language** | ArkTS + C++ (NAPI) |
+| **Build** | Hvigor |
+| **UI** | ArkUI declarative |
+| **ASR** | sherpa-onnx v1.12.24 + SenseVoice-Small INT8 |
+| **TTS** | HarmonyOS CoreSpeechKit (online + offline) |
+| **WebSocket** | @kit.NetworkKit |
+| **Min SDK** | 5.0.0(12) |
+| **Target SDK** | 6.0.2(22) |
 
-### Project Structure
-
-```
-entry/src/main/
-├── ets/
-│   ├── common/          # Constants, I18n, LogService
-│   ├── components/      # MessageBubble, MarkdownText, SkillCard
-│   ├── entryability/    # EntryAbility (app entry)
-│   ├── model/           # ChatMessage, MemoryItem and other data models
-│   ├── pages/           # ChatPage, SettingsPage, SkillsPage, MemoryPage, LogPage
-│   ├── workers/         # SenseVoiceAsrWorker (offline ASR)
-│   └── service/
-│       ├── AIService.ets       # LLM calls + tool-use loop + auto-dispatch
-│       ├── MemoryService.ets   # Memory persistence + semantic search
-│       ├── SkillData.ets       # Skill catalog + tool schema definitions
-│       └── gateway/            # 14 capability implementations
-│           ├── NodeRuntime.ets         # Gateway WebSocket connection
-│           ├── CameraCapability.ets    # Photo capture + compression
-│           ├── ScreenCapability.ets    # App window screenshot
-│           ├── SpeakerCapability.ets   # TTS + audio playback
-│           ├── CalendarCapability.ets  # Calendar events + reminders
-│           ├── CanvasCapability.ets    # WebView browser
-│           ├── ExecCapability.ets      # Shell execution
-│           └── ...
-└── cpp/
-    └── napi_exec.cpp    # Shell execution (popen)
-```
-
-### Build
+### Build & Install
 
 ```bash
 # Requires DevEco Studio
 export DEVECO_SDK_HOME="/path/to/DevEco Studio/sdk"
-hvigorw assembleHap --no-daemon
-```
 
-### Install to Device
+# Build
+hvigorw assembleHap --mode module -p product=default -p buildMode=release --no-daemon
 
-```bash
+# Install to device
 hdc install entry/build/default/outputs/default/entry-default-signed.hap
+
+# Launch app
+hdc shell aa start -a EntryAbility -b com.hongjieliu.clawdbot
 ```
+
+---
+
+## Changelog
+
+### v2.21.7 (2026-02-17)
+- ✨ A2UI action events now sent back to Gateway
+- ✨ A2UI simplified format auto-conversion
+- 🐛 Fixed new session name to use standalone config
+- 🐛 Added onConsole handler to CanvasView
+
+### v2.21.0 ~ v2.21.6
+- ✨ A2UI dynamic form rendering
+- ✨ Speaker capability (TTS + audio playback)
+- ✨ SMS sending capability
+- ✨ Screen recording capability
+- ✨ Microphone recording capability
+- 🐛 Various bug fixes
 
 ---
 
 ## License
 
 Apache-2.0
+
+## Links
+
+- **OpenClaw Gateway**: https://github.com/openclaw/openclaw
+- **Issues**: https://github.com/lhj1026/ClawdbotHarmony/issues
