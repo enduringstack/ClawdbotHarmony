@@ -144,11 +144,12 @@ export struct ConversationsPage {
   private async confirmEditSpeaker(): Promise<void> {
     if (this.editingSpeakerId && this.editingSpeakerName.trim() && this.detailRecord) {
       let newName = this.editingSpeakerName.trim();
+      let oldSpeakerId = this.editingSpeakerId;
       
       // Find entries with this speaker to get embeddings
       let embeddings: Float32Array[] = [];
       for (let entry of this.detailRecord.entries) {
-        if (entry.speaker === this.editingSpeakerId && entry.embedding && entry.embedding.length > 0) {
+        if (entry.speaker === oldSpeakerId && entry.embedding && entry.embedding.length > 0) {
           embeddings.push(new Float32Array(entry.embedding));
         }
       }
@@ -156,17 +157,20 @@ export struct ConversationsPage {
       // Register voiceprint with the new name if we have embeddings
       if (embeddings.length > 0) {
         try {
+          let ctx = getContext(this) as common.UIAbilityContext;
           let vpService = VoiceprintService.getInstance();
+          await vpService.init(ctx);  // Ensure initialized
           let success = await vpService.enrollSpeaker(newName, embeddings, 16000);
           if (success) {
             promptAction.showToast({ message: `已注册声纹: ${newName}` });
           }
         } catch (err) {
-          console.warn('Voiceprint enrollment failed:', err);
+          console.warn('Voiceprint enrollment failed:', (err as Error).message ?? String(err));
         }
       }
       
-      await this.updateSpeakerAlias(this.editingSpeakerId, newName);
+      // Update alias and refresh
+      await this.updateSpeakerAlias(oldSpeakerId, newName);
       promptAction.showToast({ message: '已更新说话人名称' });
     }
     this.showEditDialog = false;
@@ -183,12 +187,15 @@ export struct ConversationsPage {
   private async updateSpeakerAlias(speakerId: string, newName: string): Promise<void> {
     if (!this.detailRecord) return;
     
+    // Initialize speakerAliases if needed
     if (!this.detailRecord.speakerAliases) {
       this.detailRecord.speakerAliases = {};
     }
+    
+    // Update alias in the record
     this.detailRecord.speakerAliases[speakerId] = newName;
     
-    // Also update participants display
+    // Also update participants display if needed
     let idx = this.detailRecord.participants.indexOf(speakerId);
     if (idx >= 0) {
       this.detailRecord.participants[idx] = newName;
@@ -197,8 +204,14 @@ export struct ConversationsPage {
     // Save to store
     await ConversationStore.getInstance().saveRecord(this.detailRecord);
     
-    // Refresh view
-    this.detailRecord = await ConversationStore.getInstance().getRecord(this.detailRecord.id);
+    // Refresh from store to ensure consistency and trigger re-render
+    let recordId = this.detailRecord.id;
+    let refreshed = await ConversationStore.getInstance().getRecord(recordId);
+    if (refreshed) {
+      // Force re-assignment to trigger @State update
+      this.detailRecord = undefined;
+      this.detailRecord = refreshed;
+    }
   }
 
   build() {

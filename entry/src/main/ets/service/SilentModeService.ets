@@ -169,6 +169,7 @@ export class SilentModeService {
   private async startBackgroundTask(context: common.UIAbilityContext): Promise<void> {
     try {
       this.log.info(this.TAG, 'Starting background task...');
+      this.log.info(this.TAG, `Bundle: ${context.abilityInfo.bundleName}, Ability: ${context.abilityInfo.name}`);
       
       // Create wantAgent for notification tap action
       let wantAgentInfo: wantAgent.WantAgentInfo = {
@@ -183,14 +184,23 @@ export class SilentModeService {
         actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
       };
       let agent = await wantAgent.getWantAgent(wantAgentInfo);
-      this.log.info(this.TAG, 'WantAgent created');
+      this.log.info(this.TAG, 'WantAgent created successfully');
 
       // Start continuous task
       await backgroundTaskManager.startBackgroundRunning(context, backgroundTaskManager.BackgroundMode.AUDIO_RECORDING, agent);
-      this.log.info(this.TAG, 'Background task started successfully');
+      this.log.info(this.TAG, '✅ Background task started successfully - app can now record in background');
     } catch (err) {
       let error = err as Error;
-      this.log.error(this.TAG, `Failed to start background task: code=${(err as Record<string, number>).code ?? 'N/A'} msg=${error.message ?? ''}`);
+      let code = (err as Record<string, number>).code ?? -1;
+      this.log.error(this.TAG, `❌ Failed to start background task: code=${code} msg=${error.message ?? ''}`);
+      // Common errors:
+      // 9800001 - Permission denied (need KEEP_BACKGROUND_RUNNING)
+      // 9800003 - Background mode not configured in module.json5
+      if (code === 9800001) {
+        this.log.error(this.TAG, 'Missing ohos.permission.KEEP_BACKGROUND_RUNNING permission');
+      } else if (code === 9800003) {
+        this.log.error(this.TAG, 'backgroundModes not configured in module.json5');
+      }
     }
   }
 
@@ -421,6 +431,8 @@ export class SilentModeService {
     try {
       // Convert to Float32 for voiceprint
       let float32 = this.chunksToFloat32(bufs);
+      let durationSec = float32.length / 16000;
+      this.log.info(this.TAG, `Processing segment: ${float32.length} samples (${durationSec.toFixed(2)}s)`);
 
       // Speaker identification
       let speakerId = '';
@@ -428,21 +440,31 @@ export class SilentModeService {
       let embeddingArray: number[] = [];
       try {
         let vpService = VoiceprintService.getInstance();
+        let registeredCount = vpService.getSpeakerCount();
+        let registeredNames = vpService.getAllSpeakerNames();
+        this.log.info(this.TAG, `Registered speakers: ${registeredCount} [${registeredNames.join(', ')}]`);
+
         // Extract embedding for storage
         let emb = vpService.extractEmbedding(float32, 16000);
         if (emb) {
           embeddingArray = Array.from(emb);
+          this.log.info(this.TAG, `Extracted embedding: dim=${emb.length}`);
+        } else {
+          this.log.warn(this.TAG, 'Failed to extract embedding (audio too short or error)');
         }
+
         // Try to identify speaker
         let result = vpService.identify(float32, 16000);
         this.log.info(this.TAG, `Identify result: speaker="${result.speaker}" score=${result.score.toFixed(3)} conf=${result.confidence}`);
         if (result.speaker && result.speaker !== 'unknown' && result.speaker !== '') {
           speakerId = result.speaker;
           confidence = result.score;
-          this.log.info(this.TAG, `Matched registered speaker: ${speakerId}`);
+          this.log.info(this.TAG, `✅ Matched registered speaker: ${speakerId} (score=${confidence.toFixed(3)})`);
+        } else if (registeredCount > 0) {
+          this.log.info(this.TAG, `❌ No match found among ${registeredCount} registered speakers`);
         }
       } catch (err) {
-        this.log.warn(this.TAG, `Speaker ID error: ${err}`);
+        this.log.warn(this.TAG, `Speaker ID error: ${(err as Error).message ?? String(err)}`);
       }
 
       // Assign display name for unknown speakers
@@ -474,9 +496,15 @@ export class SilentModeService {
       let text = '';
       try {
         let asrService = LocalAsrService.getInstance();
+        this.log.info(this.TAG, 'Starting ASR recognition...');
         text = await asrService.recognizeFromPcm(bufs);
+        if (text.trim().length > 0) {
+          this.log.info(this.TAG, `✅ ASR result: "${text.substring(0, 100)}"`);
+        } else {
+          this.log.info(this.TAG, '⚠️ ASR returned empty text');
+        }
       } catch (err) {
-        this.log.warn(this.TAG, `ASR error: ${err}`);
+        this.log.warn(this.TAG, `❌ ASR error: ${(err as Error).message ?? String(err)}`);
       }
 
       let record = this.currentRecord;

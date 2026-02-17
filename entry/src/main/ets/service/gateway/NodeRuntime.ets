@@ -45,7 +45,7 @@ import { Constants } from '../../common/Constants';
 import { NotificationHelper } from '../NotificationHelper';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.21.1';
+const APP_VERSION = '2.21.2';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -1108,6 +1108,7 @@ export class NodeRuntime {
     // Set context for capabilities that need file system access
     this.cameraCapability.setContext(context);
     this.screenCapability.setContext(context);
+    this.canvasCapability.setContext(context);
     this.microphoneCapability.setContext(context);
     this.speakerCapability.setContext(context);
     this.emailCapability.setContext(context);

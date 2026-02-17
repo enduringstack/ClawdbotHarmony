@@ -6,8 +6,8 @@
 import { webview } from '@kit.ArkWeb';
 import { image } from '@kit.ImageKit';
 import { buffer } from '@kit.ArkTS';
-import { router } from '@kit.ArkUI';
-import { componentSnapshot } from '@kit.ArkUI';
+import { router, window } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { LogService } from '../../common/LogService';
 import { Command } from './GatewayProtocol';
 
@@ -25,6 +25,7 @@ export class CanvasCapability {
 
   private log: LogService = LogService.getInstance();
   private controller: webview.WebviewController | undefined = undefined;
+  private context: common.UIAbilityContext | undefined = undefined;
   private _isPresented: boolean = false;
   private _a2uiMode: boolean = false;
   private _a2uiReady: boolean = false;
@@ -34,6 +35,11 @@ export class CanvasCapability {
 
   /** Callback for A2UI action events from WebView */
   onA2UIAction: ((actionJson: string) => void) | undefined = undefined;
+
+  /** Set context for window.snapshot() */
+  setContext(ctx: common.UIAbilityContext): void {
+    this.context = ctx;
+  }
 
   /** Called by CanvasPage when it appears, to register its controller */
   registerController(ctrl: webview.WebviewController): void {
@@ -234,8 +240,22 @@ export class CanvasCapability {
 
     this.log.info(TAG, `snapshot: quality=${quality}`);
 
-    // Use componentSnapshot to capture the Web component by its ID
-    let pixelMap: image.PixelMap = await componentSnapshot.get('canvasWebView');
+    // Use window.snapshot() to capture WebView content (componentSnapshot cannot capture WebView)
+    let pixelMap: image.PixelMap | undefined = undefined;
+
+    if (this.context) {
+      try {
+        let windowInstance = await window.getLastWindow(this.context);
+        pixelMap = await windowInstance.snapshot();
+        this.log.info(TAG, 'window.snapshot() succeeded');
+      } catch (err) {
+        this.log.error(TAG, `window.snapshot() failed: ${(err as Error).message ?? String(err)}`);
+      }
+    }
+
+    if (!pixelMap) {
+      throw new Error('Snapshot failed. Context may not be set or window unavailable.');
+    }
 
     let imageInfo: image.ImageInfo = await pixelMap.getImageInfo();
     let width: number = imageInfo.size.width;
