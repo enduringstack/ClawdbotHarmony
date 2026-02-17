@@ -300,6 +300,7 @@ export class VoiceprintService {
   }
 
   getAllSpeakerNames(): string[] {
+    if (!this.initialized) return [];
     return napiGetAllSpeakers();
   }
 
@@ -308,10 +309,12 @@ export class VoiceprintService {
   }
 
   containsSpeaker(name: string): boolean {
+    if (!this.initialized) return false;
     return napiContainsSpeaker(name);
   }
 
   getEmbeddingDim(): number {
+    if (!this.initialized) return 0;
     return napiGetEmbeddingDim();
   }
 

@@ -215,6 +215,11 @@ function buildZh(): Map<string, string> {
   m.set('settings.version', '版本');
   m.set('settings.basedOn', '基于');
   m.set('settings.platform', '平台');
+  m.set('settings.systemStatus', '系统状态');
+  m.set('settings.gatewayStatus', '网关状态');
+  m.set('settings.activeSessions', '活动会话');
+  m.set('settings.memoryUsage', '内存占用');
+  m.set('settings.tokenUsage', 'Token 消耗');
   m.set('settings.save', '保存设置');
   m.set('settings.saved', '设置已保存');
   m.set('settings.saveFailed', '保存失败：');
@@ -608,6 +613,11 @@ function buildEn(): Map<string, string> {
   m.set('settings.version', 'Version');
   m.set('settings.basedOn', 'Based on');
   m.set('settings.platform', 'Platform');
+  m.set('settings.systemStatus', 'System Status');
+  m.set('settings.gatewayStatus', 'Gateway');
+  m.set('settings.activeSessions', 'Active Sessions');
+  m.set('settings.memoryUsage', 'Memory');
+  m.set('settings.tokenUsage', 'Tokens');
   m.set('settings.save', 'Save Settings');
   m.set('settings.saved', 'Settings saved');
   m.set('settings.saveFailed', 'Save failed: ');
