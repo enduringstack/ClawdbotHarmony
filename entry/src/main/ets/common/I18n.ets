@@ -252,6 +252,9 @@ function buildZh(): Map<string, string> {
   m.set('settings.about', '关于');
   m.set('app.exit', '退出');
   m.set('app.exitConfirm', '确定要退出应用吗？');
+  m.set('error.insufficientBalance', 'API 余额不足，请充值后再试');
+  m.set('error.invalidApiKey', 'API Key 无效，请检查设置');
+  m.set('error.networkError', '网络连接失败，请检查网络');
   m.set('settings.app', '应用');
   m.set('settings.appValue', 'ClawdBot for HarmonyOS');
   m.set('settings.appName', '应用名称');
@@ -712,6 +715,9 @@ function buildEn(): Map<string, string> {
   m.set('settings.about', 'ABOUT');
   m.set('app.exit', 'Exit');
   m.set('app.exitConfirm', 'Exit the app?');
+  m.set('error.insufficientBalance', 'Insufficient API balance. Please top up.');
+  m.set('error.invalidApiKey', 'Invalid API Key. Please check settings.');
+  m.set('error.networkError', 'Network error. Please check connection.');
   m.set('settings.app', 'App');
   m.set('settings.appValue', 'ClawdBot for HarmonyOS');
   m.set('settings.appName', 'App Name');

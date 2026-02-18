@@ -55,6 +55,8 @@ export struct ChatPage {
   @State gwAgentName: string = '';
   @State gwAgentEmoji: string = '';
   @State gwAgentAvatar: string = '';
+  @State apiErrorMessage: string = '';  // API error message to display (e.g., insufficient balance)
+  @State showApiErrorBanner: boolean = false;  // whether to show error banner
   @State gwAgentTheme: string = '';
   @State isTalkMode: boolean = false;
   @State talkStatus: string = '';
@@ -306,6 +308,29 @@ export struct ChatPage {
   build() {
     Stack() {
     Column() {
+      // -- API Error Banner --
+      if (this.showApiErrorBanner) {
+        Row() {
+          Text('⚠️')
+            .fontSize(16)
+            .margin({ right: 8 })
+          Text(this.apiErrorMessage)
+            .fontSize(14)
+            .fontColor('#FFFFFF')
+            .layoutWeight(1)
+          Text('✕')
+            .fontSize(16)
+            .fontColor('#FFFFFF')
+            .onClick(() => {
+              this.showApiErrorBanner = false;
+            })
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+        .backgroundColor('#E53935')
+        .animation({ duration: 300 })
+      }
+
       // -- header --
       Row() {
           // Session menu button (hamburger)
@@ -2615,6 +2640,19 @@ Respond ONLY with the JSON array.`;
       if (result.error.length > 0) {
         // Replace placeholder with error
         this.messages[streamIdx].content = result.error;
+        // Check for specific error types and show banner
+        let errLower = result.error.toLowerCase();
+        if (errLower.includes('insufficient') || errLower.includes('quota') ||
+            errLower.includes('balance') || errLower.includes('402') ||
+            result.error.includes('余额')) {
+          this.showApiError(I18n.t('error.insufficientBalance'));
+        } else if (errLower.includes('401') || errLower.includes('403') ||
+                   errLower.includes('invalid') || errLower.includes('unauthorized')) {
+          this.showApiError(I18n.t('error.invalidApiKey'));
+        } else if (errLower.includes('network') || errLower.includes('timeout') ||
+                   errLower.includes('connection') || errLower.includes('econnrefused')) {
+          this.showApiError(I18n.t('error.networkError'));
+        }
       } else {
         // The first assistant message was streamed into placeholder.
         // Replace/update with final messages from result.
@@ -3082,6 +3120,17 @@ Respond ONLY with the JSON array.`;
     this.log.info('ASR', text);
   }
 
+  /** Show API error banner with auto-dismiss after 5 seconds */
+  private showApiError(message: string): void {
+    this.apiErrorMessage = message;
+    this.showApiErrorBanner = true;
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+      this.showApiErrorBanner = false;
+      this.apiErrorMessage = '';
+    }, 5000);
+  }
+
   private async startRecording(): Promise<void> {
     this.pcmBuffers = [];
     this.asrDebug('Starting...');
@@ -3268,7 +3317,18 @@ Respond ONLY with the JSON array.`;
         let text = (parsed['text'] as string) ?? '';
         return text.trim();
       } else {
-        this.asrDebug(`ASR error: ${response.responseCode} ${String(response.result).substring(0, 200)}`);
+        let errMsg = String(response.result).substring(0, 500);
+        this.asrDebug(`ASR error: ${response.responseCode} ${errMsg}`);
+        // Check for insufficient balance / quota errors
+        if (response.responseCode === 402 || response.responseCode === 429 ||
+            errMsg.toLowerCase().includes('insufficient') ||
+            errMsg.toLowerCase().includes('quota') ||
+            errMsg.toLowerCase().includes('balance') ||
+            errMsg.includes('余额')) {
+          this.showApiError(I18n.t('error.insufficientBalance'));
+        } else if (response.responseCode === 401 || response.responseCode === 403) {
+          this.showApiError(I18n.t('error.invalidApiKey'));
+        }
         return '';
       }
     } catch (err) {
