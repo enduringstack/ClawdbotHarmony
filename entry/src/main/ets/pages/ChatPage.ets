@@ -29,6 +29,7 @@ import { webview } from '@kit.ArkWeb';
 import { FeishuBotService } from '../service/FeishuBotService';
 import { LocalAsrService } from '../service/LocalAsrService';
 import { detectMood, MoodResult } from '../service/MoodDetector';
+import { VadService } from '../service/VadService';
 
 // Interface for file info from gateway
 interface GatewayFileInfo {
@@ -57,6 +58,7 @@ export struct ChatPage {
   @State gwAgentAvatar: string = '';
   @State apiErrorMessage: string = '';  // API error message to display (e.g., insufficient balance)
   @State showApiErrorBanner: boolean = false;  // whether to show error banner
+  @State currentModelName: string = '';  // Current model name for display in header
   @State gwAgentTheme: string = '';
   @State isTalkMode: boolean = false;
   @State talkStatus: string = '';
@@ -403,6 +405,16 @@ export struct ChatPage {
                 .borderRadius(8)
                 .backgroundColor('#E8F5E9')
                 .flexShrink(0)
+              }
+              // Display current model name
+              if (this.currentModelName.length > 0) {
+                Text(this.currentModelName)
+                  .fontSize(10)
+                  .fontColor('#666666')
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .constraintSize({ maxWidth: 120 })
+                  .flexShrink(1)
               }
             }
             .width('100%')
@@ -1139,6 +1151,17 @@ Respond ONLY with the JSON array.`;
       let store = await preferences.getPreferences(ctx, Constants.PREFS_SETTINGS);
       this.assistantName = (await store.get('assistant_name', '')) as string;
       this.assistantAvatar = (await store.get('assistant_avatar', '')) as string;
+      // Load current model name for display
+      let provider = (await store.get('provider', 'openrouter')) as string;
+      let modelPref = 'model_' + provider;
+      let defaultModel = provider === 'openrouter' ? Constants.DEFAULT_MODEL_OPENROUTER
+        : provider === 'anthropic' ? Constants.DEFAULT_MODEL_ANTHROPIC
+          : provider === 'openai' ? Constants.DEFAULT_MODEL_OPENAI
+            : provider === 'siliconflow' ? Constants.DEFAULT_MODEL_SILICONFLOW
+              : provider === 'custom' ? '' : 'llama3';
+      let model = (await store.get(modelPref, defaultModel)) as string;
+      // Shorten model name for display (e.g., "anthropic/claude-3-opus" -> "claude-3-opus")
+      this.currentModelName = model.includes('/') ? model.split('/').pop() ?? model : model;
     } catch { /* defaults */ }
   }
 
@@ -4750,7 +4773,7 @@ Adjust your tone accordingly:
   /**
    * Record audio with silence detection for Talk Mode.
    * Returns WAV path if speech detected, empty string if silence timeout.
-   * - RMS > 1500 = speech detected (higher threshold to avoid noise)
+   * - Uses Silero VAD for accurate speech detection (falls back to RMS if VAD not initialized)
    * - After speech: 1.5s silence stops recording
    * - No speech for 8s: returns empty (silence timeout)
    */
@@ -4766,6 +4789,16 @@ Adjust your tone accordingly:
       if (permResult.authResults[0] !== 0) {
         this.log.warn('ChatPage', 'Talk mode: mic permission denied');
         return '';
+      }
+
+      // Initialize Silero VAD if not already done
+      let vadService = VadService.getInstance();
+      if (!vadService.isInitialized()) {
+        await vadService.init(ctx);
+      }
+      let useVad = vadService.isInitialized();
+      if (useVad) {
+        vadService.reset(); // Reset VAD state for new recording
       }
 
       let capturerOptions: audio.AudioCapturerOptions = {
@@ -4789,7 +4822,7 @@ Adjust your tone accordingly:
       let speechDetected = false;
       let silenceStart = 0;
       let recordStart = Date.now();
-      let rmsThreshold = 1500;
+      let rmsThreshold = 1500;  // Fallback RMS threshold
       let silenceTimeoutMs = 1500;  // 1.5s silence after speech
 
       while (this.talkModeActive && this.audioCapturer) {
@@ -4802,7 +4835,7 @@ Adjust your tone accordingly:
         if (buf.byteLength === 0) continue;
         this.pcmBuffers.push(buf.slice(0));
 
-        // Calculate RMS energy
+        // Calculate RMS energy for waveform visualization
         let samples = new Int16Array(buf);
         let sumSq = 0;
         for (let i = 0; i < samples.length; i++) {
@@ -4810,11 +4843,21 @@ Adjust your tone accordingly:
         }
         let rms = Math.sqrt(sumSq / samples.length);
 
-        // Update waveform visualization
+        // Update waveform visualization (always use RMS for visual feedback)
         let normalized = Math.min(1.0, rms / 8000);
         this.updateWaveBars(normalized);
 
-        if (rms > rmsThreshold) {
+        // Speech detection using Silero VAD or RMS fallback
+        let isSpeech = false;
+        if (useVad) {
+          let float32Samples = VadService.pcmToFloat32(buf);
+          vadService.acceptWaveform(float32Samples);
+          isSpeech = vadService.isDetected();
+        } else {
+          isSpeech = rms > rmsThreshold;
+        }
+
+        if (isSpeech) {
           speechDetected = true;
           silenceStart = 0; // reset silence timer
         } else if (speechDetected) {
@@ -4871,7 +4914,7 @@ Adjust your tone accordingly:
    * Listen on mic during TTS playback. If user speaks (voice interrupt),
    * stop TTS, continue recording until silence, return WAV path.
    * If TTS finishes naturally, return empty string.
-   * Uses higher RMS threshold (3000) to filter out TTS speaker echo.
+   * Uses Silero VAD for accurate speech detection (filters TTS echo better than RMS).
    */
   private async listenDuringTts(): Promise<string> {
     try {
@@ -4881,6 +4924,16 @@ Adjust your tone accordingly:
       let atManager = abilityAccessCtrl.createAtManager();
       let permResult = await atManager.requestPermissionsFromUser(ctx, ['ohos.permission.MICROPHONE']);
       if (permResult.authResults[0] !== 0) return '';
+
+      // Initialize Silero VAD if not already done
+      let vadService = VadService.getInstance();
+      if (!vadService.isInitialized()) {
+        await vadService.init(ctx);
+      }
+      let useVad = vadService.isInitialized();
+      if (useVad) {
+        vadService.reset(); // Reset VAD state
+      }
 
       let capturerOptions: audio.AudioCapturerOptions = {
         streamInfo: {
@@ -4900,7 +4953,7 @@ Adjust your tone accordingly:
       let bufSize = await this.audioCapturer.getBufferSize();
       let speechDetected = false;
       let silenceStart = 0;
-      let interruptThreshold = 3000; // higher than normal (1500) to filter TTS echo
+      let interruptThreshold = 3000; // RMS fallback threshold (higher to filter TTS echo)
       let silenceTimeoutMs = 1500;
       this.pcmBuffers = [];
 
@@ -4912,6 +4965,7 @@ Adjust your tone accordingly:
         } catch { break; }
         if (buf.byteLength === 0) continue;
 
+        // Calculate RMS for visualization and fallback
         let samples = new Int16Array(buf);
         let sumSq = 0;
         for (let i = 0; i < samples.length; i++) {
@@ -4919,9 +4973,19 @@ Adjust your tone accordingly:
         }
         let rms = Math.sqrt(sumSq / samples.length);
 
-        if (!speechDetected && rms > interruptThreshold) {
+        // Speech detection using Silero VAD or RMS fallback
+        let isSpeech = false;
+        if (useVad) {
+          let float32Samples = VadService.pcmToFloat32(buf);
+          vadService.acceptWaveform(float32Samples);
+          isSpeech = vadService.isDetected();
+        } else {
+          isSpeech = rms > interruptThreshold;
+        }
+
+        if (!speechDetected && isSpeech) {
           // Voice interrupt detected — stop TTS
-          this.log.info('ChatPage', `TTS interrupted by voice (RMS=${rms.toFixed(0)})`);
+          this.log.info('ChatPage', `TTS interrupted by voice (VAD=${useVad}, RMS=${rms.toFixed(0)})`);
           speechDetected = true;
           NodeRuntime.getInstance().stopSpeaker().catch(() => {});
           this.ttsPlaying = false;
@@ -4939,7 +5003,9 @@ Adjust your tone accordingly:
           let normalized = Math.min(1.0, rms / 8000);
           this.updateWaveBars(normalized);
 
-          if (rms > 1500) {
+          // Check for silence using VAD or RMS
+          let isStillSpeech = useVad ? vadService.isDetected() : (rms > 1500);
+          if (isStillSpeech) {
             silenceStart = 0;
           } else {
             if (silenceStart === 0) {

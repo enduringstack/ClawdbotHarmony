@@ -10,6 +10,7 @@ import { VoiceprintService } from './VoiceprintService';
 import { LocalAsrService } from './LocalAsrService';
 import { AIService } from './AIService';
 import { ConversationStore } from './ConversationStore';
+import { VadService } from './VadService';
 
 type StateListener = (state: string) => void;
 
@@ -105,6 +106,14 @@ export class SilentModeService {
       this.log.info(this.TAG, `VoiceprintService ready. Registered speakers: [${names}] (${speakers.length} total)`);
     } catch (err) {
       this.log.warn(this.TAG, `VoiceprintService init warning: ${err}`);
+    }
+
+    // Initialize Silero VAD
+    let vadInitialized = await VadService.getInstance().init(context);
+    if (!vadInitialized) {
+      this.log.warn(this.TAG, 'Silero VAD init failed, will use RMS fallback');
+    } else {
+      this.log.info(this.TAG, 'Silero VAD initialized for speech detection');
     }
 
     // Create conversation record
@@ -267,10 +276,17 @@ export class SilentModeService {
 
     let loopCount = 0;
     let lastLogTime = Date.now();
+    let vadService = VadService.getInstance();
+    let useVad = vadService.isInitialized();
+
+    // Reset VAD state for new recording session
+    if (useVad) {
+      vadService.reset();
+    }
 
     try {
       let bufSize = await this.audioCapturer.getBufferSize();
-      this.log.info(this.TAG, `🎙️ Audio read loop started, bufSize=${bufSize}`);
+      this.log.info(this.TAG, `🎙️ Audio read loop started, bufSize=${bufSize}, useVad=${useVad}`);
 
       while (this.reading && this.audioCapturer) {
         let buf: ArrayBuffer = await this.audioCapturer.read(bufSize, true);
@@ -285,10 +301,20 @@ export class SilentModeService {
           lastLogTime = now;
         }
 
-        // Calculate RMS energy for VAD
-        let rms = this.calculateRms(buf);
+        // Speech detection using Silero VAD or RMS fallback
+        let isSpeech = false;
+        if (useVad) {
+          // Convert PCM to Float32 and feed to Silero VAD
+          let float32Samples = VadService.pcmToFloat32(buf);
+          vadService.acceptWaveform(float32Samples);
+          isSpeech = vadService.isDetected();
+        } else {
+          // Fallback to RMS energy detection
+          let rms = this.calculateRms(buf);
+          isSpeech = rms > Constants.SILENT_MODE_VAD_THRESHOLD;
+        }
 
-        if (rms > Constants.SILENT_MODE_VAD_THRESHOLD) {
+        if (isSpeech) {
           // Speech detected
           if (!this.speechDetected) {
             this.speechDetected = true;
@@ -317,6 +343,10 @@ export class SilentModeService {
             this.segmentBuffers = [];
             this.totalBufferBytes = 0;
             this.silenceStartMs = 0;
+            // Reset VAD state for next segment
+            if (useVad) {
+              vadService.reset();
+            }
           }
         } else {
           // Silence, no speech detected - check conversation end timeout

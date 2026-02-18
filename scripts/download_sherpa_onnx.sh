@@ -25,6 +25,11 @@ MODEL_NAME="3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx"
 MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/${MODEL_NAME}"
 MODEL_DIR="${PROJECT_ROOT}/entry/src/main/resources/rawfile/voiceprint"
 
+# Silero VAD model for voice activity detection
+VAD_MODEL_NAME="silero_vad.onnx"
+VAD_MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/${VAD_MODEL_NAME}"
+VAD_MODEL_DIR="${PROJECT_ROOT}/entry/src/main/resources/rawfile/vad"
+
 echo "========================================"
 echo " sherpa-onnx Setup for ClawdBotHarmony"
 echo "========================================"
@@ -69,15 +74,45 @@ else
     echo "  -> Model downloaded successfully."
 fi
 
-# Step 3: Verify
+# Step 3: Download Silero VAD model
 echo ""
-echo "[3/3] Verifying setup..."
+echo "[3/4] Downloading Silero VAD model (~629KB)..."
+mkdir -p "$VAD_MODEL_DIR"
+
+if [ -f "${VAD_MODEL_DIR}/${VAD_MODEL_NAME}" ]; then
+    echo "  -> VAD model already exists at ${VAD_MODEL_DIR}/${VAD_MODEL_NAME}"
+    echo "  -> Skipping download. Delete the file to re-download."
+else
+    echo "  -> Downloading from: ${VAD_MODEL_URL}"
+    if command -v curl &> /dev/null; then
+        curl -L --progress-bar -o "${VAD_MODEL_DIR}/${VAD_MODEL_NAME}" "$VAD_MODEL_URL"
+    elif command -v wget &> /dev/null; then
+        wget --show-progress -O "${VAD_MODEL_DIR}/${VAD_MODEL_NAME}" "$VAD_MODEL_URL"
+    else
+        echo "  ERROR: Neither curl nor wget found. Please download manually:"
+        echo "  URL: ${VAD_MODEL_URL}"
+        echo "  Save to: ${VAD_MODEL_DIR}/${VAD_MODEL_NAME}"
+        exit 1
+    fi
+    echo "  -> VAD model downloaded successfully."
+fi
+
+# Step 4: Verify
+echo ""
+echo "[4/4] Verifying setup..."
 
 if [ -f "${MODEL_DIR}/${MODEL_NAME}" ]; then
     MODEL_SIZE=$(wc -c < "${MODEL_DIR}/${MODEL_NAME}" 2>/dev/null || echo "unknown")
-    echo "  -> Model: ${MODEL_DIR}/${MODEL_NAME} (${MODEL_SIZE} bytes)"
+    echo "  -> Speaker model: ${MODEL_DIR}/${MODEL_NAME} (${MODEL_SIZE} bytes)"
 else
-    echo "  WARNING: Model file not found."
+    echo "  WARNING: Speaker model file not found."
+fi
+
+if [ -f "${VAD_MODEL_DIR}/${VAD_MODEL_NAME}" ]; then
+    VAD_SIZE=$(wc -c < "${VAD_MODEL_DIR}/${VAD_MODEL_NAME}" 2>/dev/null || echo "unknown")
+    echo "  -> VAD model: ${VAD_MODEL_DIR}/${VAD_MODEL_NAME} (${VAD_SIZE} bytes)"
+else
+    echo "  WARNING: VAD model file not found."
 fi
 
 echo ""
@@ -90,5 +125,8 @@ echo "  1. Open the project in DevEco Studio"
 echo "  2. Sync the ohpm dependencies"
 echo "  3. Build and run the project"
 echo ""
-echo "Model location: ${MODEL_DIR}/${MODEL_NAME}"
-echo "The model will be bundled in the HAP as a rawfile resource."
+echo "Model locations:"
+echo "  Speaker: ${MODEL_DIR}/${MODEL_NAME}"
+echo "  VAD: ${VAD_MODEL_DIR}/${VAD_MODEL_NAME}"
+echo ""
+echo "The models will be bundled in the HAP as rawfile resources."

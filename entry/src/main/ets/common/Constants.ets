@@ -104,6 +104,8 @@ export class Constants {
 
   // Silent mode
   static readonly PREFS_SILENT_MODE: string = 'clawdbot_silent_mode';
+  // SILENT_MODE_VAD_THRESHOLD is deprecated - now using Silero VAD neural network
+  // Kept for RMS fallback when Silero VAD fails to initialize
   static readonly SILENT_MODE_VAD_THRESHOLD: number = 1500;
   static readonly SILENT_MODE_SILENCE_END_MS: number = 1500;
   static readonly SILENT_MODE_CONVERSATION_END_MS: number = 60000;
