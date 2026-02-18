@@ -136,6 +136,7 @@ export struct SettingsPage {
   @State updateAvailable: boolean = false;
 
   // Experience Pack
+  @State expCount: number = 0;
   @State expSkillsCount: number = 0;
   @State expMemoryCount: number = 0;
   @State expSyncedAt: number = 0;
@@ -1435,10 +1436,12 @@ export struct SettingsPage {
         // =============== Experience Pack ===============
         this.SectionTitle('经验包')
         Column() {
-          // Summary: skills + memory = experience
-          this.InfoRow('技能 (Skills)', `${this.expSkillsCount} 条`)
+          // Summary: experience = skills + memory
+          this.InfoRow('经验', `${this.expCount} 条`)
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
-          this.InfoRow('记忆 (Memory)', `${this.expMemoryCount} 条`)
+          this.InfoRow('├ 技能', `${this.expSkillsCount} 个`)
+          Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
+          this.InfoRow('└ 记忆', `${this.expMemoryCount} 条`)
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
           this.InfoRow('上次同步', this.expSyncedAt > 0 ? new Date(this.expSyncedAt).toLocaleString() : '从未同步')
 
@@ -2679,8 +2682,9 @@ export struct SettingsPage {
       let storage = ExperienceStorage.getInstance();
       let pack = await storage.load(ctx);
       if (pack) {
-        this.expSkillsCount = pack.skills.length;
-        this.expMemoryCount = pack.memory.length;
+        this.expCount = storage.getExperiencesCount();
+        this.expSkillsCount = storage.getTotalSkillsCount();
+        this.expMemoryCount = storage.getTotalMemoryCount();
         this.expSyncedAt = pack.syncedAt;
         this.expLoaded = true;
       }
@@ -2752,6 +2756,7 @@ export struct SettingsPage {
             let ctx = getContext(this) as common.UIAbilityContext;
             let storage = ExperienceStorage.getInstance();
             await storage.clear(ctx);
+            this.expCount = 0;
             this.expSkillsCount = 0;
             this.expMemoryCount = 0;
             this.expSyncedAt = 0;

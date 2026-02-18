@@ -1,6 +1,6 @@
 /**
  * ExperienceStorage — 经验包存储服务
- * skills (技能) + memory (记忆) = experience (经验)
+ * 一条经验 = skills + memory
  */
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
@@ -8,16 +8,15 @@ import { Constants } from '../common/Constants';
 import { LogService } from '../common/LogService';
 import {
   ExperiencePack,
+  Experience,
   Skill,
-  SkillMetadata,
   Memory,
-  MemoryCategory,
   createDefaultExperiencePack,
   generateId,
 } from '../model/ExperiencePack';
 
 const TAG = 'ExperienceStorage';
-const STORE_KEY = 'experience_pack_v2';
+const STORE_KEY = 'experience_pack_v3';
 
 export class ExperienceStorage {
   private static instance: ExperienceStorage | undefined = undefined;
@@ -47,7 +46,7 @@ export class ExperienceStorage {
       }
       let parsed: ExperiencePack = JSON.parse(json) as ExperiencePack;
       this._pack = parsed;
-      this.log.info(TAG, `Loaded: ${parsed.skills.length} skills, ${parsed.memory.length} memories`);
+      this.log.info(TAG, `Loaded: ${parsed.experiences.length} experiences`);
       return parsed;
     } catch (err) {
       this.log.error(TAG, `Load failed: ${(err as Error).message ?? ''}`);
@@ -77,92 +76,101 @@ export class ExperienceStorage {
     return fresh;
   }
 
-  // ==================== Skill 操作 ====================
+  // ==================== Experience 操作 ====================
 
-  async addSkill(context: common.UIAbilityContext, skill: Skill): Promise<void> {
+  async addExperience(context: common.UIAbilityContext, exp: Experience): Promise<void> {
     let pack = await this.ensureLoaded(context);
-    let idx = pack.skills.findIndex((s: Skill) => s.name === skill.name);
+    let idx = pack.experiences.findIndex((e: Experience) => e.id === exp.id);
     if (idx >= 0) {
-      // 更新已有技能
-      pack.skills[idx] = skill;
+      pack.experiences[idx] = exp;
     } else {
-      pack.skills.push(skill);
+      pack.experiences.push(exp);
     }
     await this.save(context, pack);
   }
 
-  async updateSkill(context: common.UIAbilityContext, name: string, updates: Partial<Skill>): Promise<void> {
+  async updateExperience(context: common.UIAbilityContext, id: string, updates: Partial<Experience>): Promise<void> {
     let pack = await this.ensureLoaded(context);
-    let idx = pack.skills.findIndex((s: Skill) => s.name === name);
+    let idx = pack.experiences.findIndex((e: Experience) => e.id === id);
     if (idx >= 0) {
-      let skill = pack.skills[idx];
-      if (updates.description !== undefined) skill.description = updates.description;
-      if (updates.content !== undefined) skill.content = updates.content;
-      if (updates.metadata !== undefined) {
-        if (!skill.metadata) {
-          skill.metadata = {};
-        }
-        // 手动合并 metadata 字段
-        if (updates.metadata.emoji !== undefined) skill.metadata.emoji = updates.metadata.emoji;
-        if (updates.metadata.confidence !== undefined) skill.metadata.confidence = updates.metadata.confidence;
-        if (updates.metadata.source !== undefined) skill.metadata.source = updates.metadata.source;
-      }
-      if (skill.metadata) {
-        skill.metadata.updatedAt = Date.now();
-      }
+      let exp = pack.experiences[idx];
+      if (updates.name !== undefined) exp.name = updates.name;
+      if (updates.description !== undefined) exp.description = updates.description;
+      if (updates.skills !== undefined) exp.skills = updates.skills;
+      if (updates.memory !== undefined) exp.memory = updates.memory;
+      exp.updatedAt = Date.now();
       await this.save(context, pack);
     }
   }
 
-  async removeSkill(context: common.UIAbilityContext, name: string): Promise<void> {
+  async removeExperience(context: common.UIAbilityContext, id: string): Promise<void> {
     let pack = await this.ensureLoaded(context);
-    pack.skills = pack.skills.filter((s: Skill) => s.name !== name);
+    pack.experiences = pack.experiences.filter((e: Experience) => e.id !== id);
     await this.save(context, pack);
   }
 
-  getSkillByName(name: string): Skill | undefined {
+  getExperienceById(id: string): Experience | undefined {
     if (!this._pack) return undefined;
-    return this._pack.skills.find((s: Skill) => s.name === name);
+    return this._pack.experiences.find((e: Experience) => e.id === id);
   }
 
-  // ==================== Memory 操作 ====================
-
-  async addMemory(context: common.UIAbilityContext, memory: Memory): Promise<void> {
-    let pack = await this.ensureLoaded(context);
-    // 按 category + key 去重
-    let idx = pack.memory.findIndex((m: Memory) => m.category === memory.category && m.key === memory.key);
-    if (idx >= 0) {
-      pack.memory[idx] = memory;
-    } else {
-      pack.memory.push(memory);
-    }
-    await this.save(context, pack);
+  getExperienceByName(name: string): Experience | undefined {
+    if (!this._pack) return undefined;
+    return this._pack.experiences.find((e: Experience) => e.name === name);
   }
 
-  async updateMemory(context: common.UIAbilityContext, id: string, value: string | object): Promise<void> {
+  // ==================== Skill 操作 (在 Experience 内) ====================
+
+  async addSkillToExperience(context: common.UIAbilityContext, expId: string, skill: Skill): Promise<void> {
     let pack = await this.ensureLoaded(context);
-    let idx = pack.memory.findIndex((m: Memory) => m.id === id);
-    if (idx >= 0) {
-      pack.memory[idx].value = value;
-      pack.memory[idx].updatedAt = Date.now();
+    let exp = pack.experiences.find((e: Experience) => e.id === expId);
+    if (exp) {
+      let idx = exp.skills.findIndex((s: Skill) => s.name === skill.name);
+      if (idx >= 0) {
+        exp.skills[idx] = skill;
+      } else {
+        exp.skills.push(skill);
+      }
+      exp.updatedAt = Date.now();
       await this.save(context, pack);
     }
   }
 
-  async removeMemory(context: common.UIAbilityContext, id: string): Promise<void> {
+  async removeSkillFromExperience(context: common.UIAbilityContext, expId: string, skillName: string): Promise<void> {
     let pack = await this.ensureLoaded(context);
-    pack.memory = pack.memory.filter((m: Memory) => m.id !== id);
-    await this.save(context, pack);
+    let exp = pack.experiences.find((e: Experience) => e.id === expId);
+    if (exp) {
+      exp.skills = exp.skills.filter((s: Skill) => s.name !== skillName);
+      exp.updatedAt = Date.now();
+      await this.save(context, pack);
+    }
   }
 
-  getMemoryByKey(category: MemoryCategory, key: string): Memory | undefined {
-    if (!this._pack) return undefined;
-    return this._pack.memory.find((m: Memory) => m.category === category && m.key === key);
+  // ==================== Memory 操作 (在 Experience 内) ====================
+
+  async addMemoryToExperience(context: common.UIAbilityContext, expId: string, mem: Memory): Promise<void> {
+    let pack = await this.ensureLoaded(context);
+    let exp = pack.experiences.find((e: Experience) => e.id === expId);
+    if (exp) {
+      let idx = exp.memory.findIndex((m: Memory) => m.key === mem.key);
+      if (idx >= 0) {
+        exp.memory[idx] = mem;
+      } else {
+        exp.memory.push(mem);
+      }
+      exp.updatedAt = Date.now();
+      await this.save(context, pack);
+    }
   }
 
-  getMemoriesByCategory(category: MemoryCategory): Memory[] {
-    if (!this._pack) return [];
-    return this._pack.memory.filter((m: Memory) => m.category === category);
+  async removeMemoryFromExperience(context: common.UIAbilityContext, expId: string, key: string): Promise<void> {
+    let pack = await this.ensureLoaded(context);
+    let exp = pack.experiences.find((e: Experience) => e.id === expId);
+    if (exp) {
+      exp.memory = exp.memory.filter((m: Memory) => m.key !== key);
+      exp.updatedAt = Date.now();
+      await this.save(context, pack);
+    }
   }
 
   // ==================== 同步状态 ====================
@@ -183,14 +191,13 @@ export class ExperienceStorage {
   async importFromJson(context: common.UIAbilityContext, json: string): Promise<boolean> {
     try {
       let parsed: ExperiencePack = JSON.parse(json) as ExperiencePack;
-      // 基本验证
-      if (!Array.isArray(parsed.skills) || !Array.isArray(parsed.memory)) {
+      if (!Array.isArray(parsed.experiences)) {
         this.log.warn(TAG, 'Import failed: invalid structure');
         return false;
       }
-      parsed.version = 2;
+      parsed.version = 3;
       parsed.updatedAt = Date.now();
-      parsed.syncedAt = 0; // 强制重新同步
+      parsed.syncedAt = 0;
       await this.save(context, parsed);
       this.log.info(TAG, 'Experience pack imported');
       return true;
@@ -219,46 +226,22 @@ export class ExperienceStorage {
   async mergeUpdate(context: common.UIAbilityContext, partial: Record<string, Object>): Promise<void> {
     let pack = await this.ensureLoaded(context);
 
-    // 合并 skills (按 name 去重)
-    if (partial['skills'] && Array.isArray(partial['skills'])) {
-      let newSkills = partial['skills'] as Skill[];
-      for (let i = 0; i < newSkills.length; i++) {
-        let skill = newSkills[i];
-        // 确保 metadata 存在
-        if (!skill.metadata) {
-          skill.metadata = { updatedAt: Date.now(), source: 'imported' };
-        }
-        if (!skill.metadata.updatedAt) {
-          skill.metadata.updatedAt = Date.now();
-        }
-        let idx = pack.skills.findIndex((s: Skill) => s.name === skill.name);
-        if (idx >= 0) {
-          // 只在新的更新时间更晚时覆盖
-          let existingTime = pack.skills[idx].metadata?.updatedAt ?? 0;
-          let newTime = skill.metadata.updatedAt ?? 0;
-          if (newTime > existingTime) {
-            pack.skills[idx] = skill;
-          }
-        } else {
-          pack.skills.push(skill);
-        }
-      }
-    }
+    if (partial['experiences'] && Array.isArray(partial['experiences'])) {
+      let newExps = partial['experiences'] as Experience[];
+      for (let i = 0; i < newExps.length; i++) {
+        let exp = newExps[i];
+        if (!exp.id) exp.id = generateId();
+        if (!exp.createdAt) exp.createdAt = Date.now();
+        if (!exp.updatedAt) exp.updatedAt = Date.now();
 
-    // 合并 memory (按 category + key 去重)
-    if (partial['memory'] && Array.isArray(partial['memory'])) {
-      let newMemories = partial['memory'] as Memory[];
-      for (let i = 0; i < newMemories.length; i++) {
-        let mem = newMemories[i];
-        if (!mem.id) mem.id = generateId();
-        if (!mem.updatedAt) mem.updatedAt = Date.now();
-        let idx = pack.memory.findIndex((m: Memory) => m.category === mem.category && m.key === mem.key);
+        let idx = pack.experiences.findIndex((e: Experience) => e.name === exp.name);
         if (idx >= 0) {
-          if (mem.updatedAt > pack.memory[idx].updatedAt) {
-            pack.memory[idx] = mem;
+          // 合并：新的更晚时覆盖
+          if (exp.updatedAt > pack.experiences[idx].updatedAt) {
+            pack.experiences[idx] = exp;
           }
         } else {
-          pack.memory.push(mem);
+          pack.experiences.push(exp);
         }
       }
     }
@@ -267,14 +250,28 @@ export class ExperienceStorage {
     this.log.info(TAG, 'Merged server update');
   }
 
-  // ==================== 统计信息 ====================
+  // ==================== 统计 ====================
 
-  getSkillsCount(): number {
-    return this._pack?.skills.length ?? 0;
+  getExperiencesCount(): number {
+    return this._pack?.experiences.length ?? 0;
   }
 
-  getMemoryCount(): number {
-    return this._pack?.memory.length ?? 0;
+  getTotalSkillsCount(): number {
+    if (!this._pack) return 0;
+    let count = 0;
+    for (let i = 0; i < this._pack.experiences.length; i++) {
+      count += this._pack.experiences[i].skills.length;
+    }
+    return count;
+  }
+
+  getTotalMemoryCount(): number {
+    if (!this._pack) return 0;
+    let count = 0;
+    for (let i = 0; i < this._pack.experiences.length; i++) {
+      count += this._pack.experiences[i].memory.length;
+    }
+    return count;
   }
 
   getLastSyncTime(): string {

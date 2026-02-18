@@ -1,46 +1,38 @@
 // ============================================================
-//  Experience Pack — skills + memory = experience
-//  skills: 做事的方式（步骤、规则）
-//  memory: 过程中的细节（事实、上下文）
-//  两者结合构成完整的经验，可迁移到新的 AI 助理
+//  Experience Pack — 经验包
+//  一条经验 = 几个 skills + 几条 memory
 // ============================================================
 
-/** 技能：总结做事的方式（与 OpenClaw skill 格式一致）*/
+/** 技能（与 Anthropic skills 格式一致）*/
 export interface Skill {
-  name: string;           // 技能名称，如 "clawdbot-harmony-dev"
+  name: string;           // 技能名称
   description: string;    // 简短描述
-  content: string;        // Markdown 内容（技能指令）
-  metadata?: SkillMetadata; // 可选元数据
+  instructions: string;   // 执行指令 (markdown)
 }
 
-/** 技能元数据 */
-export interface SkillMetadata {
-  emoji?: string;         // 图标
-  confidence?: number;    // 置信度 0-1
-  source?: string;        // 来源：'learned' | 'imported' | 'manual'
-  updatedAt?: number;     // 最后更新时间
-}
-
-/** 记忆分类 */
-export type MemoryCategory = 'user' | 'relationship' | 'project' | 'fact' | 'preference';
-
-/** 记忆：记住过程中的细节 */
+/** 记忆 */
 export interface Memory {
-  id: string;
-  category: MemoryCategory;
-  key: string;            // 如 "项目路径" / "当前版本" / "妻子"
-  value: string | object; // 具体值
-  updatedAt: number;      // 最后更新时间
+  key: string;            // 如 "项目路径" / "当前版本"
+  value: string;          // 具体值
 }
 
-/** 经验包：skills + memory */
+/** 一条经验 = skills + memory */
+export interface Experience {
+  id: string;
+  name: string;           // 经验名称，如 "ClawdBotHarmony 开发"
+  description: string;    // 简述
+  skills: Skill[];        // 相关技能
+  memory: Memory[];       // 相关记忆
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 经验包 */
 export interface ExperiencePack {
   version: number;        // schema 版本
   updatedAt: number;      // 最后更新时间
   syncedAt: number;       // 最后同步时间 (0 = 未同步)
-
-  skills: Skill[];        // 技能列表
-  memory: Memory[];       // 记忆列表
+  experiences: Experience[];
 }
 
 /** 生成唯一 ID */
@@ -51,35 +43,39 @@ export function generateId(): string {
 /** 创建空的经验包 */
 export function createDefaultExperiencePack(): ExperiencePack {
   return {
-    version: 2,
+    version: 3,
     updatedAt: Date.now(),
     syncedAt: 0,
+    experiences: [],
+  };
+}
+
+/** 创建新经验 */
+export function createExperience(name: string, description: string): Experience {
+  return {
+    id: generateId(),
+    name,
+    description,
     skills: [],
     memory: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
   };
 }
 
 /** 创建新技能 */
-export function createSkill(name: string, description: string, content: string): Skill {
+export function createSkill(name: string, description: string, instructions: string): Skill {
   return {
     name,
     description,
-    content,
-    metadata: {
-      confidence: 0.5,
-      source: 'learned',
-      updatedAt: Date.now(),
-    },
+    instructions,
   };
 }
 
 /** 创建新记忆 */
-export function createMemory(category: MemoryCategory, key: string, value: string | object): Memory {
+export function createMemory(key: string, value: string): Memory {
   return {
-    id: generateId(),
-    category,
     key,
     value,
-    updatedAt: Date.now(),
   };
 }

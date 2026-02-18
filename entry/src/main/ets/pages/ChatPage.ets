@@ -867,6 +867,10 @@ export struct ChatPage {
             this.showSessionDrawer = false;
             router.pushUrl({ url: 'pages/MemoryRoutePage' });
           },
+          onOpenExperience: () => {
+            this.showSessionDrawer = false;
+            router.pushUrl({ url: 'pages/ExperienceRoutePage' });
+          },
           onOpenConversations: () => {
             this.showSessionDrawer = false;
             router.pushUrl({ url: 'pages/ConversationsRoutePage' });
