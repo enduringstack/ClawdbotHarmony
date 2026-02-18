@@ -12,6 +12,58 @@ export const APP_VERSION: string = '2.21.15';
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.21.15',
+    date: '2026-02-17',
+    features: [
+      '系统下载 API (request.downloadFile) 处理大文件',
+      'HAP 安装对话框 (分享安装/复制路径)',
+    ],
+    fixes: [
+      '下载位置改为 filesDir 确保文件持久化',
+    ],
+  },
+  {
+    version: '2.21.14',
+    date: '2026-02-17',
+    features: [
+
+    ],
+    fixes: [
+      '修复下载写入磁盘失败问题',
+    ],
+  },
+  {
+    version: '2.21.13',
+    date: '2026-02-17',
+    features: [
+      '设置页检查更新功能',
+      '聊天消息中的链接可点击',
+    ],
+    fixes: [
+
+    ],
+  },
+  {
+    version: '2.21.12',
+    date: '2026-02-17',
+    features: [
+      '聊天消息中的 URL 可点击跳转',
+    ],
+    fixes: [
+
+    ],
+  },
+  {
+    version: '2.21.11',
+    date: '2026-02-17',
+    features: [
+      'Gateway 文件下载功能',
+    ],
+    fixes: [
+
+    ],
+  },
+  {
     version: '2.21.10',
     date: '2026-02-17',
     features: [
@@ -215,4 +267,4 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export const LATEST_VERSION: string = '2.21.10';
+export const LATEST_VERSION: string = '2.21.15';
