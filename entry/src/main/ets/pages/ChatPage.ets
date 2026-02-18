@@ -1643,6 +1643,7 @@ Respond ONLY with the JSON array.`;
     let enrichedText = await this.enrichWithLocation(textForAI);
 
     if (this.gwConnected) {
+      this.log.info('ChatPage', `sendViaGateway: text=${enrichedText.substring(0, 50)} images=${allImagePaths.length} paths=[${allImagePaths.join(',')}]`);
       await this.sendViaGateway(enrichedText, allImagePaths);
     } else {
       await this.sendViaLocalAI(enrichedText);
@@ -1716,18 +1717,26 @@ Respond ONLY with the JSON array.`;
 
       // Convert images to attachments (base64)
       let attachments: ChatAttachment[] = [];
+      this.log.info('ChatPage', `sendViaGateway: imagePaths param = ${imagePaths ? imagePaths.length : 'undefined'}`);
       if (imagePaths && imagePaths.length > 0) {
+        this.log.info('ChatPage', `Converting ${imagePaths.length} images to attachments...`);
         for (let imgPath of imagePaths) {
+          this.log.info('ChatPage', `Converting image: ${imgPath}`);
           try {
             let attachment = await this.imageToAttachment(imgPath);
             if (attachment) {
+              this.log.info('ChatPage', `✅ Converted: ${attachment.fileName} (${attachment.content.length} chars base64)`);
               attachments.push(attachment);
+            } else {
+              this.log.warn('ChatPage', `⚠️ imageToAttachment returned undefined for: ${imgPath}`);
             }
           } catch (err) {
-            this.log.error('ChatPage', `Failed to convert image to attachment: ${imgPath} - ${(err as Error).message}`);
+            this.log.error('ChatPage', `❌ Failed to convert image: ${imgPath} - ${(err as Error).message}`);
           }
         }
         this.log.info('ChatPage', `Converted ${attachments.length}/${imagePaths.length} images to attachments`);
+      } else {
+        this.log.info('ChatPage', 'No images to convert');
       }
 
       // Create placeholder assistant message BEFORE sending RPC
@@ -3189,7 +3198,7 @@ Respond ONLY with the JSON array.`;
       // Fallback: if ASR key is empty, try to use SiliconFlow AI key (same provider)
       // Also set default URL and model for SiliconFlow
       if (asrKey.length === 0) {
-        let siliconflowKey = (await store.get('siliconflow_api_key', '')) as string;
+        let siliconflowKey = (await store.get('key_siliconflow', '')) as string;
         if (siliconflowKey.length > 0) {
           asrKey = siliconflowKey;
           // Use SiliconFlow's default ASR endpoint and model
