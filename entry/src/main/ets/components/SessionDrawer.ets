@@ -21,9 +21,8 @@ export struct SessionDrawer {
   onSessionRename: (sessionId: string, newName: string) => void = () => {};
   onSessionPin: (sessionId: string) => void = () => {};
   onSessionClear: (sessionId: string) => void = () => {};
-  onOpenSkills: () => void = () => {};
-  onOpenMemory: () => void = () => {};
   onOpenExperience: () => void = () => {};
+  onExit: () => void = () => {};
   onOpenConversations: () => void = () => {};
   onOpenSettings: () => void = () => {};
   onOpenLogs: () => void = () => {};
@@ -368,43 +367,15 @@ export struct SessionDrawer {
         .backgroundColor('#F8F8F8')
 
         Row() {
-          Text('\uD83D\uDD27')
+          Text('📚')
             .fontSize(16)
             .margin({ right: 8 })
-          Text(t('tab.skills'))
+          Text(t('experience.title'))
             .fontSize(14)
             .fontColor('#666666')
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 12, bottom: 6 })
-        .onClick(() => {
-          this.onOpenSkills();
-        })
-
-        Row() {
-          Text('\uD83E\uDDE0')
-            .fontSize(16)
-            .margin({ right: 8 })
-          Text(t('tab.memory'))
-            .fontSize(14)
-            .fontColor('#666666')
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 6, bottom: 6 })
-        .onClick(() => {
-          this.onOpenMemory();
-        })
-
-        Row() {
-          Text('📚')
-            .fontSize(16)
-            .margin({ right: 8 })
-          Text('经验')
-            .fontSize(14)
-            .fontColor('#666666')
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 6, bottom: 6 })
         .onClick(() => {
           this.onOpenExperience();
         })
@@ -460,9 +431,24 @@ export struct SessionDrawer {
             .fontColor('#666666')
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 6, bottom: 12 })
+        .padding({ left: 16, right: 16, top: 6, bottom: 6 })
         .onClick(() => {
           this.onOpenAbout();
+        })
+
+        // Exit button
+        Row() {
+          Text('🚪')
+            .fontSize(16)
+            .margin({ right: 8 })
+          Text(t('app.exit'))
+            .fontSize(14)
+            .fontColor('#E53935')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 6, bottom: 12 })
+        .onClick(() => {
+          this.onExit();
         })
       }
       .width('100%')

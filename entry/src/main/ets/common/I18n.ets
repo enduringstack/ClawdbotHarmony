@@ -250,6 +250,8 @@ function buildZh(): Map<string, string> {
   m.set('settings.capSpeaker', '音箱 (朗读/播放)');
   m.set('settings.capEmail', '邮件 (发送)');
   m.set('settings.about', '关于');
+  m.set('app.exit', '退出');
+  m.set('app.exitConfirm', '确定要退出应用吗？');
   m.set('settings.app', '应用');
   m.set('settings.appValue', 'ClawdBot for HarmonyOS');
   m.set('settings.appName', '应用名称');
@@ -708,6 +710,8 @@ function buildEn(): Map<string, string> {
   m.set('settings.capSpeaker', 'Speaker (TTS/Playback)');
   m.set('settings.capEmail', 'Email (Send)');
   m.set('settings.about', 'ABOUT');
+  m.set('app.exit', 'Exit');
+  m.set('app.exitConfirm', 'Exit the app?');
   m.set('settings.app', 'App');
   m.set('settings.appValue', 'ClawdBot for HarmonyOS');
   m.set('settings.appName', 'App Name');

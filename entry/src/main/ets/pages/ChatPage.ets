@@ -860,14 +860,6 @@ export struct ChatPage {
           onSessionClear: (sessionId: string) => {
             this.clearSessionMessages(sessionId);
           },
-          onOpenSkills: () => {
-            this.showSessionDrawer = false;
-            router.pushUrl({ url: 'pages/SkillsRoutePage' });
-          },
-          onOpenMemory: () => {
-            this.showSessionDrawer = false;
-            router.pushUrl({ url: 'pages/MemoryRoutePage' });
-          },
           onOpenExperience: () => {
             this.showSessionDrawer = false;
             router.pushUrl({ url: 'pages/ExperienceRoutePage' });
@@ -887,6 +879,10 @@ export struct ChatPage {
           onOpenAbout: () => {
             this.showSessionDrawer = false;
             router.pushUrl({ url: 'pages/AboutRoutePage' });
+          },
+          onExit: () => {
+            this.showSessionDrawer = false;
+            this.exitApp();
           },
           onClose: () => {
             this.showSessionDrawer = false;
@@ -3878,6 +3874,24 @@ Adjust your tone accordingly:
         this.highlightMessageId = '';
       }, 1500);
     }, 200);
+  }
+
+  // ---- Exit app completely ----
+  private exitApp(): void {
+    promptAction.showDialog({
+      title: I18n.t('app.exit'),
+      message: I18n.t('app.exitConfirm'),
+      buttons: [
+        { text: I18n.t('memory.cancel'), color: '#666666' },
+        { text: I18n.t('app.exit'), color: '#E53935' }
+      ]
+    }).then((result) => {
+      if (result.index === 1) {
+        // User confirmed exit
+        let ctx = getContext(this) as common.UIAbilityContext;
+        ctx.terminateSelf();
+      }
+    }).catch(() => { /* cancelled */ });
   }
 
   // ---- persistence (simple JSON in preferences) ----
