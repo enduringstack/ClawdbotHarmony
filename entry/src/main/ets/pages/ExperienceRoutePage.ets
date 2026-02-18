@@ -2,7 +2,7 @@
 import { router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { ExperienceStorage } from '../service/ExperienceStorage';
-import { Experience, Skill, Memory } from '../model/ExperiencePack';
+import { Experience, Skill, Memory, ShareLevel, getShareLevelIcon } from '../model/ExperiencePack';
 
 @Entry
 @Component
@@ -117,7 +117,23 @@ struct ExperienceRoutePage {
       Text(`上次同步: ${this.lastSync}`)
         .fontSize(12)
         .fontColor('#999999')
-        .margin({ top: 8, bottom: 16 })
+        .margin({ top: 8 })
+
+      // 权限图例
+      Row() {
+        Text('🟢公开')
+          .fontSize(11)
+          .fontColor('#666666')
+        Text('🟡摘要')
+          .fontSize(11)
+          .fontColor('#666666')
+          .margin({ left: 12 })
+        Text('🔴私密')
+          .fontSize(11)
+          .fontColor('#666666')
+          .margin({ left: 12 })
+      }
+      .margin({ top: 4, bottom: 16 })
 
       // 经验列表
       if (this.experiences.length === 0) {
@@ -291,11 +307,17 @@ struct ExperienceRoutePage {
   @Builder
   SkillCard(skill: Skill) {
     Column() {
-      Text(skill.name)
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#1A1A1A')
-        .width('100%')
+      Row() {
+        Text(getShareLevelIcon(skill.shareLevel))
+          .fontSize(12)
+          .margin({ right: 6 })
+        Text(skill.name)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#1A1A1A')
+          .layoutWeight(1)
+      }
+      .width('100%')
 
       if (skill.description.length > 0) {
         Text(skill.description)
@@ -329,10 +351,13 @@ struct ExperienceRoutePage {
   @Builder
   MemoryRow(mem: Memory) {
     Row() {
+      Text(getShareLevelIcon(mem.shareLevel))
+        .fontSize(12)
+        .margin({ right: 6 })
       Text(mem.key)
         .fontSize(13)
         .fontColor('#666666')
-        .width(100)
+        .width(80)
       Text(mem.value)
         .fontSize(13)
         .fontColor('#1A1A1A')

@@ -1,19 +1,28 @@
 // ============================================================
 //  Experience Pack — 经验包
 //  一条经验 = 几个 skills + 几条 memory
+//  分享时 skills 和 memory 分别管理权限
 // ============================================================
+
+/** 分享权限级别 */
+export type ShareLevel = 'public' | 'summary' | 'private';
+// 🟢 public  - 完整分享
+// 🟡 summary - 只分享名称/描述，不分享具体内容
+// 🔴 private - 不分享
 
 /** 技能（与 Anthropic skills 格式一致）*/
 export interface Skill {
   name: string;           // 技能名称
   description: string;    // 简短描述
   instructions: string;   // 执行指令 (markdown)
+  shareLevel: ShareLevel; // 分享权限，默认 'public'
 }
 
 /** 记忆 */
 export interface Memory {
   key: string;            // 如 "项目路径" / "当前版本"
   value: string;          // 具体值
+  shareLevel: ShareLevel; // 分享权限，默认 'private'
 }
 
 /** 一条经验 = skills + memory */
@@ -63,19 +72,41 @@ export function createExperience(name: string, description: string): Experience 
   };
 }
 
-/** 创建新技能 */
+/** 创建新技能 (默认公开分享) */
 export function createSkill(name: string, description: string, instructions: string): Skill {
   return {
     name,
     description,
     instructions,
+    shareLevel: 'public',
   };
 }
 
-/** 创建新记忆 */
+/** 创建新记忆 (默认私密) */
 export function createMemory(key: string, value: string): Memory {
   return {
     key,
     value,
+    shareLevel: 'private',
   };
+}
+
+/** 获取分享级别图标 */
+export function getShareLevelIcon(level: ShareLevel): string {
+  switch (level) {
+    case 'public': return '🟢';
+    case 'summary': return '🟡';
+    case 'private': return '🔴';
+    default: return '⚪';
+  }
+}
+
+/** 获取分享级别文字 */
+export function getShareLevelText(level: ShareLevel): string {
+  switch (level) {
+    case 'public': return '公开';
+    case 'summary': return '摘要';
+    case 'private': return '私密';
+    default: return '未知';
+  }
 }

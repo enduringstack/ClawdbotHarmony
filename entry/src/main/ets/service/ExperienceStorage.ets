@@ -11,6 +11,7 @@ import {
   Experience,
   Skill,
   Memory,
+  ShareLevel,
   createDefaultExperiencePack,
   generateId,
 } from '../model/ExperiencePack';
@@ -183,9 +184,75 @@ export class ExperienceStorage {
 
   // ==================== 导入导出 ====================
 
+  /** 导出完整经验包 (本地备份用) */
   exportToJson(): string {
     if (!this._pack) return '{}';
     return JSON.stringify(this._pack, null, 2);
+  }
+
+  /** 导出可分享的经验包 (按权限过滤) */
+  exportForSharing(): string {
+    if (!this._pack) return '{}';
+
+    let filtered: ExperiencePack = {
+      version: this._pack.version,
+      updatedAt: this._pack.updatedAt,
+      syncedAt: 0,
+      experiences: [],
+    };
+
+    for (let i = 0; i < this._pack.experiences.length; i++) {
+      let exp = this._pack.experiences[i];
+      let filteredExp: Experience = {
+        id: exp.id,
+        name: exp.name,
+        description: exp.description,
+        skills: [],
+        memory: [],
+        createdAt: exp.createdAt,
+        updatedAt: exp.updatedAt,
+      };
+
+      // 过滤 skills
+      for (let j = 0; j < exp.skills.length; j++) {
+        let skill = exp.skills[j];
+        if (skill.shareLevel === 'public') {
+          // 完整分享
+          filteredExp.skills.push(skill);
+        } else if (skill.shareLevel === 'summary') {
+          // 只分享名称和描述
+          filteredExp.skills.push({
+            name: skill.name,
+            description: skill.description,
+            instructions: '[摘要模式 - 详细内容已隐藏]',
+            shareLevel: 'summary',
+          });
+        }
+        // private 的不分享
+      }
+
+      // 过滤 memory
+      for (let k = 0; k < exp.memory.length; k++) {
+        let mem = exp.memory[k];
+        if (mem.shareLevel === 'public') {
+          filteredExp.memory.push(mem);
+        } else if (mem.shareLevel === 'summary') {
+          filteredExp.memory.push({
+            key: mem.key,
+            value: '[摘要模式 - 值已隐藏]',
+            shareLevel: 'summary',
+          });
+        }
+        // private 的不分享
+      }
+
+      // 只有有内容的经验才加入
+      if (filteredExp.skills.length > 0 || filteredExp.memory.length > 0) {
+        filtered.experiences.push(filteredExp);
+      }
+    }
+
+    return JSON.stringify(filtered, null, 2);
   }
 
   async importFromJson(context: common.UIAbilityContext, json: string): Promise<boolean> {
