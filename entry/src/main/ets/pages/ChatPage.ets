@@ -3187,11 +3187,19 @@ Respond ONLY with the JSON array.`;
       let asrModel = (await store.get('asr_model', '')) as string;
 
       // Fallback: if ASR key is empty, try to use SiliconFlow AI key (same provider)
+      // Also set default URL and model for SiliconFlow
       if (asrKey.length === 0) {
         let siliconflowKey = (await store.get('siliconflow_api_key', '')) as string;
         if (siliconflowKey.length > 0) {
           asrKey = siliconflowKey;
-          this.asrDebug('ASR using SiliconFlow AI key as fallback');
+          // Use SiliconFlow's default ASR endpoint and model
+          if (asrUrl.length === 0) {
+            asrUrl = 'https://api.siliconflow.cn/v1/audio/transcriptions';
+          }
+          if (asrModel.length === 0) {
+            asrModel = 'FunAudioLLM/SenseVoiceSmall';
+          }
+          this.asrDebug(`ASR using SiliconFlow AI key, url=${asrUrl}, model=${asrModel}`);
         }
       }
 
