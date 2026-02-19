@@ -1,4 +1,5 @@
 import { preferences } from '@kit.ArkData';
+import { pasteboard } from '@kit.BasicServicesKit';
 import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { MessageBubble } from '../components/MessageBubble';
 import { ChatMessage, InlineButton, SettingsData, MemoryItem, CronTask, ChatSession, QueuedMessage } from '../model/Models';
@@ -1598,11 +1599,211 @@ Respond ONLY with the JSON array.`;
 
   // ========== End Session Management ==========
 
+  /**
+   * Handle local shortcut commands typed in chat input.
+   * Returns true if the command was handled locally (no need to send to AI).
+   */
+  /**
+   * Fuzzy match local commands using keyword detection.
+   * Order matters: more specific matches (e.g. "清除日志") must come before generic ones (e.g. "日志").
+   */
+  private handleLocalCommand(text: string): boolean {
+    let s = text.toLowerCase();
+
+    // Helper: check if input contains ANY of the given keywords
+    let has = (keywords: string[]): boolean => {
+      for (let kw of keywords) {
+        if (s.indexOf(kw) >= 0) return true;
+      }
+      return false;
+    };
+
+    // --- 日志操作命令 (must check before generic "日志" navigation) ---
+    // 清除/清空日志
+    if (has(['清除日志', '清空日志', 'clear log'])) {
+      this.inputText = '';
+      this.log.clear();
+      let msg = new ChatMessage('assistant', '✅ 日志已清除');
+      this.messages.push(msg);
+      this.scrollToEnd();
+      this.saveHistory();
+      return true;
+    }
+    // 导出日志
+    if (has(['导出日志', 'export log'])) {
+      this.inputText = '';
+      this.exportLogsFromChat();
+      return true;
+    }
+    // 复制日志
+    if (has(['复制日志', 'copy log'])) {
+      this.inputText = '';
+      this.copyLogsFromChat();
+      return true;
+    }
+    // 开启/打开 日志记录/日志开关
+    if ((has(['开启', '打开', '启用', 'enable', 'start', 'turn on']) && has(['日志'])) ||
+        has(['enable log'])) {
+      this.inputText = '';
+      this.log.enabled = true;
+      let msg = new ChatMessage('assistant', '✅ 日志记录已开启');
+      this.messages.push(msg);
+      this.scrollToEnd();
+      this.saveHistory();
+      return true;
+    }
+    // 关闭/停止 日志记录/日志开关
+    if ((has(['关闭', '停止', '禁用', 'disable', 'stop', 'turn off']) && has(['日志'])) ||
+        has(['disable log'])) {
+      this.inputText = '';
+      this.log.enabled = false;
+      let msg = new ChatMessage('assistant', '✅ 日志记录已关闭');
+      this.messages.push(msg);
+      this.scrollToEnd();
+      this.saveHistory();
+      return true;
+    }
+
+    // --- 页面导航命令 ---
+    // 设置
+    if (has(['设置', 'setting'])) {
+      this.inputText = '';
+      router.pushUrl({ url: 'pages/SettingsRoutePage' });
+      return true;
+    }
+    // 经验
+    if (has(['经验', 'experience'])) {
+      this.inputText = '';
+      router.pushUrl({ url: 'pages/ExperienceRoutePage' });
+      return true;
+    }
+    // 对话/历史
+    if (has(['对话记录', '历史对话', '对话历史', 'conversation', 'history'])) {
+      this.inputText = '';
+      router.pushUrl({ url: 'pages/ConversationsRoutePage' });
+      return true;
+    }
+    // 记忆
+    if (has(['记忆', 'memory', 'memories'])) {
+      this.inputText = '';
+      router.pushUrl({ url: 'pages/MemoryRoutePage' });
+      return true;
+    }
+    // 技能
+    if (has(['技能', 'skill'])) {
+      this.inputText = '';
+      router.pushUrl({ url: 'pages/SkillsRoutePage' });
+      return true;
+    }
+    // 关于
+    if (has(['关于', 'about'])) {
+      this.inputText = '';
+      router.pushUrl({ url: 'pages/AboutRoutePage' });
+      return true;
+    }
+    // 日志 (generic — navigate to log page)
+    if (has(['日志', 'log'])) {
+      this.inputText = '';
+      router.pushUrl({ url: 'pages/LogRoutePage' });
+      return true;
+    }
+
+    return false;
+  }
+
+  /** Export logs to file (triggered from chat command) */
+  private exportLogsFromChat(): void {
+    let entries = this.log.getAll();
+    if (entries.length === 0) {
+      let msg = new ChatMessage('assistant', '📝 当前没有日志可导出');
+      this.messages.push(msg);
+      this.scrollToEnd();
+      return;
+    }
+
+    let lines: string[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      lines.push(entries[i].format());
+    }
+    let text = lines.join('\n');
+
+    let now = new Date();
+    let dateStr = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+    let fileName = `clawdbot_log_${dateStr}.txt`;
+
+    this.doExportLogsFromChat(text, fileName);
+  }
+
+  private async doExportLogsFromChat(text: string, fileName: string): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let docPicker = new picker.DocumentViewPicker(ctx);
+      let saveOpts = new picker.DocumentSaveOptions();
+      saveOpts.newFileNames = [fileName];
+      saveOpts.fileSuffixChoices = ['.txt'];
+
+      let uris = await docPicker.save(saveOpts);
+      if (uris.length === 0) {
+        let msg = new ChatMessage('assistant', '已取消导出');
+        this.messages.push(msg);
+        this.scrollToEnd();
+        return;
+      }
+      let uri = uris[0];
+
+      let file = fileIo.openSync(uri, fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(file.fd, text);
+      fileIo.closeSync(file);
+
+      let msg = new ChatMessage('assistant', `✅ 日志已导出: ${fileName}`);
+      this.messages.push(msg);
+      this.scrollToEnd();
+      this.saveHistory();
+    } catch (err) {
+      let errMsg = (err as Error).message ?? String(err);
+      let msg = new ChatMessage('assistant', `❌ 导出失败: ${errMsg}`);
+      this.messages.push(msg);
+      this.scrollToEnd();
+    }
+  }
+
+  /** Copy logs to clipboard (triggered from chat command) */
+  private copyLogsFromChat(): void {
+    let entries = this.log.getAll();
+    if (entries.length === 0) {
+      let msg = new ChatMessage('assistant', '📝 当前没有日志可复制');
+      this.messages.push(msg);
+      this.scrollToEnd();
+      return;
+    }
+
+    let lines: string[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      lines.push(entries[i].format());
+    }
+    let text = lines.join('\n');
+
+    let pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+    let sysBoard = pasteboard.getSystemPasteboard();
+    sysBoard.setData(pasteData);
+
+    let msg = new ChatMessage('assistant', `✅ 已复制 ${entries.length} 条日志到剪贴板`);
+    this.messages.push(msg);
+    this.scrollToEnd();
+    this.saveHistory();
+  }
+
   private async send(): Promise<void> {
     let text = this.inputText.trim();
     let hasImage = this.pendingImagePath.length > 0 || this.pendingImagePaths.length > 0;
     let hasAttachment = hasImage || this.pendingFileName.length > 0;
     if (text.length === 0 && !hasAttachment) return;
+
+    // Check for local shortcut commands first (no attachments needed)
+    if (!hasAttachment && this.handleLocalCommand(text)) {
+      return;
+    }
+
     this.inputText = '';
 
     // Capture pending attachments before clearing
@@ -4615,11 +4816,35 @@ Adjust your tone accordingly:
     this.talkStatus = I18n.t('chat.talkModeOn');
     this.log.info('ChatPage', 'Talk mode started');
 
+    // Try quick VAD init (from rawfile/cache), if not ready, start background download
+    // Talk mode starts immediately with RMS fallback, auto-switches to VAD once ready
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let vadService = VadService.getInstance();
+      if (!vadService.isInitialized()) {
+        let ok = await vadService.init(ctx);
+        if (ok) {
+          this.log.info('ChatPage', 'Talk mode: VAD ready immediately');
+        } else {
+          this.log.info('ChatPage', 'Talk mode: VAD not ready, starting with RMS, downloading in background...');
+          vadService.backgroundInit(ctx);
+        }
+      }
+    } catch (e) {
+      this.log.warn('ChatPage', `Talk mode: VAD init error: ${(e as Error).message ?? ''}, using RMS`);
+    }
+
     let sysMsg = new ChatMessage('assistant', '\uD83D\uDDE3 ' + I18n.t('chat.talkModeOn'));
     this.messages.push(sysMsg);
     this.scrollToEnd();
 
-    await this.talkCycle();
+    try {
+      await this.talkCycle();
+    } catch (e) {
+      this.log.error('ChatPage', `Talk mode cycle crashed: ${(e as Error).message ?? String(e)}`);
+    } finally {
+      this.stopTalkMode();
+    }
   }
 
   private updateWaveBars(level: number): void {
