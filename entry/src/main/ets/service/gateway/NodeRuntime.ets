@@ -47,7 +47,7 @@ import { LogService } from '../../common/LogService';
 import { Constants } from '../../common/Constants';
 import { NotificationHelper } from '../NotificationHelper';
 import { ExperienceStorage } from '../ExperienceStorage';
-import { ExperiencePack, Experience, Skill, ShareLevel, generateId } from '../../model/ExperiencePack';
+import { ExperiencePack, Experience, Skill, Memory, ShareLevel, generateId } from '../../model/ExperiencePack';
 import { MemoryService } from '../MemoryService';
 import { Monitor } from '../ModuleMonitor';
 import { ContextAwarenessService, ContextRecommendation } from '../context/ContextAwarenessService';
@@ -138,6 +138,7 @@ export class NodeRuntime {
 
   // Experience pull completion callbacks — notify MemoryPage when pull finishes
   private _experiencePullCallbacks: Array<(success: boolean, count: number) => void> = [];
+  private _experienceSyncActive: boolean = false;  // Suppress chat display during sync
 
   // Inline canvas controller — provided by ChatPage/MessageBubble for eval/snapshot
   private _inlineCanvasController: webview.WebviewController | undefined = undefined;
@@ -2134,6 +2135,12 @@ export class NodeRuntime {
           }, 3000);
         }
 
+        // Don't show experience sync messages in chat UI
+        if (this._experienceSyncActive) {
+          this.log.info(TAG, 'Suppressing experience sync message from chat display');
+          return;
+        }
+
         this.dispatchChatEvent(chatEvent);
       } catch (err) {
         this.log.error(TAG, `Failed to parse agent event: ${(err as Error).message ?? ''}`);
@@ -2564,6 +2571,7 @@ export class NodeRuntime {
 
   private async pullServerExperience(): Promise<void> {
     if (!this.nodeSession) return;
+    this._experienceSyncActive = true;
     try {
       let pullMessage = '[System: Experience pull request from mobile device]\n\n'
         + 'Read these workspace files: MEMORY.md, TOOLS.md, USER.md, SOUL.md, IDENTITY.md.\n'
@@ -2611,12 +2619,14 @@ export class NodeRuntime {
       let skillCount = (data['skills'] as Object[])?.length ?? 0;
       this.handleExperienceUpdate(JSON.stringify(data));
       this.log.info(TAG, `Experience pull data merged: ${memCount} memories, ${skillCount} skills`);
+      this._experienceSyncActive = false;
       for (let cb of this._experiencePullCallbacks) {
         cb(true, memCount);
       }
       this._experiencePullCallbacks = [];
     } catch (err) {
       this.log.error(TAG, `Failed to parse experience pull data: ${(err as Error).message ?? ''}`);
+      this._experienceSyncActive = false;
       for (let cb of this._experiencePullCallbacks) {
         cb(false, 0);
       }
@@ -2768,6 +2778,7 @@ export class NodeRuntime {
       setTimeout(() => {
         if (!resolved) {
           resolved = true;
+          this._experienceSyncActive = false;
           this._experiencePushCallbacks = [];
           resolve(false);
         }
@@ -2782,6 +2793,7 @@ export class NodeRuntime {
       this._experiencePushCallbacks = [];
       return;
     }
+    this._experienceSyncActive = true;
     try {
       let ctx = this._context;
       let memSvc = MemoryService.getInstance();
@@ -2880,6 +2892,7 @@ export class NodeRuntime {
       this.log.info(TAG, `Experience push sent: ${allItems.length} items, ${allSkills.length} skills`);
     } catch (err) {
       this.log.warn(TAG, `Experience push failed: ${(err as Error).message ?? ''}`);
+      this._experienceSyncActive = false;
       for (let cb of this._experiencePushCallbacks) { cb(false); }
       this._experiencePushCallbacks = [];
     }
@@ -2889,6 +2902,7 @@ export class NodeRuntime {
   detectExperiencePushConfirm(text: string): void {
     if (text.indexOf('<!--EXPERIENCE_PUSH_OK-->') >= 0) {
       this.log.info(TAG, 'Experience push confirmed by server');
+      this._experienceSyncActive = false;
       for (let cb of this._experiencePushCallbacks) { cb(true); }
       this._experiencePushCallbacks = [];
     }
