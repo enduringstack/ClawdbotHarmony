@@ -53,7 +53,7 @@ import { Monitor } from '../ModuleMonitor';
 import { ContextAwarenessService, ContextRecommendation } from '../context/ContextAwarenessService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.34.0';
+const APP_VERSION = '2.34.1';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -109,6 +109,7 @@ export class NodeRuntime {
   // Dedup: track runId+seq processed by 'agent' events to skip duplicate 'chat' events
   private _agentProcessedSeqs: Set<string> = new Set<string>();
   private _agentActiveRunId: string = '';
+  private _harmonyRunIds: Set<string> = new Set();
 
   // Multi-session routing: map runId → chatSessionId
   private _runSessionMap: Map<string, string> = new Map<string, string>();
@@ -511,6 +512,18 @@ export class NodeRuntime {
     // Also map the actual runId to the chatSessionId
     if (chatSessionId && runId !== idempotencyKey) {
       this._runSessionMap.set(runId, chatSessionId);
+    }
+
+    // Track as harmony-originated run
+    this._harmonyRunIds.add(runId);
+    this._harmonyRunIds.add(idempotencyKey);
+    // Keep set bounded
+    if (this._harmonyRunIds.size > 100) {
+      let iter = this._harmonyRunIds.keys();
+      let first: IteratorResult<string> = iter.next();
+      if (!first.done) {
+        this._harmonyRunIds.delete(first.value);
+      }
     }
 
     return runId;
@@ -2117,8 +2130,12 @@ export class NodeRuntime {
         if (dataObj !== undefined && dataObj !== null && typeof dataObj !== 'string') {
           let accumulatedText = dataObj['text'] !== undefined ? String(dataObj['text']) : '';
           if (accumulatedText.length > 0) {
-            this.detectExperienceInChat(accumulatedText);
+            let isExperiencePull = this.detectExperienceInChat(accumulatedText);
             this.detectExperiencePushConfirm(accumulatedText);
+            if (isExperiencePull) {
+              this.log.info(TAG, 'Suppressing experience pull response from chat display');
+              return;
+            }
           }
         }
 
@@ -2139,6 +2156,16 @@ export class NodeRuntime {
         if (this._experienceSyncActive) {
           this.log.info(TAG, 'Suppressing experience sync message from chat display');
           return;
+        }
+
+        // Filter: only show messages from harmony-originated runs
+        // Skip messages from other channels (webchat, telegram, feishu, etc.)
+        if (runId.length > 0 && !this._harmonyRunIds.has(runId)) {
+          // Also allow harmony sessionKey pattern
+          if (sessionKey.indexOf('harmony') < 0) {
+            this.log.debug(TAG, `Skipping non-harmony agent event: runId=${runId} sessionKey=${sessionKey}`);
+            return;
+          }
         }
 
         this.dispatchChatEvent(chatEvent);
@@ -2602,13 +2629,13 @@ export class NodeRuntime {
 
   /** Detect experience data in chat messages (from pull response).
    *  Called from chat event handlers. */
-  detectExperienceInChat(text: string): void {
+  detectExperienceInChat(text: string): boolean {
     let startMarker = '<!--EXPERIENCE_PULL_START-->';
     let endMarker = '<!--EXPERIENCE_PULL_END-->';
     let startIdx = text.indexOf(startMarker);
-    if (startIdx < 0) return;
+    if (startIdx < 0) return false;
     let endIdx = text.indexOf(endMarker, startIdx);
-    if (endIdx < 0) return;
+    if (endIdx < 0) return false;
 
     let jsonStr = text.substring(startIdx + startMarker.length, endIdx).trim();
     this.log.info(TAG, `Detected experience pull response: ${jsonStr.length} chars`);
@@ -2624,6 +2651,7 @@ export class NodeRuntime {
         cb(true, memCount);
       }
       this._experiencePullCallbacks = [];
+      return true;
     } catch (err) {
       this.log.error(TAG, `Failed to parse experience pull data: ${(err as Error).message ?? ''}`);
       this._experienceSyncActive = false;
@@ -2631,6 +2659,7 @@ export class NodeRuntime {
         cb(false, 0);
       }
       this._experiencePullCallbacks = [];
+      return true;  // Still suppress display even on parse error
     }
   }
 

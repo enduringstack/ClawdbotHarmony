@@ -11,6 +11,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { LogService } from '../../common/LogService';
 import { Command } from './GatewayProtocol';
+import { Monitor } from '../ModuleMonitor';
 
 const TAG = 'SpeakerCap';
 
@@ -73,6 +74,7 @@ export class SpeakerCapability {
     }
 
     this.log.info(TAG, `speak: textLen=${text.length} lang=${lang} speed=${speed} volume=${volume}`);
+    Monitor.startModule('Speaker');
 
     // Stop any previous TTS
     await this.stopTts();
@@ -153,18 +155,18 @@ export class SpeakerCapability {
     let speakPromise = new Promise<void>((resolve, reject) => {
       let listener: textToSpeech.SpeakListener = {
         onStart: (requestId: string, _response: textToSpeech.StartResponse) => {
-          this.log.info(TAG, `TTS started: requestId=${requestId}`);
+          this.log.debug(TAG, `TTS started: requestId=${requestId}`);
         },
         onComplete: (requestId: string, _response: textToSpeech.CompleteResponse) => {
-          this.log.info(TAG, `TTS synthesis done: requestId=${requestId} totalPcmBytes=${totalPcmBytes}`);
+          this.log.debug(TAG, `TTS synthesis done: requestId=${requestId} totalPcmBytes=${totalPcmBytes}`);
           // Wait for all pending PCM writes to finish before resolving
           writeQueue.then((): void => {
-            this.log.info(TAG, `All PCM writes flushed, resolving speak promise`);
+            this.log.debug(TAG, `All PCM writes flushed, resolving speak promise`);
             resolve();
           }).catch((): void => { resolve(); });
         },
         onStop: (requestId: string, _response: textToSpeech.StopResponse) => {
-          this.log.info(TAG, `TTS stopped: requestId=${requestId}`);
+          this.log.debug(TAG, `TTS stopped: requestId=${requestId}`);
           writeQueue.then((): void => { resolve(); }).catch((): void => { resolve(); });
         },
         onError: (requestId: string, errorCode: number, errorMessage: string) => {
@@ -350,7 +352,7 @@ export class SpeakerCapability {
       };
 
       this.player!.on('stateChange', (state: string) => {
-        this.log.info(TAG, `AVPlayer state: ${state}`);
+        this.log.debug(TAG, `AVPlayer state: ${state}`);
         switch (state) {
           case 'initialized':
             // Set audio renderer info for speaker output, then prepare
@@ -439,6 +441,7 @@ export class SpeakerCapability {
 
   private async stop(): Promise<string> {
     this.log.info(TAG, 'Stopping all audio...');
+    Monitor.stopModule('Speaker');
 
     await this.stopTts();
     await this.releasePlayer();

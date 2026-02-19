@@ -17,6 +17,7 @@ export struct LogPage {
   @State filterLevel: string = 'ALL';
   @State autoScroll: boolean = true;
   @State logEnabled: boolean = false;
+  @State debugEnabled: boolean = false;
   @State expandedTimestamps: number[] = [];
   @State @Watch('onLangChange') lang: string = 'zh';
 
@@ -24,10 +25,11 @@ export struct LogPage {
   private logListener: (() => void) | undefined = undefined;
   private langListener: (() => void) | undefined = undefined;
   private scroller: Scroller = new Scroller();
-  private levels: string[] = ['ALL', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
+  private levels: string[] = ['ALL', 'SYSTEM', 'INFO', 'WARN', 'ERROR', 'DEBUG'];
 
   aboutToAppear(): void {
     this.logEnabled = this.logSvc.enabled;
+    this.debugEnabled = this.logSvc.debugEnabled;
     this.logs = this.logSvc.getAll();
     this.logListener = () => {
       this.logs = this.logSvc.getFiltered(this.filterLevel);
@@ -67,21 +69,21 @@ export struct LogPage {
           .fontWeight(FontWeight.Bold)
           .fontColor('#1A1A1A')
 
-        // Log recording toggle
-        Toggle({ type: ToggleType.Switch, isOn: this.logEnabled })
+        // Debug logging toggle
+        Toggle({ type: ToggleType.Switch, isOn: this.debugEnabled })
           .selectedColor('#D2691E')
           .switchPointColor(Color.White)
           .width(44)
           .height(24)
           .margin({ left: 8 })
           .onChange((isOn: boolean) => {
-            this.logEnabled = isOn;
-            this.logSvc.enabled = isOn;
+            this.debugEnabled = isOn;
+            this.logSvc.debugEnabled = isOn;
           })
 
-        Text(I18n.t('log.recording'))
+        Text('Debug')
           .fontSize(11)
-          .fontColor(this.logEnabled ? '#D2691E' : '#999999')
+          .fontColor(this.debugEnabled ? '#D2691E' : '#999999')
           .margin({ left: 4 })
 
         Blank()

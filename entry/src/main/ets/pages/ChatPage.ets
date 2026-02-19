@@ -48,7 +48,8 @@ export struct ChatPage {
   @State loadingSessionId: string = '';  // tracks which session isLoading belongs to
   @State gwConnected: boolean = false;
   @State @Watch('onLangChange') lang: string = 'zh';
-  @State ttsAutoRead: boolean = false;
+  @State ttsAutoRead: boolean = true;
+  @State conciseMode: boolean = true;
   @State autoMemoryInject: boolean = Constants.DEFAULT_AUTO_MEMORY_INJECT;
   @State dotPhase: number = 0;
   @State isRecording: boolean = false;
@@ -91,11 +92,14 @@ export struct ChatPage {
   private lastPcmBuffers: ArrayBuffer[] = [];
   private cronTimer: number = -1;
   private talkModeActive: boolean = false;
+  private _preTalkConcise: boolean = true;
+  private _preTalkTts: boolean = true;
   private ttsCompletionResolve: (() => void) | undefined = undefined;
   private ttsPlaying: boolean = false;
 
   private scroller: Scroller = new Scroller();
   private lastScrollTime: number = 0;
+  private userScrolledUp: boolean = false;  // true when user has scrolled up during streaming
   private ai: AIService = AIService.getInstance();
   private memSvc: MemoryService = MemoryService.getInstance();
   private lastSearchResults: import('../model/Models').MemorySearchResult[] = []; // hybrid search results for source citation
@@ -432,15 +436,24 @@ export struct ChatPage {
             .padding(8)
             .onClick(() => { this.createNewSession(); })
 
+          // Concise mode toggle
+          Text(this.conciseMode ? '✂️' : '📝')
+            .fontSize(18)
+            .padding(8)
+            .opacity(this.conciseMode ? 1.0 : 0.4)
+            .onClick(() => {
+              this.conciseMode = !this.conciseMode;
+              this.saveChatPreferences();
+            })
+
           // TTS auto-read quick toggle
           Text(this.ttsAutoRead ? '\uD83D\uDD0A' : '\uD83D\uDD07')
             .fontSize(20)
             .padding(8)
             .onClick(() => {
               this.ttsAutoRead = !this.ttsAutoRead;
-              this.saveTtsAutoReadSetting();
+              this.saveChatPreferences();
               this.log.info('ChatPage', `TTS auto-read toggled: ${this.ttsAutoRead}`);
-              // Immediately stop any in-progress TTS/audio when muting
               if (!this.ttsAutoRead) {
                 NodeRuntime.getInstance().stopSpeaker().catch(() => { /* ignore */ });
               }
@@ -602,6 +615,18 @@ export struct ChatPage {
         .layoutWeight(1)
         .edgeEffect(EdgeEffect.Spring)
         .scrollBar(BarState.Off)
+        .onScrollFrameBegin((offset: number) => {
+          // offset > 0 means scrolling down, offset < 0 means scrolling up
+          if (offset < -5) {
+            // User is scrolling up — pause auto-scroll
+            this.userScrolledUp = true;
+          }
+          return { offsetRemain: offset };
+        })
+        .onReachEnd(() => {
+          // User scrolled back to bottom — resume auto-scroll
+          this.userScrolledUp = false;
+        })
       }
 
       // -- input bar --
@@ -1608,9 +1633,12 @@ Respond ONLY with the JSON array.`;
    * Order matters: more specific matches (e.g. "清除日志") must come before generic ones (e.g. "日志").
    */
   private handleLocalCommand(text: string): boolean {
-    let s = text.toLowerCase();
+    // Only handle commands starting with "/"
+    if (!text.startsWith('/')) return false;
 
-    // Helper: check if input contains ANY of the given keywords
+    let s = text.substring(1).toLowerCase().trim();
+
+    // Helper: check if command matches ANY of the given keywords
     let has = (keywords: string[]): boolean => {
       for (let kw of keywords) {
         if (s.indexOf(kw) >= 0) return true;
@@ -1804,6 +1832,9 @@ Respond ONLY with the JSON array.`;
       return;
     }
 
+    // User is sending a message — reset scroll lock so auto-scroll resumes
+    this.userScrolledUp = false;
+
     this.inputText = '';
 
     // Capture pending attachments before clearing
@@ -1989,8 +2020,14 @@ Respond ONLY with the JSON array.`;
       this.messages.push(assistantMsg);
       this.scrollToEnd();
 
+      // Prepend concise instruction if enabled
+      let msgText = text;
+      if (this.conciseMode) {
+        msgText = '[请用中文简短回答，不要翻译成英文] ' + text;
+      }
+
       let runtime = NodeRuntime.getInstance();
-      let runId = await runtime.sendChatMessage(text, this.currentSessionId, attachments.length > 0 ? attachments : undefined);
+      let runId = await runtime.sendChatMessage(msgText, this.currentSessionId, attachments.length > 0 ? attachments : undefined);
       this.log.info('ChatPage', `chat.send returned runId=${runId}, current gwRunId=${this.gwRunId} session=${this.currentSessionId}`);
 
       // Only set gwRunId from RPC if events haven't already set it
@@ -4153,7 +4190,8 @@ Adjust your tone accordingly:
     }
   }
 
-  private scrollToEnd(): void {
+  private scrollToEnd(force: boolean = false): void {
+    if (!force && this.userScrolledUp) return;  // User is reading history, don't auto-scroll
     setTimeout(() => {
       this.scroller.scrollEdge(Edge.Bottom);
     }, 100);
@@ -4161,6 +4199,7 @@ Adjust your tone accordingly:
 
   // Throttled scroll for streaming - max once per 200ms
   private scrollToEndThrottled(): void {
+    if (this.userScrolledUp) return;  // User is reading history
     let now = Date.now();
     if (now - this.lastScrollTime > 200) {
       this.lastScrollTime = now;
@@ -4271,24 +4310,27 @@ Adjust your tone accordingly:
 
   // ---- TTS Auto-read ----
 
-  /** Load the TTS auto-read preference from gateway settings. */
+  /** Load chat preferences (TTS, concise mode). */
   private async loadTtsAutoReadSetting(): Promise<void> {
     try {
       let ctx = getContext(this) as common.UIAbilityContext;
       let store = await preferences.getPreferences(ctx, Constants.PREFS_GATEWAY);
-      this.ttsAutoRead = (await store.get('ttsAutoRead', false)) as boolean;
-      this.log.info('ChatPage', `TTS auto-read loaded: ${this.ttsAutoRead}`);
+      this.ttsAutoRead = (await store.get('ttsAutoRead', true)) as boolean;
+      this.conciseMode = (await store.get('conciseMode', true)) as boolean;
+      this.log.info('ChatPage', `Chat prefs loaded: tts=${this.ttsAutoRead} concise=${this.conciseMode}`);
     } catch {
-      this.ttsAutoRead = false;
+      this.ttsAutoRead = true;
+      this.conciseMode = true;
     }
   }
 
-  /** Save the TTS auto-read preference (called when toggled from chat header). */
-  private async saveTtsAutoReadSetting(): Promise<void> {
+  /** Save chat preferences. */
+  private async saveChatPreferences(): Promise<void> {
     try {
       let ctx = getContext(this) as common.UIAbilityContext;
       let store = await preferences.getPreferences(ctx, Constants.PREFS_GATEWAY);
       await store.put('ttsAutoRead', this.ttsAutoRead);
+      await store.put('conciseMode', this.conciseMode);
       await store.flush();
     } catch { /* ignore */ }
   }
@@ -4816,6 +4858,12 @@ Adjust your tone accordingly:
     this.talkStatus = I18n.t('chat.talkModeOn');
     this.log.info('ChatPage', 'Talk mode started');
 
+    // Auto-enable concise mode and TTS for talk mode
+    this._preTalkConcise = this.conciseMode;
+    this._preTalkTts = this.ttsAutoRead;
+    this.conciseMode = true;
+    this.ttsAutoRead = true;
+
     // Try quick VAD init (from rawfile/cache), if not ready, start background download
     // Talk mode starts immediately with RMS fallback, auto-switches to VAD once ready
     try {
@@ -4867,6 +4915,10 @@ Adjust your tone accordingly:
     this.currentMood = '';
     this.asrReading = false;
     this.showWaveform = false;
+
+    // Restore pre-talk-mode settings
+    this.conciseMode = this._preTalkConcise;
+    this.ttsAutoRead = this._preTalkTts;
     this.waveBars = [0, 0, 0, 0, 0, 0, 0];
     this.ttsPlaying = false;
 
@@ -4881,6 +4933,9 @@ Adjust your tone accordingly:
 
     // Cleanup audio resources
     this.cleanupAsr().catch(() => { /* ignore */ });
+
+    // Release VAD model to free memory and reduce heat
+    VadService.getInstance().release();
 
     this.log.info('ChatPage', 'Talk mode stopped');
   }

@@ -62,7 +62,7 @@ export class HabitChainService {
   
   private addDefaultChains(): void {
     // 示例：早起健康习惯
-    const morningChain: HabitChain = {
+    let morningChain: HabitChain = {
       id: 'morning_health',
       name: '早起健康习惯',
       description: '健康的早晨从这里开始',
@@ -124,7 +124,7 @@ export class HabitChainService {
     this.chains.set(morningChain.id, morningChain);
     
     // 示例：睡前习惯
-    const nightChain: HabitChain = {
+    let nightChain: HabitChain = {
       id: 'night_routine',
       name: '睡前放松',
       description: '准备一个好睡眠',
@@ -182,7 +182,7 @@ export class HabitChainService {
   
   removeChain(id: string): boolean {
     this.stopChain(id);
-    const removed = this.chains.delete(id);
+    let removed = this.chains.delete(id);
     if (removed) {
       this.saveAsync();
     }
@@ -198,7 +198,7 @@ export class HabitChainService {
   }
   
   enableChain(id: string, enabled: boolean): void {
-    const chain = this.chains.get(id);
+    let chain = this.chains.get(id);
     if (!chain) return;
     
     chain.enabled = enabled;
@@ -216,10 +216,10 @@ export class HabitChainService {
    * 标记当前步骤完成，进入下一步
    */
   completeCurrentStep(chainId: string): HabitStep | undefined {
-    const chain = this.chains.get(chainId);
+    let chain = this.chains.get(chainId);
     if (!chain) return undefined;
     
-    const currentStep = chain.steps[chain.currentStepIndex];
+    let currentStep = chain.steps[chain.currentStepIndex];
     if (!currentStep) return undefined;
     
     // 标记完成
@@ -237,7 +237,7 @@ export class HabitChainService {
       this.onChainCompleted(chain);
     } else {
       // 提醒下一步
-      const nextStep = chain.steps[chain.currentStepIndex];
+      let nextStep = chain.steps[chain.currentStepIndex];
       this.remindStep(chain, nextStep);
     }
     
@@ -249,10 +249,10 @@ export class HabitChainService {
    * 跳过当前步骤
    */
   skipCurrentStep(chainId: string): HabitStep | undefined {
-    const chain = this.chains.get(chainId);
+    let chain = this.chains.get(chainId);
     if (!chain) return undefined;
     
-    const currentStep = chain.steps[chain.currentStepIndex];
+    let currentStep = chain.steps[chain.currentStepIndex];
     if (!currentStep) return undefined;
     
     this.log.info(TAG, `Step skipped: ${chain.name} / ${currentStep.name}`);
@@ -265,7 +265,7 @@ export class HabitChainService {
       // 部分完成
       chain.partialCount++;
     } else {
-      const nextStep = chain.steps[chain.currentStepIndex];
+      let nextStep = chain.steps[chain.currentStepIndex];
       this.remindStep(chain, nextStep);
     }
     
@@ -277,7 +277,7 @@ export class HabitChainService {
    * 获取当前需要完成的步骤
    */
   getCurrentStep(chainId: string): HabitStep | undefined {
-    const chain = this.chains.get(chainId);
+    let chain = this.chains.get(chainId);
     if (!chain || chain.currentStepIndex >= chain.steps.length) {
       return undefined;
     }
@@ -285,7 +285,7 @@ export class HabitChainService {
   }
   
   private onChainCompleted(chain: HabitChain): void {
-    const allCompleted = chain.steps.every(s => s.completedToday);
+    let allCompleted = chain.steps.every(s => s.completedToday);
     
     if (allCompleted) {
       chain.completionCount++;
@@ -315,21 +315,21 @@ export class HabitChainService {
   }
   
   private startChain(chainId: string): void {
-    const chain = this.chains.get(chainId);
+    let chain = this.chains.get(chainId);
     if (!chain || !chain.timeTrigger) return;
     
     // 清除旧的定时器
     this.stopChain(chainId);
     
-    const trigger = chain.timeTrigger;
+    let trigger = chain.timeTrigger;
     
     if (trigger.type === 'daily' && trigger.time) {
       // 计算下次触发时间
-      const nextTrigger = this.getNextDailyTrigger(trigger.time, trigger.daysOfWeek);
-      const delay = nextTrigger - Date.now();
+      let nextTrigger = this.getNextDailyTrigger(trigger.time, trigger.daysOfWeek);
+      let delay = nextTrigger - Date.now();
       
       if (delay > 0) {
-        const timerId = setTimeout(() => {
+        let timerId = setTimeout(() => {
           this.onChainTriggered(chainId);
         }, delay);
         
@@ -340,7 +340,7 @@ export class HabitChainService {
   }
   
   private stopChain(chainId: string): void {
-    const timerId = this.timers.get(chainId);
+    let timerId = this.timers.get(chainId);
     if (timerId !== undefined) {
       clearTimeout(timerId);
       this.timers.delete(chainId);
@@ -348,9 +348,9 @@ export class HabitChainService {
   }
   
   private getNextDailyTrigger(time: string, daysOfWeek?: number[]): number {
-    const [hours, minutes] = time.split(':').map(Number);
-    const now = new Date();
-    const target = new Date();
+    let [hours, minutes] = time.split(':').map(Number);
+    let now = new Date();
+    let target = new Date();
     
     target.setHours(hours, minutes, 0, 0);
     
@@ -370,7 +370,7 @@ export class HabitChainService {
   }
   
   private onChainTriggered(chainId: string): void {
-    const chain = this.chains.get(chainId);
+    let chain = this.chains.get(chainId);
     if (!chain || !chain.enabled) return;
     
     this.log.info(TAG, `Chain triggered: ${chain.name}`);
@@ -402,7 +402,7 @@ export class HabitChainService {
   
   private async sendNotification(title: string, content: string): Promise<void> {
     try {
-      const request: notificationManager.NotificationRequest = {
+      let request: notificationManager.NotificationRequest = {
         id: Date.now() % 100000,
         content: {
           notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
@@ -422,7 +422,7 @@ export class HabitChainService {
   // ==================== 每日重置 ====================
   
   private resetDailyStatus(): void {
-    const today = new Date().toISOString().split('T')[0];
+    let today = new Date().toISOString().split('T')[0];
     
     for (const chain of this.chains.values()) {
       if (chain.lastResetDate !== today) {
@@ -432,11 +432,11 @@ export class HabitChainService {
   }
   
   private resetChainDaily(chain: HabitChain): void {
-    const today = new Date().toISOString().split('T')[0];
+    let today = new Date().toISOString().split('T')[0];
     
     // 检查昨天是否完成（用于连续天数）
     if (chain.lastResetDate && chain.lastResetDate !== today) {
-      const allCompleted = chain.steps.every(s => s.completedToday);
+      let allCompleted = chain.steps.every(s => s.completedToday);
       if (!allCompleted) {
         chain.streakDays = 0;
       }
@@ -460,7 +460,7 @@ export class HabitChainService {
   }
   
   removeListener(listener: HabitEventListener): void {
-    const idx = this.listeners.indexOf(listener);
+    let idx = this.listeners.indexOf(listener);
     if (idx >= 0) this.listeners.splice(idx, 1);
   }
   
@@ -516,8 +516,8 @@ export class HabitChainService {
   private async saveAsync(): Promise<void> {
     if (!this.context) return;
     try {
-      const store = await preferences.getPreferences(this.context, PREFS_NAME);
-      const data = JSON.stringify(Array.from(this.chains.entries()));
+      let store = await preferences.getPreferences(this.context, PREFS_NAME);
+      let data = JSON.stringify(Array.from(this.chains.entries()));
       await store.put(KEY_CHAINS, data);
       await store.flush();
     } catch (err) {
@@ -527,9 +527,9 @@ export class HabitChainService {
   
   private async loadChains(context: common.UIAbilityContext): Promise<void> {
     try {
-      const store = await preferences.getPreferences(context, PREFS_NAME);
-      const data = await store.get(KEY_CHAINS, '[]') as string;
-      const entries = JSON.parse(data) as [string, HabitChain][];
+      let store = await preferences.getPreferences(context, PREFS_NAME);
+      let data = await store.get(KEY_CHAINS, '[]') as string;
+      let entries = JSON.parse(data) as [string, HabitChain][];
       this.chains = new Map(entries);
     } catch (err) {
       this.log.warn(TAG, `Failed to load: ${(err as Error).message}`);

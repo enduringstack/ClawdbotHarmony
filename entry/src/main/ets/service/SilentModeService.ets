@@ -11,6 +11,7 @@ import { LocalAsrService } from './LocalAsrService';
 import { AIService } from './AIService';
 import { ConversationStore } from './ConversationStore';
 import { VadService } from './VadService';
+import { Monitor } from './ModuleMonitor';
 
 type StateListener = (state: string) => void;
 
@@ -86,7 +87,7 @@ export class SilentModeService {
       let atManager = abilityAccessCtrl.createAtManager();
       let permResult = await atManager.requestPermissionsFromUser(context, ['ohos.permission.MICROPHONE']);
       if (permResult.authResults[0] !== 0) {
-        this.log.error(this.TAG, 'Mic permission denied');
+        this.log.system(this.TAG, 'Mic permission denied');
         return false;
       }
     } catch (err) {
@@ -172,6 +173,7 @@ export class SilentModeService {
     this.audioReadLoop();
 
     this.log.info(this.TAG, `Started recording, record=${recordId}`);
+    Monitor.startModule('SilentMode');
     return true;
   }
 
@@ -206,9 +208,9 @@ export class SilentModeService {
       // 9800001 - Permission denied (need KEEP_BACKGROUND_RUNNING)
       // 9800003 - Background mode not configured in module.json5
       if (code === 9800001) {
-        this.log.error(this.TAG, 'Missing ohos.permission.KEEP_BACKGROUND_RUNNING permission');
+        this.log.system(this.TAG, 'Missing ohos.permission.KEEP_BACKGROUND_RUNNING permission');
       } else if (code === 9800003) {
-        this.log.error(this.TAG, 'backgroundModes not configured in module.json5');
+        this.log.system(this.TAG, 'backgroundModes not configured in module.json5');
       }
     }
   }
@@ -247,6 +249,7 @@ export class SilentModeService {
     // Set state to idle immediately for responsive UI
     this.setState('idle');
     this.log.info(this.TAG, 'Stopped (processing in background)');
+    Monitor.stopModule('SilentMode');
 
     // Process remaining work in background (don't block UI)
     this.finishRecordingInBackground();
@@ -297,7 +300,7 @@ export class SilentModeService {
 
         // Log status every 10 seconds
         if (now - lastLogTime >= 10000) {
-          this.log.info(this.TAG, `🎙️ Recording active: loops=${loopCount} entries=${this.currentRecord?.entries.length ?? 0}`);
+          this.log.debug(this.TAG, `🎙️ Recording active: loops=${loopCount} entries=${this.currentRecord?.entries.length ?? 0}`);
           lastLogTime = now;
         }
 
@@ -475,7 +478,7 @@ export class SilentModeService {
       // Convert to Float32 for voiceprint
       let float32 = this.chunksToFloat32(bufs);
       let durationSec = float32.length / 16000;
-      this.log.info(this.TAG, `Processing segment: ${float32.length} samples (${durationSec.toFixed(2)}s)`);
+      this.log.debug(this.TAG, `Processing segment: ${float32.length} samples (${durationSec.toFixed(2)}s)`);
 
       // Speaker identification
       let speakerId = '';
@@ -491,14 +494,14 @@ export class SilentModeService {
         let emb = vpService.extractEmbedding(float32, 16000);
         if (emb) {
           embeddingArray = Array.from(emb);
-          this.log.info(this.TAG, `Extracted embedding: dim=${emb.length}`);
+          this.log.debug(this.TAG, `Extracted embedding: dim=${emb.length}`);
         } else {
           this.log.warn(this.TAG, 'Failed to extract embedding (audio too short or error)');
         }
 
         // Try to identify speaker
         let result = vpService.identify(float32, 16000);
-        this.log.info(this.TAG, `Identify result: speaker="${result.speaker}" score=${result.score.toFixed(3)} conf=${result.confidence}`);
+        this.log.debug(this.TAG, `Identify result: speaker="${result.speaker}" score=${result.score.toFixed(3)} conf=${result.confidence}`);
         if (result.speaker && result.speaker !== 'unknown' && result.speaker !== '') {
           speakerId = result.speaker;
           confidence = result.score;

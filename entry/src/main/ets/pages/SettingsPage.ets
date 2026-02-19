@@ -17,6 +17,7 @@ import { VoiceprintManager } from '../components/VoiceprintManager';
 import { ExperienceStorage } from '../service/ExperienceStorage';
 import socket from '@ohos.net.socket';
 import { util } from '@kit.ArkTS';
+import { Monitor, ModuleStat } from '../service/ModuleMonitor';
 
 interface BmExecResult {
   exitCode: number;
@@ -146,17 +147,25 @@ export struct SettingsPage {
   @State expSyncedAt: number = 0;
   @State expLoaded: boolean = false;
 
+  // Module Monitor
+  @State moduleStats: ModuleStat[] = [];
+  @State showModuleMonitor: boolean = false;
+  // Context Awareness
+  @State contextAwarenessEnabled: boolean = false;
+
   private gwListener: ((state: ConnectionState, text: string) => void) | undefined = undefined;
   private langListener: (() => void) | undefined = undefined;
   private identityListener: ((identity: AgentIdentity | undefined) => void) | undefined = undefined;
 
   aboutToAppear(): void {
     this.load();
+    this.loadContextAwareness();
     this.loadGateway();
     this.loadEmail();
     this.loadFeishu();
     this.loadProfiles();
     this.loadExperienceSummary();
+    this.loadModuleStats();
     this.lang = I18n.lang;
     this.langListener = () => { this.lang = I18n.lang; };
     I18n.addListener(this.langListener);
@@ -1460,12 +1469,42 @@ export struct SettingsPage {
         .backgroundColor(Color.White)
         .borderRadius(12)
 
+        // =============== Context Awareness ===============
+        this.SectionTitle('情景智能')
+        Column() {
+          Row() {
+            Column({ space: 2 }) {
+              Text('情景智能')
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+              Text('传感器+定位持续采集，耗电较高')
+                .fontSize(11)
+                .fontColor('#999999')
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Toggle({ type: ToggleType.Switch, isOn: this.contextAwarenessEnabled })
+              .selectedColor('#007AFF')
+              .onChange((isOn: boolean) => {
+                this.contextAwarenessEnabled = isOn;
+                NodeRuntime.getInstance().setContextAwarenessEnabled(isOn);
+              })
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .padding(16)
+        .margin({ left: 16, right: 16 })
+        .backgroundColor(Color.White)
+        .borderRadius(12)
+
         // =============== About ===============
         this.SectionTitle(I18n.t('settings.about'))
         Column() {
           this.InfoRow(I18n.t('settings.appName'), 'ClawdBot')
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
-          this.InfoRow(I18n.t('settings.version'), '2.33.4')
+          this.InfoRow(I18n.t('settings.version'), '2.34.1')
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
           this.InfoRow(I18n.t('settings.developer'), 'OpenClaw')
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
@@ -1565,6 +1604,40 @@ export struct SettingsPage {
 
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
 
+          // Sync to server
+          Row() {
+            Text('同步到服务端')
+              .fontSize(14)
+              .fontColor('#007AFF')
+              .layoutWeight(1)
+            Text('>')
+              .fontSize(14)
+              .fontColor('#CCCCCC')
+          }
+          .width('100%')
+          .height(44)
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => { this.syncExperienceToServer(); })
+
+          Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
+
+          // Pull from server
+          Row() {
+            Text('从服务端拉取')
+              .fontSize(14)
+              .fontColor('#007AFF')
+              .layoutWeight(1)
+            Text('>')
+              .fontSize(14)
+              .fontColor('#CCCCCC')
+          }
+          .width('100%')
+          .height(44)
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => { this.pullExperienceFromServer(); })
+
+          Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
+
           // Clear
           Row() {
             Text('清除经验')
@@ -1587,7 +1660,7 @@ export struct SettingsPage {
         this.SectionTitle(I18n.t('settings.profiles'))
         Column() {
           // Saved profiles list
-          if (this.profiles.filter((p: SettingsProfile) => p.mode === this.settingsTab).length === 0) {
+          if (this.profiles.length === 0) {
             Text(I18n.t('settings.profileEmpty'))
               .fontSize(13)
               .fontColor('#999999')
@@ -1595,7 +1668,7 @@ export struct SettingsPage {
               .textAlign(TextAlign.Center)
               .padding({ top: 8, bottom: 8 })
           } else {
-            ForEach(this.profiles.filter((p: SettingsProfile) => p.mode === this.settingsTab),
+            ForEach(this.profiles,
               (profile: SettingsProfile) => {
                 Row() {
                   Column() {
@@ -1675,6 +1748,85 @@ export struct SettingsPage {
                 this.showProfileSave = true;
                 this.profileNameInput = '';
               })
+          }
+        }
+        .width('100%')
+        .padding(16)
+        .margin({ left: 16, right: 16 })
+        .backgroundColor(Color.White)
+        .borderRadius(12)
+
+        // =============== Module Monitor ===============
+        this.SectionTitle('模块监控')
+        Column() {
+          Row() {
+            Text('显示模块状态')
+              .fontSize(14)
+              .fontColor('#1A1A1A')
+              .layoutWeight(1)
+            Toggle({ type: ToggleType.Switch, isOn: this.showModuleMonitor })
+              .onChange((isOn: boolean) => {
+                this.showModuleMonitor = isOn;
+                if (isOn) {
+                  this.loadModuleStats();
+                }
+              })
+          }
+          .width('100%')
+          .height(44)
+          .alignItems(VerticalAlign.Center)
+
+          if (this.showModuleMonitor) {
+            Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
+
+            ForEach(this.moduleStats, (stat: ModuleStat) => {
+              Column() {
+                Row() {
+                  Circle({ width: 8, height: 8 })
+                    .fill(stat.isActive ? Color.Green : Color.Gray)
+                    .margin({ right: 8 })
+                  Text(stat.name)
+                    .fontSize(14)
+                    .fontColor('#1A1A1A')
+                    .layoutWeight(1)
+                  Text(Monitor.formatRuntime(stat.cumulativeRuntimeMs))
+                    .fontSize(12)
+                    .fontColor('#666666')
+                }
+                .width('100%')
+                .height(32)
+                .alignItems(VerticalAlign.Center)
+
+                Row() {
+                  Text(`调用: ${stat.callCount}次`)
+                    .fontSize(11)
+                    .fontColor('#999999')
+                    .margin({ left: 16 })
+                    .layoutWeight(1)
+                  Text(`最后活跃: ${Monitor.formatLastActive(stat.lastActiveTime)}`)
+                    .fontSize(11)
+                    .fontColor('#999999')
+                }
+                .width('100%')
+                .height(20)
+                .alignItems(VerticalAlign.Center)
+              }
+            }, (stat: ModuleStat) => stat.name)
+
+            Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
+            Row() {
+              Text('🔄 刷新状态')
+                .fontSize(14)
+                .fontColor('#007AFF')
+            }
+            .width('100%')
+            .height(36)
+            .alignItems(VerticalAlign.Center)
+            .justifyContent(FlexAlign.Center)
+            .onClick(() => {
+              this.loadModuleStats();
+              promptAction.showToast({ message: '已刷新', duration: 800 });
+            })
           }
         }
         .width('100%')
@@ -2060,6 +2212,14 @@ export struct SettingsPage {
     } catch { /* first launch defaults */ }
   }
 
+  private async loadContextAwareness(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let store = await preferences.getPreferences(ctx, 'chat_prefs');
+      this.contextAwarenessEnabled = (await store.get('contextAwarenessEnabled', false)) as boolean;
+    } catch { /* default false */ }
+  }
+
   private async loadGateway(): Promise<void> {
     try {
       let ctx = getContext(this) as common.UIAbilityContext;
@@ -2431,44 +2591,45 @@ export struct SettingsPage {
     if (name.length === 0) return;
 
     let data: Record<string, string | number | boolean> = {};
-    if (this.settingsTab === 'operator' || (!this.showTabs() && this.modesInclude('operator'))) {
-      // Standalone mode settings
-      this.savedModels[this.provider] = this.model;
-      this.savedKeys[this.provider] = this.apiKey;
-      this.savedUrls[this.provider] = this.baseUrl;
-      data['provider'] = this.provider;
-      data['temperature'] = this.temperature;
-      data['model'] = this.model;
-      data['apiKey'] = this.apiKey;
-      data['baseUrl'] = this.baseUrl;
-      data['asrMode'] = this.asrMode;
-      data['asrApiUrl'] = this.asrApiUrl;
-      data['asrApiKey'] = this.asrApiKey;
-      data['asrModel'] = this.asrModel;
-      data['embeddingApiKey'] = this.embeddingApiKey;
-      data['soul'] = this.soul;
-    } else {
-      // Node mode settings
-      data['gwHost'] = this.gwHost;
-      data['gwPort'] = this.gwPort;
-      data['gwUseTls'] = this.gwUseTls;
-      data['gwToken'] = this.gwToken;
-      data['gwPassword'] = this.gwPassword;
-      data['capLocation'] = this.capLocation;
-      data['capCamera'] = this.capCamera;
-      data['capCanvas'] = this.capCanvas;
-      data['capScreen'] = this.capScreen;
-      data['capNotification'] = this.capNotification;
-      data['capMicrophone'] = this.capMicrophone;
-      data['capSpeaker'] = this.capSpeaker;
-      data['capEmail'] = this.capEmail;
-      data['unreadNotification'] = this.unreadNotification;
-      data['ttsAutoRead'] = this.ttsAutoRead;
-      data['autoMemoryInject'] = this.autoMemoryInject;
-    }
+    // Save ALL settings in one profile
+    // Operator settings
+    this.savedModels[this.provider] = this.model;
+    this.savedKeys[this.provider] = this.apiKey;
+    this.savedUrls[this.provider] = this.baseUrl;
+    data['provider'] = this.provider;
+    data['temperature'] = this.temperature;
+    data['model'] = this.model;
+    data['apiKey'] = this.apiKey;
+    data['baseUrl'] = this.baseUrl;
+    data['asrMode'] = this.asrMode;
+    data['asrApiUrl'] = this.asrApiUrl;
+    data['asrApiKey'] = this.asrApiKey;
+    data['asrModel'] = this.asrModel;
+    data['embeddingApiKey'] = this.embeddingApiKey;
+    data['soul'] = this.soul;
+    data['assistantName'] = this.assistantName;
+    data['assistantAvatar'] = this.assistantAvatar;
+    // Gateway/Node settings
+    data['gwEnabled'] = this.gwEnabled;
+    data['operatorEnabled'] = this.operatorEnabled;
+    data['gwHost'] = this.gwHost;
+    data['gwPort'] = this.gwPort;
+    data['gwUseTls'] = this.gwUseTls;
+    data['gwToken'] = this.gwToken;
+    data['gwPassword'] = this.gwPassword;
+    data['capLocation'] = this.capLocation;
+    data['capCamera'] = this.capCamera;
+    data['capCanvas'] = this.capCanvas;
+    data['capScreen'] = this.capScreen;
+    data['capNotification'] = this.capNotification;
+    data['capMicrophone'] = this.capMicrophone;
+    data['capSpeaker'] = this.capSpeaker;
+    data['capEmail'] = this.capEmail;
+    data['unreadNotification'] = this.unreadNotification;
+    data['ttsAutoRead'] = this.ttsAutoRead;
+    data['autoMemoryInject'] = this.autoMemoryInject;
 
-    let mode = (this.settingsTab === 'node' || (!this.showTabs() && this.modesInclude('node') && !this.modesInclude('operator')))
-      ? 'node' : 'operator';
+    let mode = 'all';
 
     let profile: SettingsProfile = {
       name: name,
@@ -2484,48 +2645,73 @@ export struct SettingsPage {
     promptAction.showToast({ message: I18n.t('settings.profileSaved'), duration: 1500 });
   }
 
-  private loadProfile(profile: SettingsProfile): void {
+  private async loadProfile(profile: SettingsProfile): Promise<void> {
     try {
       let data: Record<string, string | number | boolean> = JSON.parse(profile.data) as Record<string, string | number | boolean>;
-      if (profile.mode === 'operator') {
-        if (data['provider'] !== undefined) this.provider = data['provider'] as string;
-        if (data['temperature'] !== undefined) this.temperature = data['temperature'] as number;
-        if (data['model'] !== undefined) this.model = data['model'] as string;
-        if (data['apiKey'] !== undefined) this.apiKey = data['apiKey'] as string;
-        if (data['baseUrl'] !== undefined) this.baseUrl = data['baseUrl'] as string;
-        if (data['asrMode'] !== undefined) this.asrMode = data['asrMode'] as string;
-        if (data['asrApiUrl'] !== undefined) this.asrApiUrl = data['asrApiUrl'] as string;
-        if (data['asrApiKey'] !== undefined) this.asrApiKey = data['asrApiKey'] as string;
-        if (data['asrModel'] !== undefined) this.asrModel = data['asrModel'] as string;
-        if (data['embeddingApiKey'] !== undefined) this.embeddingApiKey = data['embeddingApiKey'] as string;
-        if (data['soul'] !== undefined) this.soul = data['soul'] as string;
-        // Update per-provider maps
-        this.savedModels[this.provider] = this.model;
-        this.savedKeys[this.provider] = this.apiKey;
-        this.savedUrls[this.provider] = this.baseUrl;
-      } else {
-        if (data['gwHost'] !== undefined) this.gwHost = data['gwHost'] as string;
-        if (data['gwPort'] !== undefined) this.gwPort = data['gwPort'] as string;
-        if (data['gwUseTls'] !== undefined) this.gwUseTls = data['gwUseTls'] as boolean;
-        if (data['gwToken'] !== undefined) this.gwToken = data['gwToken'] as string;
-        if (data['gwPassword'] !== undefined) this.gwPassword = data['gwPassword'] as string;
-        if (data['capLocation'] !== undefined) this.capLocation = data['capLocation'] as boolean;
-        if (data['capCamera'] !== undefined) this.capCamera = data['capCamera'] as boolean;
-        if (data['capCanvas'] !== undefined) this.capCanvas = data['capCanvas'] as boolean;
-        if (data['capScreen'] !== undefined) this.capScreen = data['capScreen'] as boolean;
-        if (data['capNotification'] !== undefined) this.capNotification = data['capNotification'] as boolean;
-        if (data['capMicrophone'] !== undefined) this.capMicrophone = data['capMicrophone'] as boolean;
-        if (data['capSpeaker'] !== undefined) this.capSpeaker = data['capSpeaker'] as boolean;
-        if (data['capEmail'] !== undefined) this.capEmail = data['capEmail'] as boolean;
-        if (data['unreadNotification'] !== undefined) {
-          this.unreadNotification = data['unreadNotification'] as boolean;
-          NodeRuntime.getInstance().setUnreadNotificationEnabled(this.unreadNotification);
-        }
-        if (data['ttsAutoRead'] !== undefined) this.ttsAutoRead = data['ttsAutoRead'] as boolean;
-        if (data['autoMemoryInject'] !== undefined) this.autoMemoryInject = data['autoMemoryInject'] as boolean;
+      let keys = Object.keys(data);
+      // Load ALL settings from profile
+      // Operator settings
+      if (data['provider'] !== undefined) this.provider = data['provider'] as string;
+      if (data['temperature'] !== undefined) this.temperature = data['temperature'] as number;
+      if (data['model'] !== undefined) this.model = data['model'] as string;
+      if (data['apiKey'] !== undefined) this.apiKey = data['apiKey'] as string;
+      if (data['baseUrl'] !== undefined) this.baseUrl = data['baseUrl'] as string;
+      if (data['asrMode'] !== undefined) this.asrMode = data['asrMode'] as string;
+      if (data['asrApiUrl'] !== undefined) this.asrApiUrl = data['asrApiUrl'] as string;
+      if (data['asrApiKey'] !== undefined) this.asrApiKey = data['asrApiKey'] as string;
+      if (data['asrModel'] !== undefined) this.asrModel = data['asrModel'] as string;
+      if (data['embeddingApiKey'] !== undefined) this.embeddingApiKey = data['embeddingApiKey'] as string;
+      if (data['soul'] !== undefined) this.soul = data['soul'] as string;
+      if (data['assistantName'] !== undefined) this.assistantName = data['assistantName'] as string;
+      if (data['assistantAvatar'] !== undefined) this.assistantAvatar = data['assistantAvatar'] as string;
+      // Update per-provider maps
+      this.savedModels[this.provider] = this.model;
+      this.savedKeys[this.provider] = this.apiKey;
+      this.savedUrls[this.provider] = this.baseUrl;
+      // Gateway/Node settings
+      if (data['gwEnabled'] !== undefined) this.gwEnabled = data['gwEnabled'] as boolean;
+      if (data['operatorEnabled'] !== undefined) this.operatorEnabled = data['operatorEnabled'] as boolean;
+      if (data['gwHost'] !== undefined) this.gwHost = data['gwHost'] as string;
+      if (data['gwPort'] !== undefined) this.gwPort = data['gwPort'] as string;
+      if (data['gwUseTls'] !== undefined) this.gwUseTls = data['gwUseTls'] as boolean;
+      if (data['gwToken'] !== undefined) this.gwToken = data['gwToken'] as string;
+      if (data['gwPassword'] !== undefined) this.gwPassword = data['gwPassword'] as string;
+      if (data['capLocation'] !== undefined) this.capLocation = data['capLocation'] as boolean;
+      if (data['capCamera'] !== undefined) this.capCamera = data['capCamera'] as boolean;
+      if (data['capCanvas'] !== undefined) this.capCanvas = data['capCanvas'] as boolean;
+      if (data['capScreen'] !== undefined) this.capScreen = data['capScreen'] as boolean;
+      if (data['capNotification'] !== undefined) this.capNotification = data['capNotification'] as boolean;
+      if (data['capMicrophone'] !== undefined) this.capMicrophone = data['capMicrophone'] as boolean;
+      if (data['capSpeaker'] !== undefined) this.capSpeaker = data['capSpeaker'] as boolean;
+      if (data['capEmail'] !== undefined) this.capEmail = data['capEmail'] as boolean;
+      if (data['unreadNotification'] !== undefined) {
+        this.unreadNotification = data['unreadNotification'] as boolean;
+        NodeRuntime.getInstance().setUnreadNotificationEnabled(this.unreadNotification);
       }
-      promptAction.showToast({ message: I18n.t('settings.profileLoaded'), duration: 1500 });
-    } catch { /* ignore */ }
+      if (data['ttsAutoRead'] !== undefined) this.ttsAutoRead = data['ttsAutoRead'] as boolean;
+      if (data['autoMemoryInject'] !== undefined) this.autoMemoryInject = data['autoMemoryInject'] as boolean;
+      // Persist loaded values to preferences so they survive restarts
+      await this.save();
+
+      // Auto-connect gateway if enabled in profile
+      if (this.gwEnabled) {
+        let ctx = getContext(this) as common.UIAbilityContext;
+        let nr = NodeRuntime.getInstance();
+        nr.disconnect();
+        let endpoint: GatewayEndpoint = {
+          host: this.gwHost,
+          port: parseInt(this.gwPort) || 18788,
+          useTls: this.gwUseTls,
+        };
+        let token = this.gwToken.length > 0 ? this.gwToken : undefined;
+        let password = this.gwPassword.length > 0 ? this.gwPassword : undefined;
+        nr.connect(ctx, endpoint, token, password, this.operatorEnabled, true);
+      }
+
+      promptAction.showToast({ message: `✅ 配置「${profile.name}」已加载并连接`, duration: 2000 });
+    } catch (e) {
+      promptAction.showToast({ message: `加载失败: ${(e as Error).message ?? String(e)}`, duration: 3000 });
+    }
   }
 
   private async deleteProfile(profile: SettingsProfile): Promise<void> {
@@ -2728,6 +2914,10 @@ export struct SettingsPage {
     } catch { /* ignore */ }
   }
 
+  private loadModuleStats(): void {
+    this.moduleStats = Monitor.getModuleStats();
+  }
+
   private async exportExperience(): Promise<void> {
     try {
       let storage = ExperienceStorage.getInstance();
@@ -2805,5 +2995,43 @@ export struct SettingsPage {
         }
       }
     });
+  }
+
+  private async syncExperienceToServer(): Promise<void> {
+    let nr = NodeRuntime.getInstance();
+    if (nr.connectionState !== ConnectionState.Connected) {
+      promptAction.showToast({ message: '未连接 Gateway，无法同步', duration: 2000 });
+      return;
+    }
+    promptAction.showToast({ message: '正在同步到服务端...', duration: 1500 });
+    try {
+      await nr.syncExperiencePack();
+      await this.loadExperienceSummary();
+      promptAction.showToast({ message: '✅ 经验包已推送到服务端', duration: 2000 });
+    } catch (e) {
+      promptAction.showToast({ message: `同步失败: ${(e as Error).message ?? ''}`, duration: 2000 });
+    }
+  }
+
+  private async pullExperienceFromServer(): Promise<void> {
+    let nr = NodeRuntime.getInstance();
+    if (nr.connectionState !== ConnectionState.Connected) {
+      promptAction.showToast({ message: '未连接 Gateway，无法拉取', duration: 2000 });
+      return;
+    }
+    promptAction.showToast({ message: '正在从服务端拉取...', duration: 1500 });
+    try {
+      let result = await nr.pullServerExperienceWithCallback();
+      let success = result[0] > 0;
+      let count = result[1];
+      if (success) {
+        await this.loadExperienceSummary();
+        promptAction.showToast({ message: `✅ 已拉取 ${count} 条经验`, duration: 2000 });
+      } else {
+        promptAction.showToast({ message: '拉取超时或失败', duration: 2000 });
+      }
+    } catch (e) {
+      promptAction.showToast({ message: `拉取失败: ${(e as Error).message ?? ''}`, duration: 2000 });
+    }
   }
 }

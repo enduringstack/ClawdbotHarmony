@@ -19,7 +19,21 @@ const TAG = 'BehaviorLogger';
 const PREFS_NAME = 'clawdbot_behavior';
 const KEY_RECORDS = 'behavior_records';
 const KEY_RULES = 'learned_rules';
-const MAX_RECORDS = 1000;  // 最多保存1000条记录
+const MAX_RECORDS = 1000;
+
+/** 动作统计接口 */
+interface ActionCount {
+  action: UserAction;
+  count: number;
+}
+
+/** 统计摘要接口 */
+interface StatsResult {
+  totalRecords: number;
+  totalRules: number;
+  enabledRules: number;
+  avgConfidence: number;
+}  // 最多保存1000条记录
 
 export class BehaviorLogger {
   private static instance: BehaviorLogger;
@@ -60,7 +74,7 @@ export class BehaviorLogger {
     action: UserAction,
     outcome?: ActionOutcome
   ): Promise<BehaviorRecord> {
-    const record: BehaviorRecord = {
+    let record: BehaviorRecord = {
       id: `bh_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
       timestamp: Date.now(),
       context,
@@ -87,7 +101,7 @@ export class BehaviorLogger {
    * 更新行为记录的结果
    */
   async updateOutcome(recordId: string, outcome: ActionOutcome): Promise<boolean> {
-    const record = this.records.find(r => r.id === recordId);
+    let record = this.records.find(r => r.id === recordId);
     if (!record) return false;
     
     record.outcome = outcome;
@@ -106,15 +120,15 @@ export class BehaviorLogger {
    * 基于行为结果更新或创建规则
    */
   private updateRuleFromOutcome(record: BehaviorRecord): void {
-    const ctx = record.context;
-    const action = record.action;
-    const outcome = record.outcome;
+    let ctx = record.context;
+    let action = record.action;
+    let outcome = record.outcome;
     
     if (!outcome) return;
     
     // 生成规则key：基于位置+动作
-    const geofenceId = ctx.currentGeofence?.id ?? 'anywhere';
-    const ruleKey = `${geofenceId}:${action.type}:${action.target ?? ''}`;
+    let geofenceId = ctx.currentGeofence?.id ?? 'anywhere';
+    let ruleKey = `${geofenceId}:${action.type}:${action.target ?? ''}`;
     
     let rule = this.rules.get(ruleKey);
     
@@ -156,7 +170,7 @@ export class BehaviorLogger {
   }
   
   private buildTriggerFromContext(ctx: EnvironmentContext): RuleTrigger {
-    const trigger: RuleTrigger = {};
+    let trigger: RuleTrigger = {};
     
     if (ctx.currentGeofence) {
       trigger.geofenceIds = [ctx.currentGeofence.id];
@@ -177,7 +191,7 @@ export class BehaviorLogger {
    * 获取匹配当前上下文的规则
    */
   getMatchingRules(ctx: EnvironmentContext): ContextRule[] {
-    const matching: ContextRule[] = [];
+    let matching: ContextRule[] = [];
     
     for (const rule of this.rules.values()) {
       if (!rule.enabled) continue;
@@ -193,7 +207,7 @@ export class BehaviorLogger {
   }
   
   private ruleMatchesContext(rule: ContextRule, ctx: EnvironmentContext): boolean {
-    const t = rule.trigger;
+    let t = rule.trigger;
     
     // 检查位置
     if (t.geofenceIds && t.geofenceIds.length > 0) {
@@ -248,15 +262,15 @@ export class BehaviorLogger {
   /**
    * 获取某个地点的常见行为
    */
-  getCommonActionsAtGeofence(geofenceId: string, limit: number = 5): { action: UserAction, count: number }[] {
-    const actionCounts = new Map<string, { action: UserAction, count: number }>();
+  getCommonActionsAtGeofence(geofenceId: string, limit: number = 5): ActionCount[] {
+    let actionCounts = new Map<string, ActionCount>();
     
     for (const record of this.records) {
       if (record.context.currentGeofence?.id !== geofenceId) continue;
       if (!record.outcome?.accepted) continue;
       
-      const key = `${record.action.type}:${record.action.target ?? ''}`;
-      const existing = actionCounts.get(key);
+      let key = `${record.action.type}:${record.action.target ?? ''}`;
+      let existing = actionCounts.get(key);
       if (existing) {
         existing.count++;
       } else {
@@ -264,7 +278,7 @@ export class BehaviorLogger {
       }
     }
     
-    const sorted = Array.from(actionCounts.values())
+    let sorted = Array.from(actionCounts.values())
       .sort((a, b) => b.count - a.count)
       .slice(0, limit);
     
@@ -274,14 +288,9 @@ export class BehaviorLogger {
   /**
    * 获取统计摘要
    */
-  getStats(): {
-    totalRecords: number;
-    totalRules: number;
-    enabledRules: number;
-    avgConfidence: number;
-  } {
-    const enabledRules = this.getAllRules().filter(r => r.enabled);
-    const avgConf = enabledRules.length > 0
+  getStats(): StatsResult {
+    let enabledRules = this.getAllRules().filter(r => r.enabled);
+    let avgConf = enabledRules.length > 0
       ? enabledRules.reduce((sum, r) => sum + r.confidence, 0) / enabledRules.length
       : 0;
     
@@ -298,7 +307,7 @@ export class BehaviorLogger {
   private async saveRecordsAsync(): Promise<void> {
     if (!this.context) return;
     try {
-      const store = await preferences.getPreferences(this.context, PREFS_NAME);
+      let store = await preferences.getPreferences(this.context, PREFS_NAME);
       await store.put(KEY_RECORDS, JSON.stringify(this.records));
       await store.flush();
     } catch (err) {
@@ -309,7 +318,7 @@ export class BehaviorLogger {
   private async saveRulesAsync(): Promise<void> {
     if (!this.context) return;
     try {
-      const store = await preferences.getPreferences(this.context, PREFS_NAME);
+      let store = await preferences.getPreferences(this.context, PREFS_NAME);
       await store.put(KEY_RULES, JSON.stringify(Array.from(this.rules.entries())));
       await store.flush();
     } catch (err) {
@@ -319,8 +328,8 @@ export class BehaviorLogger {
   
   private async loadRecords(context: common.UIAbilityContext): Promise<void> {
     try {
-      const store = await preferences.getPreferences(context, PREFS_NAME);
-      const data = await store.get(KEY_RECORDS, '[]') as string;
+      let store = await preferences.getPreferences(context, PREFS_NAME);
+      let data = await store.get(KEY_RECORDS, '[]') as string;
       this.records = JSON.parse(data) as BehaviorRecord[];
     } catch (err) {
       this.log.warn(TAG, `Failed to load records: ${(err as Error).message}`);
@@ -329,9 +338,9 @@ export class BehaviorLogger {
   
   private async loadRules(context: common.UIAbilityContext): Promise<void> {
     try {
-      const store = await preferences.getPreferences(context, PREFS_NAME);
-      const data = await store.get(KEY_RULES, '[]') as string;
-      const entries = JSON.parse(data) as [string, ContextRule][];
+      let store = await preferences.getPreferences(context, PREFS_NAME);
+      let data = await store.get(KEY_RULES, '[]') as string;
+      let entries = JSON.parse(data) as [string, ContextRule][];
       this.rules = new Map(entries);
     } catch (err) {
       this.log.warn(TAG, `Failed to load rules: ${(err as Error).message}`);
@@ -344,7 +353,7 @@ export class BehaviorLogger {
   async clearAll(context: common.UIAbilityContext): Promise<void> {
     this.records = [];
     this.rules.clear();
-    const store = await preferences.getPreferences(context, PREFS_NAME);
+    let store = await preferences.getPreferences(context, PREFS_NAME);
     await store.clear();
     await store.flush();
     this.log.info(TAG, 'Cleared all behavior data');

@@ -67,6 +67,10 @@ export class GatewaySession {
   private pairingResolve: (() => void) | undefined = undefined;
   private connectResult: Record<string, Object> | undefined = undefined;
 
+  // --- WebSocket heartbeat (ping) to keep connection alive in background ---
+  private pingTimer: number = -1;
+  private static readonly PING_INTERVAL_MS: number = 30000; // 30s ping interval
+
   // --- callbacks ---
   onStateChanged: (state: ConnectionState, message: string) => void = () => {};
   onInvokeRequest: ((req: InvokeRequest) => Promise<InvokeResult>) | undefined = undefined;
@@ -110,6 +114,7 @@ export class GatewaySession {
 
   disconnect(): void {
     this.log.info(this.logTag, 'disconnect() called');
+    this.stopPing();
     this.shouldReconnect = false;
     this.pairingResolve = undefined;
     this.connectResult = undefined;
@@ -220,7 +225,7 @@ export class GatewaySession {
   private setState(state: ConnectionState, message?: string): void {
     this._state = state;
     let msg = message ?? state.toString();
-    this.log.info(this.logTag, `state -> ${state} (${msg})`);
+    this.log.system(this.logTag, `state -> ${state} (${msg})`);
     try {
       this.onStateChanged(state, msg);
     } catch {
@@ -242,7 +247,7 @@ export class GatewaySession {
     let host = cleanHost.includes(':') ? `[${cleanHost}]` : cleanHost;
     let url = `${scheme}://${host}:${ep.port}`;
 
-    this.log.info(this.logTag, `WebSocket connecting to ${url}`);
+    this.log.system(this.logTag, `WebSocket connecting to ${url}`);
 
     let ws = webSocket.createWebSocket();
     this.ws = ws;
@@ -252,7 +257,7 @@ export class GatewaySession {
 
     ws.on('open', (_err, _value) => {
       if (gen !== this.wsGeneration) return;
-      this.log.info(this.logTag, `WebSocket OPEN to ${url}`);
+      this.log.system(this.logTag, `WebSocket OPEN to ${url}`);
       this.onWsOpen();
     });
 
@@ -300,13 +305,13 @@ export class GatewaySession {
       if (isMock) {
         this.log.error(this.logTag, '*** WebSocket is AUTO-MOCKED! Not a real connection. Must test on real device or disable mock in DevEco. ***');
       }
-      this.log.warn(this.logTag, `WebSocket CLOSED: code=${closeCode} reason="${closeReason}" mock=${isMock} raw=${JSON.stringify(value)}`);
+      this.log.system(this.logTag, `WebSocket CLOSED: code=${closeCode} reason="${closeReason}" mock=${isMock} raw=${JSON.stringify(value)}`);
       this.onWsClosedOnce(isMock ? 'WebSocket mocked (use real device)' : `Gateway closed (code=${closeCode})`);
     });
 
     ws.on('error', (err) => {
       if (gen !== this.wsGeneration) return;
-      this.log.error(this.logTag, `WebSocket ERROR: ${err?.message ?? 'unknown'} code=${err?.code ?? ''}`);
+      this.log.system(this.logTag, `WebSocket ERROR: ${err?.message ?? 'unknown'} code=${err?.code ?? ''}`);
       this.onWsClosedOnce(`Gateway error: ${err?.message ?? 'unknown'}`);
     });
 
@@ -546,7 +551,7 @@ export class GatewaySession {
 
     let resJson = await this.request('connect', connectParamsJson, Constants.GATEWAY_CONNECT_TIMEOUT_MS);
 
-    this.log.info(this.logTag, `Connect response: ${resJson.substring(0, 300)}`);
+    this.log.debug(this.logTag, `Connect response: ${resJson.substring(0, 300)}`);
 
     // Store device token if returned
     if (resJson.length > 0) {
@@ -572,6 +577,38 @@ export class GatewaySession {
     }
 
     this.setState(ConnectionState.Connected, 'Connected');
+    this.startPing();
+  }
+
+  /** Start periodic WebSocket ping to keep connection alive in background */
+  private startPing(): void {
+    this.stopPing();
+    this.pingTimer = setInterval(() => {
+      let ws = this.ws;
+      if (!ws) {
+        this.stopPing();
+        return;
+      }
+      // Send a lightweight JSON ping that the gateway will ignore (unknown type)
+      try {
+        ws.send('{"type":"ping"}', (err) => {
+          if (err) {
+            this.log.warn(this.logTag, `Ping send error: ${err.message ?? ''}`);
+          }
+        });
+      } catch (e) {
+        this.log.warn(this.logTag, `Ping exception: ${(e as Error).message ?? ''}`);
+      }
+    }, GatewaySession.PING_INTERVAL_MS);
+    this.log.info(this.logTag, `Ping heartbeat started (every ${GatewaySession.PING_INTERVAL_MS / 1000}s)`);
+  }
+
+  /** Stop periodic ping */
+  private stopPing(): void {
+    if (this.pingTimer >= 0) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = -1;
+    }
   }
 
   private handleMessage(text: string): void {
@@ -633,7 +670,7 @@ export class GatewaySession {
       payloadJson = frame.payloadJSON;
     }
 
-    this.log.info(this.logTag, `Event: ${event} payload=${payloadJson ? payloadJson.substring(0, 200) : '(none)'}`);
+    this.log.debug(this.logTag, `Event: ${event} payload=${payloadJson ? payloadJson.substring(0, 200) : '(none)'}`);
 
     // Connect challenge nonce
     if (event === 'connect.challenge') {
@@ -734,6 +771,7 @@ export class GatewaySession {
   }
 
   private onWsClosed(message: string): void {
+    this.stopPing();
     this.ws = undefined;
     this.failAllPending();
     this.connectNonceResolve = undefined;

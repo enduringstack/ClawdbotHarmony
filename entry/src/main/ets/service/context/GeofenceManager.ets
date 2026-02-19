@@ -63,7 +63,7 @@ export class GeofenceManager {
   
   private addDefaultGeofences(): void {
     // 大温地区常见地点示例
-    const defaults: Geofence[] = [
+    let defaults: Geofence[] = [
       // 地铁站示例
       {
         id: 'skytrain_metrotown',
@@ -89,7 +89,6 @@ export class GeofenceManager {
         longitude: -123.0065,
         radiusMeters: 150,
         category: 'shopping',
-        metadata: { store: 'costco' },
       },
       {
         id: 'superstore_metrotown',
@@ -98,7 +97,31 @@ export class GeofenceManager {
         longitude: -122.9998,
         radiusMeters: 100,
         category: 'shopping',
-        metadata: { store: 'superstore' },
+      },
+      // 公司
+      {
+        id: 'huawei_burnaby',
+        name: 'Huawei Burnaby Office',
+        latitude: 49.2282,
+        longitude: -123.0027,
+        radiusMeters: 200,
+        category: 'work',
+      },
+      {
+        id: 'huawei_vancouver',
+        name: 'Huawei Vancouver Office',
+        latitude: 49.2595,
+        longitude: -123.0125,
+        radiusMeters: 200,
+        category: 'work',
+      },
+      {
+        id: 'huawei_edmonton',
+        name: 'Huawei Edmonton Office',
+        latitude: 53.5225,
+        longitude: -113.5255,
+        radiusMeters: 200,
+        category: 'work',
       },
     ];
     
@@ -115,7 +138,7 @@ export class GeofenceManager {
   }
   
   removeGeofence(id: string): boolean {
-    const removed = this.geofences.delete(id);
+    let removed = this.geofences.delete(id);
     this.currentlyInside.delete(id);
     if (removed) {
       this.log.info(TAG, `Removed geofence: ${id}`);
@@ -141,7 +164,7 @@ export class GeofenceManager {
    * 检查位置是否在指定围栏内
    */
   isInsideGeofence(lat: number, lon: number, geofence: Geofence): boolean {
-    const distance = this.calculateDistance(lat, lon, geofence.latitude, geofence.longitude);
+    let distance = this.calculateDistance(lat, lon, geofence.latitude, geofence.longitude);
     return distance <= geofence.radiusMeters;
   }
   
@@ -149,7 +172,7 @@ export class GeofenceManager {
    * 获取位置所在的所有围栏
    */
   getGeofencesAtLocation(lat: number, lon: number): Geofence[] {
-    const result: Geofence[] = [];
+    let result: Geofence[] = [];
     for (const gf of this.geofences.values()) {
       if (this.isInsideGeofence(lat, lon, gf)) {
         result.push(gf);
@@ -162,8 +185,8 @@ export class GeofenceManager {
    * 更新位置并触发进入/离开事件
    */
   updateLocation(location: LocationState): GeofenceEvent[] {
-    const events: GeofenceEvent[] = [];
-    const nowInside = new Set<string>();
+    let events: GeofenceEvent[] = [];
+    let nowInside = new Set<string>();
     
     // 检查当前在哪些围栏内
     for (const gf of this.geofences.values()) {
@@ -172,7 +195,7 @@ export class GeofenceManager {
         
         // 新进入的围栏
         if (!this.currentlyInside.has(gf.id)) {
-          const event: GeofenceEvent = {
+          let event: GeofenceEvent = {
             type: 'enter',
             geofence: gf,
             timestamp: Date.now(),
@@ -188,9 +211,9 @@ export class GeofenceManager {
     // 检查离开的围栏
     for (const id of this.currentlyInside) {
       if (!nowInside.has(id)) {
-        const gf = this.geofences.get(id);
+        let gf = this.geofences.get(id);
         if (gf) {
-          const event: GeofenceEvent = {
+          let event: GeofenceEvent = {
             type: 'exit',
             geofence: gf,
             timestamp: Date.now(),
@@ -214,7 +237,7 @@ export class GeofenceManager {
     
     try {
       this.locationCallback = (location: geoLocationManager.Location) => {
-        const state: LocationState = {
+        let state: LocationState = {
           latitude: location.latitude,
           longitude: location.longitude,
           accuracy: location.accuracy,
@@ -228,12 +251,15 @@ export class GeofenceManager {
         state.insideGeofences = Array.from(this.currentlyInside);
       };
       
-      const request: geoLocationManager.ContinuousLocationRequest = {
-        interval: 10,  // 10秒更新一次
-        locationScenario: geoLocationManager.UserActivityScenario.NAVIGATION,
+      let request: geoLocationManager.LocationRequest = {
+        priority: geoLocationManager.LocationRequestPriority.FIRST_FIX,
+        scenario: geoLocationManager.LocationRequestScenario.UNSET,
+        timeInterval: 10,
+        distanceInterval: 5,
+        maxAccuracy: 100,
       };
-      
-      geoLocationManager.on('continuousLocationChange', request, this.locationCallback);
+
+      geoLocationManager.on('locationChange', request, this.locationCallback);
       this.isMonitoring = true;
       this.log.info(TAG, 'Started location monitoring');
       return true;
@@ -247,7 +273,7 @@ export class GeofenceManager {
     if (!this.isMonitoring || !this.locationCallback) return;
     
     try {
-      geoLocationManager.off('continuousLocationChange', this.locationCallback);
+      geoLocationManager.off('locationChange', this.locationCallback);
       this.isMonitoring = false;
       this.locationCallback = undefined;
       this.log.info(TAG, 'Stopped location monitoring');
@@ -263,7 +289,7 @@ export class GeofenceManager {
   }
   
   removeListener(listener: GeofenceListener): void {
-    const idx = this.listeners.indexOf(listener);
+    let idx = this.listeners.indexOf(listener);
     if (idx >= 0) this.listeners.splice(idx, 1);
   }
   
@@ -281,8 +307,8 @@ export class GeofenceManager {
   
   async saveGeofences(context: common.UIAbilityContext): Promise<void> {
     try {
-      const store = await preferences.getPreferences(context, PREFS_NAME);
-      const data = JSON.stringify(this.getAllGeofences());
+      let store = await preferences.getPreferences(context, PREFS_NAME);
+      let data = JSON.stringify(this.getAllGeofences());
       await store.put(KEY_GEOFENCES, data);
       await store.flush();
       this.log.info(TAG, `Saved ${this.geofences.size} geofences`);
@@ -293,9 +319,9 @@ export class GeofenceManager {
   
   private async loadGeofences(context: common.UIAbilityContext): Promise<void> {
     try {
-      const store = await preferences.getPreferences(context, PREFS_NAME);
-      const data = await store.get(KEY_GEOFENCES, '[]') as string;
-      const list = JSON.parse(data) as Geofence[];
+      let store = await preferences.getPreferences(context, PREFS_NAME);
+      let data = await store.get(KEY_GEOFENCES, '[]') as string;
+      let list = JSON.parse(data) as Geofence[];
       for (const gf of list) {
         this.geofences.set(gf.id, gf);
       }
@@ -311,13 +337,13 @@ export class GeofenceManager {
    * 计算两点间距离（米）- Haversine公式
    */
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371000; // 地球半径（米）
-    const dLat = this.toRad(lat2 - lat1);
-    const dLon = this.toRad(lon2 - lon1);
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    let R = 6371000; // 地球半径（米）
+    let dLat = this.toRad(lat2 - lat1);
+    let dLon = this.toRad(lon2 - lon1);
+    let a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
               Math.cos(this.toRad(lat1)) * Math.cos(this.toRad(lat2)) *
               Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }
   

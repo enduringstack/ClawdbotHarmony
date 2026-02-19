@@ -6,6 +6,8 @@ import { MemoryService } from '../service/MemoryService';
 import { AIService } from '../service/AIService';
 import { SessionService } from '../service/SessionService';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
+import { ExperienceStorage } from '../service/ExperienceStorage';
+import { Experience, Skill } from '../model/ExperiencePack';
 import { Constants } from '../common/Constants';
 import { LogService } from '../common/LogService';
 import { I18n } from '../common/I18n';
@@ -31,11 +33,13 @@ export struct MemoryPage {
   @State @Watch('onLangChange') lang: string = 'zh';
   @State isExtracting: boolean = false;
   @State isSyncing: boolean = false;
+  @State isPushing: boolean = false;
   @State searchKeyword: string = '';
   @State showDetail: boolean = false;
   @State detailItem: MemoryItem | null = null;
   // Chat history states
-  @State viewMode: string = 'memory'; // 'memory' | 'history'
+  @State viewMode: string = 'memory'; // 'memory' | 'skills' | 'history'
+  @State skillsList: Skill[] = [];
   @State allSessions: ChatSession[] = [];
   @State viewingSessionId: string = '';
   @State viewingMessages: ChatMessage[] = [];
@@ -78,24 +82,36 @@ export struct MemoryPage {
   build() {
     Column() {
       // Segmented tab control
-      Row() {
-        Text(I18n.t('memory.tabMemory'))
-          .fontSize(15)
+      Row({ space: 4 }) {
+        Text('🧠 ' + I18n.t('memory.tabMemory'))
+          .fontSize(14)
           .fontWeight(this.viewMode === 'memory' ? FontWeight.Bold : FontWeight.Normal)
           .fontColor(this.viewMode === 'memory' ? Color.White : '#666666')
           .backgroundColor(this.viewMode === 'memory' ? '#D2691E' : Color.White)
-          .padding({ left: 20, right: 20, top: 8, bottom: 8 })
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
           .borderRadius(20)
           .onClick(() => {
             this.viewMode = 'memory';
           })
 
-        Text(I18n.t('memory.tabHistory'))
-          .fontSize(15)
+        Text('⚡ ' + I18n.t('experience.tabSkills'))
+          .fontSize(14)
+          .fontWeight(this.viewMode === 'skills' ? FontWeight.Bold : FontWeight.Normal)
+          .fontColor(this.viewMode === 'skills' ? Color.White : '#666666')
+          .backgroundColor(this.viewMode === 'skills' ? '#D2691E' : Color.White)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .borderRadius(20)
+          .onClick(() => {
+            this.viewMode = 'skills';
+            this.loadSkills();
+          })
+
+        Text('💬 ' + I18n.t('memory.tabHistory'))
+          .fontSize(14)
           .fontWeight(this.viewMode === 'history' ? FontWeight.Bold : FontWeight.Normal)
           .fontColor(this.viewMode === 'history' ? Color.White : '#666666')
           .backgroundColor(this.viewMode === 'history' ? '#D2691E' : Color.White)
-          .padding({ left: 20, right: 20, top: 8, bottom: 8 })
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
           .borderRadius(20)
           .onClick(() => {
             this.viewMode = 'history';
@@ -111,6 +127,8 @@ export struct MemoryPage {
         this.DetailView()
       } else if (this.viewMode === 'memory') {
         this.MemoryView()
+      } else if (this.viewMode === 'skills') {
+        this.SkillsView()
       } else if (this.viewingSessionId.length > 0) {
         this.SessionDetailView()
       } else {
@@ -126,86 +144,32 @@ export struct MemoryPage {
   @Builder
   MemoryView() {
     Column() {
-      // header
-      Row() {
-        Text(I18n.t('memory.title'))
-          .fontSize(22)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#1A1A1A')
-          .layoutWeight(1)
-
-        Button(I18n.t('memory.add'))
-          .fontSize(13)
-          .height(32)
-          .backgroundColor('#D2691E')
-          .fontColor(Color.White)
-          .borderRadius(16)
-          .onClick(() => { this.showAddPanel = !this.showAddPanel; })
-
-        Text('\uD83D\uDDD1')
-          .fontSize(18)
-          .margin({ left: 12 })
-          .onClick(() => { this.confirmClear(); })
-      }
-      .width('100%')
-      .padding({ left: 20, right: 20, top: 8, bottom: 8 })
-
-      Text(I18n.t('memory.subtitle'))
-        .fontSize(13)
-        .fontColor('#666666')
-        .padding({ left: 20, right: 20, bottom: 12 })
-        .width('100%')
+      // spacer after tab bar
+      Row().height(4)
 
       // Action button: sync from server
       if (NodeRuntime.getInstance().isConnected) {
         Row({ space: 8 }) {
-          Button(this.isSyncing ? I18n.t('memory.syncing') : I18n.t('memory.syncFromServer'))
+          Button(this.isSyncing ? I18n.t('memory.syncing') : '⬇ ' + I18n.t('memory.syncFromServer'))
             .fontSize(12)
             .height(32)
             .backgroundColor(this.isSyncing ? '#999999' : '#4CAF50')
             .fontColor(Color.White)
             .borderRadius(16)
-            .enabled(!this.isSyncing)
+            .enabled(!this.isSyncing && !this.isPushing)
             .onClick(() => { this.syncFromServer(); })
+
+          Button(this.isPushing ? '推送中...' : '⬆ 推送到服务器')
+            .fontSize(12)
+            .height(32)
+            .backgroundColor(this.isPushing ? '#999999' : '#1976D2')
+            .fontColor(Color.White)
+            .borderRadius(16)
+            .enabled(!this.isPushing && !this.isSyncing)
+            .onClick(() => { this.pushToServer(); })
         }
         .width('100%')
         .padding({ left: 20, right: 20, bottom: 10 })
-      }
-
-      // add panel
-      if (this.showAddPanel) {
-        Column({ space: 10 }) {
-          Row({ space: 8 }) {
-            ForEach(['fact', 'preference', 'instruction'], (t: string) => {
-              Text(this.typeLabel(t))
-                .fontSize(12)
-                .fontColor(this.newType === t ? Color.White : '#666666')
-                .backgroundColor(this.newType === t ? this.typeColor(t) : '#F0F0F0')
-                .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-                .borderRadius(12)
-                .onClick(() => { this.newType = t; })
-            }, (t: string): string => t)
-          }
-
-          TextArea({ placeholder: I18n.t('memory.placeholder'), text: this.newContent })
-            .height(80)
-            .borderRadius(8)
-            .backgroundColor('#F5F5F5')
-            .fontSize(14)
-            .onChange((v: string) => { this.newContent = v; })
-
-          Button(I18n.t('memory.save'))
-            .width('100%')
-            .height(38)
-            .backgroundColor('#D2691E')
-            .fontColor(Color.White)
-            .borderRadius(8)
-            .onClick(() => { this.addEntry(); })
-        }
-        .padding(16)
-        .margin({ left: 16, right: 16, bottom: 8 })
-        .backgroundColor(Color.White)
-        .borderRadius(12)
       }
 
       // search
@@ -281,6 +245,121 @@ export struct MemoryPage {
     }
     .width('100%')
     .layoutWeight(1)
+  }
+
+  // ============ Skills View ============
+  @Builder
+  SkillsView() {
+    Column() {
+      // Sync buttons (same as memory view)
+      if (NodeRuntime.getInstance().isConnected) {
+        Row({ space: 8 }) {
+          Button(this.isSyncing ? I18n.t('memory.syncing') : '⬇ ' + I18n.t('memory.syncFromServer'))
+            .fontSize(12)
+            .height(32)
+            .backgroundColor(this.isSyncing ? '#999999' : '#4CAF50')
+            .fontColor(Color.White)
+            .borderRadius(16)
+            .enabled(!this.isSyncing && !this.isPushing)
+            .onClick(() => { this.syncFromServer(); })
+
+          Button(this.isPushing ? '推送中...' : '⬆ 推送到服务器')
+            .fontSize(12)
+            .height(32)
+            .backgroundColor(this.isPushing ? '#999999' : '#1976D2')
+            .fontColor(Color.White)
+            .borderRadius(16)
+            .enabled(!this.isPushing && !this.isSyncing)
+            .onClick(() => { this.pushToServer(); })
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, top: 8, bottom: 10 })
+      }
+
+      Text(this.skillsList.length + ' 个技能')
+        .fontSize(12)
+        .fontColor('#999999')
+        .padding({ left: 20, bottom: 8 })
+        .width('100%')
+
+      if (this.skillsList.length === 0) {
+        Column({ space: 10 }) {
+          Text('⚡').fontSize(48)
+          Text('暂无技能').fontSize(16).fontColor('#999999')
+          Text('从服务器同步后会显示在这里').fontSize(13).fontColor('#CCCCCC')
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .width('100%')
+      } else {
+        List({ space: 8 }) {
+          ForEach(this.skillsList, (skill: Skill, index: number) => {
+            ListItem() {
+              this.SkillCard(skill)
+            }
+            .padding({ left: 16, right: 16 })
+          }, (skill: Skill, index: number): string => `skill_${index}_${skill.name}`)
+        }
+        .layoutWeight(1)
+        .edgeEffect(EdgeEffect.Spring)
+        .scrollBar(BarState.Off)
+      }
+    }
+    .width('100%')
+    .layoutWeight(1)
+  }
+
+  @Builder
+  SkillCard(skill: Skill) {
+    Column({ space: 6 }) {
+      Row() {
+        Text('⚡')
+          .fontSize(14)
+          .margin({ right: 6 })
+        Text(skill.name)
+          .fontSize(11)
+          .fontColor(Color.White)
+          .backgroundColor('#FF9800')
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .borderRadius(4)
+      }
+      .width('100%')
+
+      Text(skill.description.length > 0 ? skill.description : skill.instructions)
+        .fontSize(14)
+        .fontColor('#1A1A1A')
+        .lineHeight(20)
+        .width('100%')
+        .maxLines(3)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .padding(14)
+    .backgroundColor(Color.White)
+    .borderRadius(12)
+    .shadow({ radius: 4, color: '#0000000A', offsetX: 0, offsetY: 2 })
+    .width('100%')
+    .onClick(() => {
+      let item = new MemoryItem('instruction', `# ${skill.name}\n\n${skill.description}\n\n---\n\n${skill.instructions}`, 1.0);
+      this.detailItem = item;
+      this.showDetail = true;
+    })
+  }
+
+  private async loadSkills(): Promise<void> {
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let storage = ExperienceStorage.getInstance();
+      let pack = await storage.ensureLoaded(ctx);
+      let skills: Skill[] = [];
+      for (let exp of pack.experiences) {
+        for (let sk of exp.skills) {
+          skills.push(sk);
+        }
+      }
+      this.skillsList = skills;
+    } catch (e) {
+      this.log.warn('MemoryPage', `Load skills failed: ${(e as Error).message ?? ''}`);
+    }
   }
 
   // ============ History List View ============
@@ -517,11 +596,6 @@ export struct MemoryPage {
           .backgroundColor(this.typeColor(item.memType))
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(4)
-        Blank()
-        Text('\u2716')
-          .fontSize(14)
-          .fontColor('#CCCCCC')
-          .onClick(() => { this.removeEntry(item.id); })
       }
       .width('100%')
 
@@ -913,6 +987,42 @@ Respond ONLY with the JSON array.`;
       promptAction.showToast({ message: I18n.t('memory.syncFailed'), duration: 1500 });
     } finally {
       this.isSyncing = false;
+    }
+  }
+
+  // ============ Push to Server ============
+
+  private async pushToServer(): Promise<void> {
+    if (this.isPushing) return;
+    this.isPushing = true;
+
+    try {
+      let runtime = NodeRuntime.getInstance();
+      if (!runtime.isConnected) {
+        promptAction.showToast({ message: '未连接服务器', duration: 1500 });
+        this.isPushing = false;
+        return;
+      }
+
+      if (this.entries.length === 0) {
+        promptAction.showToast({ message: '没有记忆可推送', duration: 1500 });
+        this.isPushing = false;
+        return;
+      }
+
+      promptAction.showToast({ message: '正在推送到服务器...', duration: 2000 });
+
+      let success = await runtime.pushMemoriesToServerWithCallback();
+      if (success) {
+        promptAction.showToast({ message: `推送成功：${this.entries.length} 条记忆`, duration: 2000 });
+      } else {
+        promptAction.showToast({ message: '推送失败，请重试', duration: 1500 });
+      }
+    } catch (e) {
+      this.log.warn('MemoryPage', `Push to server failed: ${(e as Error).message ?? ''}`);
+      promptAction.showToast({ message: '推送失败', duration: 1500 });
+    } finally {
+      this.isPushing = false;
     }
   }
 

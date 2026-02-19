@@ -32,6 +32,13 @@ export interface ContextRecommendation {
 
 type RecommendationListener = (rec: ContextRecommendation) => void;
 
+/** 加速度传感器数据接口 */
+interface AccelerometerData {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export class ContextAwarenessService {
   private static instance: ContextAwarenessService;
   private log: LogService = LogService.getInstance();
@@ -49,7 +56,7 @@ export class ContextAwarenessService {
   private lastMotionState: MotionState = 'unknown';
   
   // 传感器数据
-  private accelerometerData: { x: number, y: number, z: number } = { x: 0, y: 0, z: 0 };
+  private accelerometerData: AccelerometerData = { x: 0, y: 0, z: 0 } as AccelerometerData;
   private stepCount: number = 0;
   
   // 推荐监听器
@@ -126,7 +133,7 @@ export class ContextAwarenessService {
     try {
       // 加速度计 - 用于运动状态检测
       sensor.on(sensor.SensorId.ACCELEROMETER, (data: sensor.AccelerometerResponse) => {
-        this.accelerometerData = { x: data.x, y: data.y, z: data.z };
+        this.accelerometerData = { x: data.x, y: data.y, z: data.z } as AccelerometerData;
         this.updateMotionState();
       }, { interval: 1000000000 });  // 1秒采样
       
@@ -155,8 +162,10 @@ export class ContextAwarenessService {
    * 简化版本：使用加速度幅度
    */
   private updateMotionState(): void {
-    const { x, y, z } = this.accelerometerData;
-    const magnitude = Math.sqrt(x * x + y * y + z * z);
+    let x = this.accelerometerData.x;
+    let y = this.accelerometerData.y;
+    let z = this.accelerometerData.z;
+    let magnitude = Math.sqrt(x * x + y * y + z * z);
     
     // 简单阈值判断（实际应用需要更复杂的算法）
     let newState: MotionState;
@@ -184,8 +193,8 @@ export class ContextAwarenessService {
    * 获取当前完整的环境上下文
    */
   async getCurrentContext(): Promise<EnvironmentContext> {
-    const now = new Date();
-    const hour = now.getHours();
+    let now = new Date();
+    let hour = now.getHours();
     
     let timeOfDay: TimeOfDay;
     if (hour >= 5 && hour < 12) timeOfDay = 'morning';
@@ -193,8 +202,8 @@ export class ContextAwarenessService {
     else if (hour >= 17 && hour < 21) timeOfDay = 'evening';
     else timeOfDay = 'night';
     
-    const dayOfWeek = now.getDay();
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    let dayOfWeek = now.getDay();
+    let isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     
     // 设备状态
     let batteryLevel = 100;
@@ -221,14 +230,14 @@ export class ContextAwarenessService {
     // 当前围栏
     let currentGeofence: Geofence | undefined;
     if (this.lastLocation) {
-      const geofences = this.geofenceMgr.getGeofencesAtLocation(
+      let geofences = this.geofenceMgr.getGeofencesAtLocation(
         this.lastLocation.latitude,
         this.lastLocation.longitude
       );
       currentGeofence = geofences[0];  // 取第一个
     }
     
-    const ctx: EnvironmentContext = {
+    let ctx: EnvironmentContext = {
       timestamp: Date.now(),
       location: this.lastLocation,
       currentGeofence,
@@ -259,13 +268,13 @@ export class ContextAwarenessService {
     if (event.type !== 'enter') return;
     
     // 获取当前上下文
-    const ctx = await this.getCurrentContext();
+    let ctx = await this.getCurrentContext();
     
     // 查找匹配的规则
-    const rules = this.behaviorLog.getMatchingRules(ctx);
+    let rules = this.behaviorLog.getMatchingRules(ctx);
     
     if (rules.length > 0) {
-      const topRule = rules[0];
+      let topRule = rules[0];
       
       // 检查冷却时间
       if (this.isOnCooldown(topRule.id)) {
@@ -274,7 +283,7 @@ export class ContextAwarenessService {
       }
       
       // 生成推荐
-      const rec: ContextRecommendation = {
+      let rec: ContextRecommendation = {
         rule: topRule,
         action: topRule.action,
         reason: this.buildRecommendationReason(topRule, event.geofence),
@@ -302,7 +311,7 @@ export class ContextAwarenessService {
         break;
         
       case 'shopping':
-        const store = geofence.metadata?.['store'] ?? 'store';
+        let store = (geofence.metadata && geofence.metadata['store']) ? geofence.metadata['store'] as string : 'store';
         defaultAction = { type: 'show_info', target: `deals_${store}` };
         reason = `到达 ${geofence.name}，查看今日优惠？`;
         break;
@@ -317,7 +326,7 @@ export class ContextAwarenessService {
     }
     
     if (defaultAction && !this.isOnCooldown(`default_${geofence.id}`)) {
-      const rec: ContextRecommendation = {
+      let rec: ContextRecommendation = {
         rule: {
           id: `default_${geofence.id}`,
           trigger: { geofenceIds: [geofence.id] },
@@ -339,7 +348,7 @@ export class ContextAwarenessService {
   }
   
   private buildRecommendationReason(rule: ContextRule, geofence: Geofence): string {
-    const conf = Math.round(rule.confidence * 100);
+    let conf = Math.round(rule.confidence * 100);
     
     if (rule.action.type === 'show_qrcode') {
       return `到达 ${geofence.name}，显示乘车码？(${conf}% 匹配)`;
@@ -353,7 +362,7 @@ export class ContextAwarenessService {
   // ==================== 推荐冷却 ====================
   
   private isOnCooldown(ruleId: string): boolean {
-    const lastTime = this.lastRecommendations.get(ruleId);
+    let lastTime = this.lastRecommendations.get(ruleId);
     if (!lastTime) return false;
     return Date.now() - lastTime < ContextAwarenessService.RECOMMENDATION_COOLDOWN_MS;
   }
@@ -371,9 +380,9 @@ export class ContextAwarenessService {
     rec: ContextRecommendation,
     accepted: boolean
   ): Promise<void> {
-    const ctx = this.currentContext ?? await this.getCurrentContext();
+    let ctx = this.currentContext ?? await this.getCurrentContext();
     
-    const outcome: ActionOutcome = {
+    let outcome: ActionOutcome = {
       accepted,
       feedback: accepted ? 1 : -1,
     };
@@ -391,7 +400,7 @@ export class ContextAwarenessService {
   }
   
   removeRecommendationListener(listener: RecommendationListener): void {
-    const idx = this.recommendationListeners.indexOf(listener);
+    let idx = this.recommendationListeners.indexOf(listener);
     if (idx >= 0) this.recommendationListeners.splice(idx, 1);
   }
   
@@ -412,8 +421,8 @@ export class ContextAwarenessService {
    * 手动记录用户行为（用于学习用户习惯）
    */
   async recordUserAction(action: UserAction, accepted: boolean = true): Promise<void> {
-    const ctx = await this.getCurrentContext();
-    const outcome: ActionOutcome = { accepted, feedback: accepted ? 1 : 0 };
+    let ctx = await this.getCurrentContext();
+    let outcome: ActionOutcome = { accepted, feedback: accepted ? 1 : 0 };
     await this.behaviorLog.logBehavior(ctx, action, outcome);
   }
   
@@ -427,7 +436,7 @@ export class ContextAwarenessService {
   }
   
   removeGeofence(id: string): boolean {
-    const result = this.geofenceMgr.removeGeofence(id);
+    let result = this.geofenceMgr.removeGeofence(id);
     if (result && this.context) {
       this.geofenceMgr.saveGeofences(this.context);
     }
@@ -441,7 +450,7 @@ export class ContextAwarenessService {
   // ==================== 状态查询 ====================
   
   getStatus(): string {
-    const stats = this.behaviorLog.getStats();
+    let stats = this.behaviorLog.getStats();
     return `Running: ${this.isRunning}, ` +
            `Geofences: ${this.geofenceMgr.getAllGeofences().length}, ` +
            `Records: ${stats.totalRecords}, ` +

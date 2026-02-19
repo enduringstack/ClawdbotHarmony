@@ -1,5 +1,28 @@
 [
   {
+    "version": "2.34.1",
+    "date": "2026-02-19",
+    "features": [
+      "Profile 全量保存：一个配置文件包含所有设置（operator+gateway+capabilities）",
+      "Profile 加载后自动连接 Gateway",
+      "Agent 事件 runId 过滤：飞书/webchat 回复不再混入手机聊天"
+    ],
+    "fixes": []
+  },
+  {
+    "version": "2.34.0",
+    "date": "2026-02-19",
+    "features": [
+      "情景智能改为手动开启，默认关闭（减少发热）",
+      "本地命令改为 / 前缀触发，避免误拦截普通消息",
+      "经验包智能合并：按 ID+名称匹配，保留更完整版本，本地配置不被覆盖",
+      "经验包设置页新增「同步到服务端」和「从服务端拉取」按钮",
+      "Talk Mode 退出时释放 VAD 模型，减少后台内存和发热",
+      "清理废弃的 saveTtsAutoReadSetting 方法"
+    ],
+    "fixes": []
+  },
+  {
     "version": "2.33.0",
     "date": "2026-02-19",
     "features": [

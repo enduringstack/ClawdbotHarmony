@@ -51,7 +51,7 @@ export class NotificationCapability {
       await this.ensurePermission();
     }
     if (!this.permissionGranted) {
-      this.log.error(TAG, 'Notification permission not granted');
+      this.log.system(TAG, 'Notification permission not granted');
       return '{"ok":false,"error":"NOTIFICATION_PERMISSION_DENIED","message":"Notification permission not granted"}';
     }
 
@@ -207,7 +207,7 @@ export class NotificationCapability {
             this.permissionGranted = true;
             this.log.info(TAG, 'Notification permission already granted (code 1600004)');
           } else {
-            this.log.warn(TAG, `Notification permission denied: code=${code} msg=${(err as Error).message ?? ''}`);
+            this.log.system(TAG, `Notification permission denied: code=${code} msg=${(err as Error).message ?? ''}`);
             this.permissionGranted = false;
           }
         }

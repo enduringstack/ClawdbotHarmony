@@ -4,6 +4,14 @@
  * 环境感知系统的核心数据结构
  */
 
+// ==================== 基础接口 ====================
+
+/** 时间范围接口 */
+export interface TimeRange {
+  start: string;
+  end: string;
+}
+
 // ==================== 位置相关 ====================
 
 /** 地理围栏定义 */
@@ -299,10 +307,7 @@ export interface VisionAnalysisConfig {
   captureIntervalMinutes: number;  // 多少分钟拍一次
   
   // 拍照时间范围
-  activeHours: {
-    start: string;  // "07:00"
-    end: string;    // "22:00"
-  };
+  activeHours: TimeRange;
   
   // 隐私保护
   onlyWhenScreenOn: boolean;  // 只在屏幕亮着时拍
@@ -338,10 +343,7 @@ export interface HealthRule {
   exceptKeywords?: string[];  // ["坚果", "水果"]
   
   // 时间限制
-  activeTimeRanges?: {
-    start: string;
-    end: string;
-  }[];
+  activeTimeRanges?: TimeRange[];
   
   // 提醒
   warningMessage: string;     // "检测到你在吃零食，建议换成健康食品"

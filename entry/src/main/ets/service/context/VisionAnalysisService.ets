@@ -84,7 +84,7 @@ export class VisionAnalysisService {
   }
   
   private addDefaultRules(): void {
-    const defaultRules: HealthRule[] = [
+    let defaultRules: HealthRule[] = [
       {
         id: 'unhealthy_snacks',
         name: '避免高热量零食',
@@ -164,7 +164,7 @@ export class VisionAnalysisService {
   }
   
   removeRule(id: string): boolean {
-    const removed = this.rules.delete(id);
+    let removed = this.rules.delete(id);
     if (removed) this.saveRulesAsync();
     return removed;
   }
@@ -178,7 +178,7 @@ export class VisionAnalysisService {
   }
   
   enableRule(id: string, enabled: boolean): void {
-    const rule = this.rules.get(id);
+    let rule = this.rules.get(id);
     if (rule) {
       rule.enabled = enabled;
       this.saveRulesAsync();
@@ -206,7 +206,7 @@ export class VisionAnalysisService {
       return false;
     }
     
-    const intervalMs = this.config.captureIntervalMinutes * 60 * 1000;
+    let intervalMs = this.config.captureIntervalMinutes * 60 * 1000;
     
     this.captureTimer = setInterval(() => {
       this.captureAndAnalyze();
@@ -250,7 +250,7 @@ export class VisionAnalysisService {
     
     try {
       // 拍照
-      const imagePath = await this.capturePhoto();
+      let imagePath = await this.capturePhoto();
       if (!imagePath) {
         this.log.warn(TAG, 'Failed to capture photo');
         return undefined;
@@ -262,7 +262,7 @@ export class VisionAnalysisService {
         return undefined;
       }
       
-      const result = await this.analyzeImageCallback(imagePath);
+      let result = await this.analyzeImageCallback(imagePath);
       result.imagePath = imagePath;
       
       this.log.info(TAG, `Analysis: ${result.description}`);
@@ -298,8 +298,8 @@ export class VisionAnalysisService {
     // 注意：实际实现需要更完整的相机控制
     try {
       // 简化实现：生成临时文件路径
-      const timestamp = Date.now();
-      const path = `${this.context?.filesDir}/vision_${timestamp}.jpg`;
+      let timestamp = Date.now();
+      let path = `${this.context?.filesDir}/vision_${timestamp}.jpg`;
       
       // TODO: 实际的相机拍照逻辑
       // 这里需要使用 CameraCapability 的功能
@@ -314,20 +314,20 @@ export class VisionAnalysisService {
   }
   
   private isWithinActiveHours(): boolean {
-    const now = new Date();
-    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    let now = new Date();
+    let currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     
-    const { start, end } = this.config.activeHours;
+    let { start, end } = this.config.activeHours;
     return currentTime >= start && currentTime <= end;
   }
   
   // ==================== 健康规则检查 ====================
   
   private async checkHealthRules(result: VisionAnalysisResult): Promise<void> {
-    const now = new Date();
-    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    let now = new Date();
+    let currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     
-    const allText = [
+    let allText = [
       result.description,
       ...result.detectedActivities,
       ...result.detectedObjects,
@@ -338,21 +338,21 @@ export class VisionAnalysisService {
       
       // 检查时间范围
       if (rule.activeTimeRanges && rule.activeTimeRanges.length > 0) {
-        const inRange = rule.activeTimeRanges.some(range => 
+        let inRange = rule.activeTimeRanges.some(range => 
           currentTime >= range.start && currentTime <= range.end
         );
         if (!inRange) continue;
       }
       
       // 检查触发关键词
-      const triggered = rule.triggerKeywords.some(kw => 
+      let triggered = rule.triggerKeywords.some(kw => 
         allText.includes(kw.toLowerCase())
       );
       if (!triggered) continue;
       
       // 检查排除关键词
       if (rule.exceptKeywords && rule.exceptKeywords.length > 0) {
-        const excepted = rule.exceptKeywords.some(kw => 
+        let excepted = rule.exceptKeywords.some(kw => 
           allText.includes(kw.toLowerCase())
         );
         if (excepted) continue;
@@ -380,7 +380,7 @@ export class VisionAnalysisService {
   
   private async sendAlert(rule: HealthRule): Promise<void> {
     try {
-      const request: notificationManager.NotificationRequest = {
+      let request: notificationManager.NotificationRequest = {
         id: Date.now() % 100000,
         content: {
           notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
@@ -404,7 +404,7 @@ export class VisionAnalysisService {
   }
   
   removeAlertListener(listener: VisionAlertListener): void {
-    const idx = this.alertListeners.indexOf(listener);
+    let idx = this.alertListeners.indexOf(listener);
     if (idx >= 0) this.alertListeners.splice(idx, 1);
   }
   
@@ -429,8 +429,8 @@ export class VisionAnalysisService {
     healthyCount: number;
     concernCount: number;
   } {
-    const today = new Date().toISOString().split('T')[0];
-    const todayResults = this.history.filter(r => 
+    let today = new Date().toISOString().split('T')[0];
+    let todayResults = this.history.filter(r => 
       new Date(r.timestamp).toISOString().split('T')[0] === today
     );
     
@@ -453,7 +453,7 @@ export class VisionAnalysisService {
   private async saveConfig(): Promise<void> {
     if (!this.context) return;
     try {
-      const store = await preferences.getPreferences(this.context, PREFS_NAME);
+      let store = await preferences.getPreferences(this.context, PREFS_NAME);
       await store.put(KEY_CONFIG, JSON.stringify(this.config));
       await store.flush();
     } catch (err) {
@@ -463,8 +463,8 @@ export class VisionAnalysisService {
   
   private async loadConfig(context: common.UIAbilityContext): Promise<void> {
     try {
-      const store = await preferences.getPreferences(context, PREFS_NAME);
-      const data = await store.get(KEY_CONFIG, '') as string;
+      let store = await preferences.getPreferences(context, PREFS_NAME);
+      let data = await store.get(KEY_CONFIG, '') as string;
       if (data) {
         this.config = { ...this.config, ...JSON.parse(data) };
       }
@@ -476,7 +476,7 @@ export class VisionAnalysisService {
   private async saveRulesAsync(): Promise<void> {
     if (!this.context) return;
     try {
-      const store = await preferences.getPreferences(this.context, PREFS_NAME);
+      let store = await preferences.getPreferences(this.context, PREFS_NAME);
       await store.put(KEY_RULES, JSON.stringify(Array.from(this.rules.entries())));
       await store.flush();
     } catch (err) {
@@ -486,9 +486,9 @@ export class VisionAnalysisService {
   
   private async loadRules(context: common.UIAbilityContext): Promise<void> {
     try {
-      const store = await preferences.getPreferences(context, PREFS_NAME);
-      const data = await store.get(KEY_RULES, '[]') as string;
-      const entries = JSON.parse(data) as [string, HealthRule][];
+      let store = await preferences.getPreferences(context, PREFS_NAME);
+      let data = await store.get(KEY_RULES, '[]') as string;
+      let entries = JSON.parse(data) as [string, HealthRule][];
       this.rules = new Map(entries);
     } catch {
       // use defaults
@@ -498,7 +498,7 @@ export class VisionAnalysisService {
   private async saveHistoryAsync(): Promise<void> {
     if (!this.context) return;
     try {
-      const store = await preferences.getPreferences(this.context, PREFS_NAME);
+      let store = await preferences.getPreferences(this.context, PREFS_NAME);
       await store.put(KEY_HISTORY, JSON.stringify(this.history));
       await store.flush();
     } catch {
@@ -508,8 +508,8 @@ export class VisionAnalysisService {
   
   private async loadHistory(context: common.UIAbilityContext): Promise<void> {
     try {
-      const store = await preferences.getPreferences(context, PREFS_NAME);
-      const data = await store.get(KEY_HISTORY, '[]') as string;
+      let store = await preferences.getPreferences(context, PREFS_NAME);
+      let data = await store.get(KEY_HISTORY, '[]') as string;
       this.history = JSON.parse(data);
     } catch {
       // empty history
@@ -523,7 +523,7 @@ export class VisionAnalysisService {
   }
   
   getStatus(): string {
-    const stats = this.getTodayStats();
+    let stats = this.getTodayStats();
     return `Running: ${this.isRunning}, Today: ${stats.captures} captures, ${stats.concernCount} concerns`;
   }
 }
