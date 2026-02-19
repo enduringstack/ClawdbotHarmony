@@ -805,6 +805,7 @@ export struct ChatPage {
             .backgroundColor('#F0F0F0')
             .padding({ left: 16, right: 16 })
             .fontSize(15)
+            .enableKeyboardOnFocus(false)
             .onChange((v: string) => { this.inputText = v; })
             .onSubmit(() => { this.send(); })
         }

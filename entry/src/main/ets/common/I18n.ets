@@ -187,6 +187,7 @@ function buildZh(): Map<string, string> {
   m.set('memory.syncing', '正在同步...');
   m.set('memory.syncDone', '同步完成，新增 {0} 条');
   m.set('memory.syncFailed', '同步失败');
+  m.set('memory.extractAll', '一键提取');
   m.set('memory.noMessages', '当前对话为空');
   m.set('memory.tabMemory', '记忆');
   m.set('memory.tabHistory', '对话历史');
@@ -652,6 +653,7 @@ function buildEn(): Map<string, string> {
   m.set('memory.syncing', 'Syncing...');
   m.set('memory.syncDone', 'Synced, {0} new items');
   m.set('memory.syncFailed', 'Sync failed');
+  m.set('memory.extractAll', 'Extract All');
   m.set('memory.noMessages', 'No messages in current chat');
   m.set('memory.tabMemory', 'Memory');
   m.set('memory.tabHistory', 'Chat History');

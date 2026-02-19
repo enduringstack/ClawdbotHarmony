@@ -47,9 +47,10 @@ import { LogService } from '../../common/LogService';
 import { Constants } from '../../common/Constants';
 import { NotificationHelper } from '../NotificationHelper';
 import { ExperienceStorage } from '../ExperienceStorage';
+import { MemoryService } from '../MemoryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.31.0';
+const APP_VERSION = '2.32.0';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -827,7 +828,7 @@ export class NodeRuntime {
       path = path.substring(1);
     }
     let scheme = ep.useTls ? 'https' : 'http';
-    let cleanHost = ep.host.replace(/\/+$/, '');
+    let cleanHost = ep.host.endsWith('/') ? ep.host.slice(0, ep.host.lastIndexOf('/')) : ep.host;
     return `${scheme}://${cleanHost}:${ep.port}/media/${path}`;
   }
 
@@ -850,7 +851,7 @@ export class NodeRuntime {
     if (!ep) return undefined;
     let path = av.startsWith('/') ? av.substring(1) : av;
     let scheme = ep.useTls ? 'https' : 'http';
-    let cleanHost = ep.host.replace(/\/+$/, '');
+    let cleanHost = ep.host.endsWith('/') ? ep.host.slice(0, ep.host.lastIndexOf('/')) : ep.host;
     return `${scheme}://${cleanHost}:${ep.port}/media/${path}`;
   }
 
@@ -865,7 +866,7 @@ export class NodeRuntime {
 
     // Build candidate URLs: try /avatar/{agentId} first (OpenClaw gateway), then /media/{path}
     let scheme = ep.useTls ? 'https' : 'http';
-    let cleanHost = ep.host.replace(/\/+$/, '');
+    let cleanHost = ep.host.endsWith('/') ? ep.host.slice(0, ep.host.lastIndexOf('/')) : ep.host;
     let baseUrl = `${scheme}://${cleanHost}:${ep.port}`;
     let urls: string[] = [
       `${baseUrl}/avatar/${this._agentId}`,
@@ -2139,6 +2140,90 @@ export class NodeRuntime {
     };
   }
 
+  /**
+   * One-click extract: fetch all workspace memory files from the server.
+   * Pulls MEMORY.md, SOUL.md, USER.md, IDENTITY.md, and memory/*.md diary files.
+   * Returns a map of filePath → content (text).
+   */
+  async fetchWorkspaceFiles(): Promise<Map<string, string>> {
+    if (!this.operatorSession || this._operatorState !== ConnectionState.Connected) {
+      throw new Error('Gateway not connected');
+    }
+
+    let result = new Map<string, string>();
+    let filesToFetch: string[] = [
+      'workspace/MEMORY.md',
+      'workspace/SOUL.md',
+      'workspace/USER.md',
+      'workspace/IDENTITY.md',
+      'workspace/AGENTS.md',
+      'workspace/TOOLS.md',
+      'workspace/HEARTBEAT.md',
+    ];
+
+    // Fetch known files
+    for (let filePath of filesToFetch) {
+      try {
+        let fileResult = await this.requestFile(filePath);
+        if (fileResult.data.length > 0) {
+          let decoded = buffer.from(fileResult.data, 'base64').toString('utf-8');
+          result.set(filePath, decoded);
+          this.log.info(TAG, `fetchWorkspace: got ${filePath} (${decoded.length} chars)`);
+        }
+      } catch {
+        this.log.info(TAG, `fetchWorkspace: ${filePath} not found (skipped)`);
+      }
+    }
+
+    // Try to fetch memory diary files by listing directory
+    // Use file.list RPC if available, otherwise try common date patterns
+    try {
+      let listJson = await this.operatorSession.request('file.list', '{"path":"workspace/memory"}', 10000);
+      if (listJson.length > 0) {
+        let listRes = JSON.parse(listJson) as Record<string, Object>;
+        let files = listRes['files'] as string[] | undefined;
+        if (files && Array.isArray(files)) {
+          for (let fileName of files) {
+            if (fileName.endsWith('.md')) {
+              let diaryPath = `workspace/memory/${fileName}`;
+              try {
+                let fileResult = await this.requestFile(diaryPath);
+                if (fileResult.data.length > 0) {
+                  let decoded = buffer.from(fileResult.data, 'base64').toString('utf-8');
+                  result.set(diaryPath, decoded);
+                  this.log.info(TAG, `fetchWorkspace: got diary ${diaryPath} (${decoded.length} chars)`);
+                }
+              } catch {
+                this.log.info(TAG, `fetchWorkspace: diary ${diaryPath} failed (skipped)`);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      this.log.info(TAG, 'fetchWorkspace: file.list not available, trying recent dates');
+      // Fallback: try last 30 days of diary files
+      let now = Date.now();
+      for (let dayOffset = 0; dayOffset < 30; dayOffset++) {
+        let d = new Date(now - dayOffset * 86400000);
+        let dateStr = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}`;
+        let diaryPath = `workspace/memory/${dateStr}.md`;
+        try {
+          let fileResult = await this.requestFile(diaryPath);
+          if (fileResult.data.length > 0) {
+            let decoded = buffer.from(fileResult.data, 'base64').toString('utf-8');
+            result.set(diaryPath, decoded);
+          }
+        } catch {
+          // skip
+        }
+      }
+    }
+
+    this.log.info(TAG, `fetchWorkspace: total ${result.size} files fetched`);
+    return result;
+  }
+
   /** Fetch memories from the OpenClaw server via operator session RPC. */
   async fetchMemories(): Promise<string> {
     if (!this.operatorSession) {
@@ -2195,7 +2280,8 @@ export class NodeRuntime {
 
   // ---- Experience Pack sync ----
 
-  /** Send the local experience pack to the gateway after connecting. */
+  /** Send the local experience pack and memories to the gateway after connecting.
+   *  This pushes the phone (source of truth) to the server. */
   private async syncExperiencePack(): Promise<void> {
     if (!this._context || !this.operatorSession) return;
     try {
@@ -2212,18 +2298,62 @@ export class NodeRuntime {
     } catch (err) {
       this.log.warn(TAG, `Experience sync failed: ${(err as Error).message ?? ''}`);
     }
+
+    // Also push local memory items to server (phone is source of truth)
+    try {
+      let memSvc = MemoryService.getInstance();
+      let items = await memSvc.loadAll(this._context);
+      if (items.length > 0) {
+        let memPayload: Record<string, string | number>[] = [];
+        for (let item of items) {
+          let entry: Record<string, string | number> = {
+            'type': item.memType,
+            'content': item.content,
+            'importance': item.importance,
+            'createdAt': item.createdAt,
+          };
+          memPayload.push(entry);
+        }
+        let syncObj: Record<string, string | Record<string, string | number>[]> = { 'type': 'memory_sync', 'items': memPayload };
+        let payload = JSON.stringify(syncObj);
+        await this.operatorSession.sendNodeEvent('memory_sync', payload);
+        this.log.info(TAG, `Pushed ${items.length} memory items to server`);
+      }
+    } catch (err) {
+      this.log.warn(TAG, `Memory push failed: ${(err as Error).message ?? ''}`);
+    }
   }
 
-  /** Handle experience_update events from the server (learning feedback). */
+  /** Handle experience_update events from the server (learning feedback).
+   *  Also syncs new memory items to local MemoryService (append-only). */
   private handleExperienceUpdate(payloadJson: string): void {
     if (!this._context) return;
     try {
       let raw = JSON.parse(payloadJson) as Record<string, Object>;
+      let ctx = this._context;
+
+      // Merge experience pack (append-only)
       let storage = ExperienceStorage.getInstance();
-      storage.mergeUpdate(this._context, raw).catch((err: Error) => {
+      storage.mergeUpdate(ctx, raw).catch((err: Error) => {
         this.log.error(TAG, `Experience merge failed: ${err.message ?? ''}`);
       });
-      this.log.info(TAG, 'Experience update received and merged');
+
+      // Also sync memory items to local MemoryService
+      if (raw['memories'] && Array.isArray(raw['memories'])) {
+        let memItems = raw['memories'] as Record<string, Object>[];
+        let memSvc = MemoryService.getInstance();
+        for (let mem of memItems) {
+          let content = String(mem['content'] ?? '');
+          let memType = String(mem['type'] ?? mem['memType'] ?? 'fact');
+          let importance = (mem['importance'] as number) ?? 0.5;
+          if (content.length > 0) {
+            memSvc.addIfNew(ctx, memType, content, importance).catch(() => { /* ignore */ });
+          }
+        }
+        this.log.info(TAG, `Real-time memory sync: ${memItems.length} items received`);
+      }
+
+      this.log.info(TAG, 'Experience update received and merged (append-only)');
     } catch (err) {
       this.log.error(TAG, `Failed to parse experience_update: ${(err as Error).message ?? ''}`);
     }

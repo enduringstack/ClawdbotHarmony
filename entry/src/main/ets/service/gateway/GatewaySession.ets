@@ -238,7 +238,7 @@ export class GatewaySession {
     this.closeSocket();
 
     let scheme = ep.useTls ? 'wss' : 'ws';
-    let cleanHost = ep.host.replace(/\/+$/, '');
+    let cleanHost = ep.host.endsWith('/') ? ep.host.slice(0, ep.host.lastIndexOf('/')) : ep.host;
     let host = cleanHost.includes(':') ? `[${cleanHost}]` : cleanHost;
     let url = `${scheme}://${host}:${ep.port}`;
 

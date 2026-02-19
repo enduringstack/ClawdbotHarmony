@@ -147,9 +147,18 @@ export struct MemoryPage {
         .padding({ left: 20, right: 20, bottom: 12 })
         .width('100%')
 
-      // Action button: Sync from server (memory extraction now happens automatically on session switch)
+      // Action buttons: one-click extract + sync from server
       if (NodeRuntime.getInstance().isConnected) {
         Row({ space: 8 }) {
+          Button(this.isSyncing ? I18n.t('memory.syncing') : '📥 ' + I18n.t('memory.extractAll'))
+            .fontSize(12)
+            .height(32)
+            .backgroundColor(this.isSyncing ? '#999999' : '#D2691E')
+            .fontColor(Color.White)
+            .borderRadius(16)
+            .enabled(!this.isSyncing)
+            .onClick(() => { this.extractAllFromServer(); })
+
           Button(this.isSyncing ? I18n.t('memory.syncing') : I18n.t('memory.syncFromServer'))
             .fontSize(12)
             .height(32)
@@ -723,6 +732,137 @@ Respond ONLY with the JSON array.`;
     } finally {
       this.isExtracting = false;
     }
+  }
+
+  // ============ One-Click Extract All from Server ============
+
+  private async extractAllFromServer(): Promise<void> {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      let runtime = NodeRuntime.getInstance();
+      if (!runtime.isConnected) {
+        promptAction.showToast({ message: I18n.t('memory.syncFailed'), duration: 1500 });
+        this.isSyncing = false;
+        return;
+      }
+
+      // Fetch all workspace memory files from server
+      let files = await runtime.fetchWorkspaceFiles();
+      if (files.size === 0) {
+        promptAction.showToast({ message: I18n.t('chat.noNewMemory'), duration: 1500 });
+        this.isSyncing = false;
+        return;
+      }
+
+      let addedCount = 0;
+
+      // Parse MEMORY.md — extract bullet points as memory items
+      let memoryMd = files.get('workspace/MEMORY.md');
+      if (memoryMd && memoryMd.length > 0) {
+        addedCount += await this.parseAndAddMemoryMd(ctx, memoryMd);
+      }
+
+      // Parse daily diary files — extract entries
+      for (let entry of files.entries()) {
+        let path = entry[0];
+        let content = entry[1];
+        if (path.includes('memory/') && path.endsWith('.md') && content.length > 0) {
+          addedCount += await this.parseAndAddDiaryFile(ctx, content);
+        }
+      }
+
+      // Save SOUL.md, USER.md, IDENTITY.md as special memory items
+      let specialFiles: [string, string][] = [
+        ['workspace/SOUL.md', 'SOUL'],
+        ['workspace/USER.md', 'USER'],
+        ['workspace/IDENTITY.md', 'IDENTITY'],
+      ];
+      for (let sf of specialFiles) {
+        let fileContent = files.get(sf[0]);
+        if (fileContent && fileContent.length > 0) {
+          let item = await this.memSvc.addIfNew(ctx, 'fact', `[${sf[1]}] ${fileContent.substring(0, 500)}`, 0.9);
+          if (item) {
+            this.entries.push(item);
+            addedCount++;
+          }
+        }
+      }
+
+      promptAction.showToast({
+        message: `提取完成：新增 ${addedCount} 条记忆`,
+        duration: 2000
+      });
+      this.log.info('MemoryPage', `Extract all: ${files.size} files, ${addedCount} new memories`);
+    } catch (e) {
+      this.log.warn('MemoryPage', `Extract all failed: ${(e as Error).message ?? ''}`);
+      promptAction.showToast({ message: I18n.t('memory.syncFailed'), duration: 1500 });
+    } finally {
+      this.isSyncing = false;
+    }
+  }
+
+  /** Parse MEMORY.md content and add bullet items as memories */
+  private async parseAndAddMemoryMd(ctx: common.UIAbilityContext, content: string): Promise<number> {
+    let lines = content.split('\n');
+    let addedCount = 0;
+    let currentSection = 'fact'; // default type
+
+    for (let line of lines) {
+      let trimmed = line.trim();
+      // Detect section headers
+      if (trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
+        let header = trimmed.toLowerCase();
+        if (header.includes('preference')) currentSection = 'preference';
+        else if (header.includes('instruction')) currentSection = 'instruction';
+        else currentSection = 'fact';
+        continue;
+      }
+      // Extract bullet point content
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        let itemContent = trimmed.substring(2).trim();
+        if (itemContent.length > 3) {
+          let item = await this.memSvc.addIfNew(ctx, currentSection, itemContent, 0.7);
+          if (item) {
+            this.entries.push(item);
+            addedCount++;
+          }
+        }
+      }
+    }
+    return addedCount;
+  }
+
+  /** Parse diary file content and add entries as memories */
+  private async parseAndAddDiaryFile(ctx: common.UIAbilityContext, content: string): Promise<number> {
+    let lines = content.split('\n');
+    let addedCount = 0;
+
+    for (let line of lines) {
+      let trimmed = line.trim();
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        let itemContent = trimmed.substring(2).trim();
+        // Try to extract type from [fact]/[pref]/[inst] tags
+        let memType = 'fact';
+        let typeMatch = /^\d{2}:\d{2}\s*\[(\w+)\]\s*(.+)/.exec(itemContent);
+        if (typeMatch) {
+          let tag = typeMatch[1];
+          if (tag === 'pref' || tag === 'preference') memType = 'preference';
+          else if (tag === 'inst' || tag === 'instruction') memType = 'instruction';
+          itemContent = typeMatch[2];
+        }
+        if (itemContent.length > 3) {
+          let item = await this.memSvc.addIfNew(ctx, memType, itemContent, 0.6);
+          if (item) {
+            this.entries.push(item);
+            addedCount++;
+          }
+        }
+      }
+    }
+    return addedCount;
   }
 
   // ============ Sync from Server ============

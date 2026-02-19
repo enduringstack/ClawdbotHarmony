@@ -1465,7 +1465,7 @@ export struct SettingsPage {
         Column() {
           this.InfoRow(I18n.t('settings.appName'), 'ClawdBot')
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
-          this.InfoRow(I18n.t('settings.version'), '2.31.0')
+          this.InfoRow(I18n.t('settings.version'), '2.32.0')
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
           this.InfoRow(I18n.t('settings.developer'), 'OpenClaw')
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
@@ -1938,7 +1938,8 @@ export struct SettingsPage {
 
   /** Helper: connect to gateway with specified sessions */
   private async connectToGateway(connectOperator: boolean, connectNode: boolean): Promise<void> {
-    let host = this.gwHost.trim().replace(/\/+$/, '');
+    let hostTrimmed = this.gwHost.trim();
+    let host = hostTrimmed.endsWith('/') ? hostTrimmed.slice(0, hostTrimmed.lastIndexOf('/')) : hostTrimmed;
     if (host.length === 0) {
       promptAction.showToast({ message: I18n.t('settings.enterHost'), duration: 1500 });
       return;

@@ -8,9 +8,21 @@ export interface ChangelogEntry {
   fixes: string[];
 }
 
-export const APP_VERSION: string = '2.31.0';
+export const APP_VERSION: string = '2.32.0';
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.32.0',
+    date: '2026-02-19',
+    features: [
+      '修复头像不显示：Gateway host 末尾斜杠导致 URL 拼接错误',
+      '修复 WhatsApp/Telegram 消息混入 Harmony 对话：添加 sessionKey 过滤',
+      '外接键盘优化：输入框不再自动弹出软键盘',
+    ],
+    fixes: [
+
+    ],
+  },
   {
     version: '2.23.0',
     date: '2026-02-18',
@@ -295,4 +307,4 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export const LATEST_VERSION: string = '2.23.0';
+export const LATEST_VERSION: string = '2.32.0';

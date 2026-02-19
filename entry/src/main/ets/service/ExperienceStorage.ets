@@ -290,31 +290,61 @@ export class ExperienceStorage {
 
   // ==================== 服务端合并更新 ====================
 
+  /**
+   * Append-only merge: never overwrite existing experiences.
+   * New experiences are appended; duplicates (same id) are skipped.
+   * Skills and memories within existing experiences are also append-only.
+   */
   async mergeUpdate(context: common.UIAbilityContext, partial: Record<string, Object>): Promise<void> {
     let pack = await this.ensureLoaded(context);
 
     if (partial['experiences'] && Array.isArray(partial['experiences'])) {
       let newExps = partial['experiences'] as Experience[];
+      let existingIds = new Set<string>();
+      for (let e of pack.experiences) {
+        existingIds.add(e.id);
+      }
+
       for (let i = 0; i < newExps.length; i++) {
         let exp = newExps[i];
         if (!exp.id) exp.id = generateId();
         if (!exp.createdAt) exp.createdAt = Date.now();
         if (!exp.updatedAt) exp.updatedAt = Date.now();
 
-        let idx = pack.experiences.findIndex((e: Experience) => e.name === exp.name);
-        if (idx >= 0) {
-          // 合并：新的更晚时覆盖
-          if (exp.updatedAt > pack.experiences[idx].updatedAt) {
-            pack.experiences[idx] = exp;
+        if (existingIds.has(exp.id)) {
+          // Append-only: merge new skills/memories into existing experience
+          let existing = pack.experiences.find((e: Experience) => e.id === exp.id);
+          if (existing) {
+            let existingSkillNames = new Set<string>();
+            for (let s of existing.skills) {
+              existingSkillNames.add(s.name);
+            }
+            for (let s of exp.skills) {
+              if (!existingSkillNames.has(s.name)) {
+                existing.skills.push(s);
+              }
+            }
+            let existingMemKeys = new Set<string>();
+            for (let m of existing.memory) {
+              existingMemKeys.add(m.key);
+            }
+            for (let m of exp.memory) {
+              if (!existingMemKeys.has(m.key)) {
+                existing.memory.push(m);
+              }
+            }
+            existing.updatedAt = Date.now();
           }
         } else {
+          // New experience: append
           pack.experiences.push(exp);
+          existingIds.add(exp.id);
         }
       }
     }
 
     await this.save(context, pack);
-    this.log.info(TAG, 'Merged server update');
+    this.log.info(TAG, 'Merged server update (append-only)');
   }
 
   // ==================== 统计 ====================
