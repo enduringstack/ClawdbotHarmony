@@ -58,7 +58,6 @@ export struct ChatPage {
   @State gwAgentAvatar: string = '';
   @State apiErrorMessage: string = '';  // API error message to display (e.g., insufficient balance)
   @State showApiErrorBanner: boolean = false;  // whether to show error banner
-  @State currentModelName: string = '';  // Current model name for display in header
   @State gwAgentTheme: string = '';
   @State isTalkMode: boolean = false;
   @State talkStatus: string = '';
@@ -333,6 +332,18 @@ export struct ChatPage {
         .animation({ duration: 300 })
       }
 
+      // -- app title bar --
+      Row() {
+        Text('OpenClaw 鸿蒙')
+          .fontSize(14)
+          .fontColor('#FF6B00')
+          .fontWeight(FontWeight.Bold)
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ top: 8, bottom: 4 })
+      .backgroundColor(Color.White)
+
       // -- header --
       Row() {
           // Session menu button (hamburger)
@@ -405,16 +416,6 @@ export struct ChatPage {
                 .borderRadius(8)
                 .backgroundColor('#E8F5E9')
                 .flexShrink(0)
-              }
-              // Display current model name
-              if (this.currentModelName.length > 0) {
-                Text(this.currentModelName)
-                  .fontSize(10)
-                  .fontColor('#666666')
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .constraintSize({ maxWidth: 120 })
-                  .flexShrink(1)
               }
             }
             .width('100%')
@@ -834,7 +835,7 @@ export struct ChatPage {
         .onClick(() => { this.send(); })
       }
       .width('100%')
-      .padding(10)
+      .padding({ left: 10, right: 10, top: 10, bottom: 8 })
       .backgroundColor(Color.White)
       .shadow({ radius: 4, color: '#00000008', offsetY: -1 })
     }
@@ -1151,17 +1152,6 @@ Respond ONLY with the JSON array.`;
       let store = await preferences.getPreferences(ctx, Constants.PREFS_SETTINGS);
       this.assistantName = (await store.get('assistant_name', '')) as string;
       this.assistantAvatar = (await store.get('assistant_avatar', '')) as string;
-      // Load current model name for display
-      let provider = (await store.get('provider', 'openrouter')) as string;
-      let modelPref = 'model_' + provider;
-      let defaultModel = provider === 'openrouter' ? Constants.DEFAULT_MODEL_OPENROUTER
-        : provider === 'anthropic' ? Constants.DEFAULT_MODEL_ANTHROPIC
-          : provider === 'openai' ? Constants.DEFAULT_MODEL_OPENAI
-            : provider === 'siliconflow' ? Constants.DEFAULT_MODEL_SILICONFLOW
-              : provider === 'custom' ? '' : 'llama3';
-      let model = (await store.get(modelPref, defaultModel)) as string;
-      // Shorten model name for display (e.g., "anthropic/claude-3-opus" -> "claude-3-opus")
-      this.currentModelName = model.includes('/') ? model.split('/').pop() ?? model : model;
     } catch { /* defaults */ }
   }
 
