@@ -2352,7 +2352,13 @@ export class NodeRuntime {
         'sessionKey': 'main',
         'deliver': false,
       });
-      await this.operatorSession.sendNodeEvent('agent.request', agentPayload);
+      // node.event requires the node-role session (operator role is unauthorized)
+      if (this.nodeSession) {
+        await this.nodeSession.sendNodeEvent('agent.request', agentPayload);
+      } else {
+        this.log.warn(TAG, 'No node session available for experience sync');
+        return;
+      }
       await storage.markSynced(this._context);
       this.log.info(TAG, 'Experience pack sent to agent for processing');
     } catch (err) {
