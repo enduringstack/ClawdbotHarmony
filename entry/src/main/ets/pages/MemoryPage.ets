@@ -15,6 +15,11 @@ interface MemoryExtractItem {
   content: string;
 }
 
+interface MarkdownBlock {
+  type: string;
+  text: string;
+}
+
 @Component
 export struct MemoryPage {
   @Prop @Watch('onTabChange') isActive: boolean = false;
@@ -27,6 +32,8 @@ export struct MemoryPage {
   @State isExtracting: boolean = false;
   @State isSyncing: boolean = false;
   @State searchKeyword: string = '';
+  @State showDetail: boolean = false;
+  @State detailItem: MemoryItem | null = null;
   // Chat history states
   @State viewMode: string = 'memory'; // 'memory' | 'history'
   @State allSessions: ChatSession[] = [];
@@ -100,7 +107,9 @@ export struct MemoryPage {
       .padding({ top: 12, bottom: 8 })
       .backgroundColor('#F5F5F5')
 
-      if (this.viewMode === 'memory') {
+      if (this.showDetail && this.detailItem !== null) {
+        this.DetailView()
+      } else if (this.viewMode === 'memory') {
         this.MemoryView()
       } else if (this.viewingSessionId.length > 0) {
         this.SessionDetailView()
@@ -521,6 +530,8 @@ export struct MemoryPage {
         .fontColor('#1A1A1A')
         .lineHeight(20)
         .width('100%')
+        .maxLines(3)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
 
       Text(new Date(item.createdAt).toLocaleDateString())
         .fontSize(11)
@@ -531,6 +542,10 @@ export struct MemoryPage {
     .borderRadius(12)
     .shadow({ radius: 4, color: '#0000000A', offsetX: 0, offsetY: 2 })
     .width('100%')
+    .onClick(() => {
+      this.detailItem = item;
+      this.showDetail = true;
+    })
   }
 
   // ============ logic ============
@@ -933,6 +948,140 @@ Respond ONLY with the JSON array.`;
       baseUrl: baseUrl,
       temperature: (await store.get('temperature', 0.7)) as number,
     };
+  }
+
+  // ============ Detail View ============
+  @Builder
+  DetailView() {
+    Column() {
+      Row() {
+        Text('\u2190 ' + I18n.t('memory.tabMemory'))
+          .fontSize(16)
+          .fontColor('#D2691E')
+          .onClick(() => { this.showDetail = false; this.detailItem = null; })
+        Blank()
+        if (this.detailItem !== null) {
+          Text(this.typeIcon(this.detailItem!.memType) + ' ' + this.typeLabel(this.detailItem!.memType))
+            .fontSize(13)
+            .fontColor('#666666')
+        }
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 12, bottom: 8 })
+
+      Scroll() {
+        Column() {
+          if (this.detailItem !== null) {
+            ForEach(this.parseMarkdown(this.detailItem!.content), (block: MarkdownBlock, index: number) => {
+              if (block.type === 'h1') {
+                Text(block.text).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+                  .width('100%').margin({ top: 16, bottom: 8 })
+              } else if (block.type === 'h2') {
+                Text(block.text).fontSize(18).fontWeight(FontWeight.Bold).fontColor('#333333')
+                  .width('100%').margin({ top: 14, bottom: 6 })
+              } else if (block.type === 'h3') {
+                Text(block.text).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#444444')
+                  .width('100%').margin({ top: 12, bottom: 4 })
+              } else if (block.type === 'bullet') {
+                Row() {
+                  Text('\u2022').fontSize(14).fontColor('#666666').margin({ right: 8 })
+                  Text(block.text).fontSize(14).fontColor('#333333').lineHeight(20).layoutWeight(1)
+                }.width('100%').padding({ left: 8 }).margin({ top: 2, bottom: 2 })
+              } else if (block.type === 'code') {
+                Text(block.text).fontSize(13).fontFamily('monospace').fontColor('#D63384')
+                  .backgroundColor('#F8F8F8').padding(12).borderRadius(8)
+                  .width('100%').margin({ top: 4, bottom: 4 })
+              } else if (block.type === 'hr') {
+                Divider().color('#EEEEEE').margin({ top: 8, bottom: 8 }).width('100%')
+              } else if (block.type === 'bold') {
+                Text(block.text).fontSize(14).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+                  .lineHeight(20).width('100%').margin({ top: 2, bottom: 2 })
+              } else {
+                Text(block.text).fontSize(14).fontColor('#333333').lineHeight(20)
+                  .width('100%').margin({ top: 2, bottom: 2 })
+              }
+            }, (block: MarkdownBlock, index: number): string => `${index}_${block.type}`)
+          }
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, bottom: 20 })
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Auto)
+
+      if (this.detailItem !== null) {
+        Text(new Date(this.detailItem!.createdAt).toLocaleString())
+          .fontSize(11).fontColor('#BBBBBB')
+          .padding({ left: 16, bottom: 12 }).width('100%')
+      }
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .backgroundColor('#FFFFFF')
+  }
+
+  // ============ Markdown Parser ============
+  private parseMarkdown(content: string): MarkdownBlock[] {
+    let blocks: MarkdownBlock[] = [];
+    let lines = content.split('\n');
+    let inCodeBlock = false;
+    let codeLines: string[] = [];
+    for (let line of lines) {
+      let trimmed = line.trim();
+      if (trimmed.startsWith('```')) {
+        if (inCodeBlock) {
+          let block: MarkdownBlock = { type: 'code', text: codeLines.join('\n') };
+          blocks.push(block);
+          codeLines = [];
+          inCodeBlock = false;
+        } else {
+          inCodeBlock = true;
+        }
+        continue;
+      }
+      if (inCodeBlock) { codeLines.push(line); continue; }
+      if (trimmed.length === 0) continue;
+      if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+        blocks.push({ type: 'hr', text: '' } as MarkdownBlock); continue;
+      }
+      if (trimmed.startsWith('### ')) {
+        blocks.push({ type: 'h3', text: trimmed.substring(4) } as MarkdownBlock); continue;
+      }
+      if (trimmed.startsWith('## ')) {
+        blocks.push({ type: 'h2', text: trimmed.substring(3) } as MarkdownBlock); continue;
+      }
+      if (trimmed.startsWith('# ')) {
+        blocks.push({ type: 'h1', text: trimmed.substring(2) } as MarkdownBlock); continue;
+      }
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        blocks.push({ type: 'bullet', text: this.stripMd(trimmed.substring(2)) } as MarkdownBlock); continue;
+      }
+      if (trimmed.startsWith('**') && trimmed.endsWith('**') && trimmed.length > 4) {
+        blocks.push({ type: 'bold', text: trimmed.substring(2, trimmed.length - 2) } as MarkdownBlock); continue;
+      }
+      blocks.push({ type: 'text', text: this.stripMd(trimmed) } as MarkdownBlock);
+    }
+    if (inCodeBlock && codeLines.length > 0) {
+      blocks.push({ type: 'code', text: codeLines.join('\n') } as MarkdownBlock);
+    }
+    return blocks;
+  }
+
+  private stripMd(text: string): string {
+    let r = text;
+    while (r.indexOf('**') >= 0) {
+      let i = r.indexOf('**');
+      let e = r.indexOf('**', i + 2);
+      if (e >= 0) { r = r.substring(0, i) + r.substring(i + 2, e) + r.substring(e + 2); }
+      else { break; }
+    }
+    while (r.indexOf('`') >= 0) {
+      let i = r.indexOf('`');
+      let e = r.indexOf('`', i + 1);
+      if (e >= 0) { r = r.substring(0, i) + r.substring(i + 1, e) + r.substring(e + 1); }
+      else { break; }
+    }
+    return r;
   }
 
   // ============ Helpers ============
