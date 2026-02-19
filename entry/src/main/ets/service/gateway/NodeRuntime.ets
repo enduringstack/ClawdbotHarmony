@@ -1955,6 +1955,11 @@ export class NodeRuntime {
 
         this.log.info(TAG, `agentChat: state=${chatState} runId=${runId} seq=${seq} textLen=${fullText.length} blocks=${blocks.length} text(100)="${fullText.substring(0, 100)}"`);
 
+        // Check for experience pull response in chat messages
+        if (fullText.length > 0 && (chatState === 'final' || chatState === 'streaming')) {
+          this.detectExperienceInChat(fullText);
+        }
+
         // Track this runId+seq so we can skip duplicate 'chat' events for the same data
         this._agentActiveRunId = runId;
         let dedupKey = `${runId}:${seq}`;
@@ -2363,6 +2368,61 @@ export class NodeRuntime {
       this.log.info(TAG, 'Experience pack sent to agent for processing');
     } catch (err) {
       this.log.warn(TAG, `Experience sync via agent.request failed: ${(err as Error).message ?? ''}`);
+    }
+
+    // Phase 2: Pull server experience back to phone
+    await this.pullServerExperience();
+  }
+
+  /** Pull experience/memories from the server by asking the AI agent to read
+   *  workspace files and return them in a structured format.
+   *  The response arrives via chat events; detectExperienceInChat() parses it. */
+  private async pullServerExperience(): Promise<void> {
+    if (!this.nodeSession) return;
+    try {
+      let pullMessage = '[System: Experience pull request from mobile device]\n\n'
+        + 'Read your workspace MEMORY.md and TOOLS.md. Extract any facts, preferences, '
+        + 'instructions, and skills worth syncing to the mobile device.\n\n'
+        + 'Return ONLY a JSON block wrapped in <!--EXPERIENCE_PULL_START--> and '
+        + '<!--EXPERIENCE_PULL_END--> markers, with this structure:\n'
+        + '```\n'
+        + '<!--EXPERIENCE_PULL_START-->\n'
+        + '{"experiences":[],"memories":[{"type":"fact","content":"...","importance":0.8}]}\n'
+        + '<!--EXPERIENCE_PULL_END-->\n'
+        + '```\n'
+        + 'If nothing to sync, return empty arrays. No other text outside the markers.';
+
+      let pullPayload = JSON.stringify({
+        'message': pullMessage,
+        'sessionKey': 'experience-sync',
+        'deliver': false,
+      });
+      await this.nodeSession.sendNodeEvent('agent.request', pullPayload);
+      this.log.info(TAG, 'Experience pull request sent');
+    } catch (err) {
+      this.log.warn(TAG, `Experience pull failed: ${(err as Error).message ?? ''}`);
+    }
+  }
+
+  /** Detect experience data in chat messages (from pull response).
+   *  Called from chat event handlers. */
+  detectExperienceInChat(text: string): void {
+    let startMarker = '<!--EXPERIENCE_PULL_START-->';
+    let endMarker = '<!--EXPERIENCE_PULL_END-->';
+    let startIdx = text.indexOf(startMarker);
+    if (startIdx < 0) return;
+    let endIdx = text.indexOf(endMarker, startIdx);
+    if (endIdx < 0) return;
+
+    let jsonStr = text.substring(startIdx + startMarker.length, endIdx).trim();
+    this.log.info(TAG, `Detected experience pull response: ${jsonStr.length} chars`);
+
+    try {
+      let data = JSON.parse(jsonStr) as Record<string, Object>;
+      this.handleExperienceUpdate(JSON.stringify(data));
+      this.log.info(TAG, 'Experience pull data merged successfully');
+    } catch (err) {
+      this.log.error(TAG, `Failed to parse experience pull data: ${(err as Error).message ?? ''}`);
     }
   }
 
