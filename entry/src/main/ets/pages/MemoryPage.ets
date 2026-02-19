@@ -147,18 +147,9 @@ export struct MemoryPage {
         .padding({ left: 20, right: 20, bottom: 12 })
         .width('100%')
 
-      // Action buttons: one-click extract + sync from server
+      // Action button: sync from server
       if (NodeRuntime.getInstance().isConnected) {
         Row({ space: 8 }) {
-          Button(this.isSyncing ? I18n.t('memory.syncing') : '📥 ' + I18n.t('memory.extractAll'))
-            .fontSize(12)
-            .height(32)
-            .backgroundColor(this.isSyncing ? '#999999' : '#D2691E')
-            .fontColor(Color.White)
-            .borderRadius(16)
-            .enabled(!this.isSyncing)
-            .onClick(() => { this.extractAllFromServer(); })
-
           Button(this.isSyncing ? I18n.t('memory.syncing') : I18n.t('memory.syncFromServer'))
             .fontSize(12)
             .height(32)

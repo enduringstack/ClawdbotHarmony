@@ -51,7 +51,7 @@ import { ExperiencePack } from '../../model/ExperiencePack';
 import { MemoryService } from '../MemoryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.33.2';
+const APP_VERSION = '2.33.3';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
