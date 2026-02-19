@@ -1938,7 +1938,7 @@ export struct SettingsPage {
 
   /** Helper: connect to gateway with specified sessions */
   private async connectToGateway(connectOperator: boolean, connectNode: boolean): Promise<void> {
-    let host = this.gwHost.trim();
+    let host = this.gwHost.trim().replace(/\/+$/, '');
     if (host.length === 0) {
       promptAction.showToast({ message: I18n.t('settings.enterHost'), duration: 1500 });
       return;

@@ -238,7 +238,8 @@ export class GatewaySession {
     this.closeSocket();
 
     let scheme = ep.useTls ? 'wss' : 'ws';
-    let host = ep.host.includes(':') ? `[${ep.host}]` : ep.host;
+    let cleanHost = ep.host.replace(/\/+$/, '');
+    let host = cleanHost.includes(':') ? `[${cleanHost}]` : cleanHost;
     let url = `${scheme}://${host}:${ep.port}`;
 
     this.log.info(this.logTag, `WebSocket connecting to ${url}`);

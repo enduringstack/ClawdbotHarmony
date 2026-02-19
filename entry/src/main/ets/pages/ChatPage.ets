@@ -1961,13 +1961,16 @@ Respond ONLY with the JSON array.`;
     let runIdMatch = this.gwRunId.length === 0 || event.runId === this.gwRunId;
 
     if (!isWaiting) {
-      // Not waiting for a local response — this is an unsolicited event
-      // (e.g. AI response to WhatsApp or other channel). Show it in chat.
-      if (text.length > 0 && event.state !== 'error') {
-        this.log.info('ChatPage', `Unsolicited agent event: runId=${event.runId} state=${event.state} textLen=${text.length}`);
+      // Not waiting for a local response — this is an unsolicited event.
+      // Only show events from Harmony sessions (agent:main:harmony:*) or main session.
+      // Ignore events from other channels (WhatsApp, Telegram, etc.) to avoid message mixing.
+      let eventSessionKey = event.sessionKey ?? '';
+      let isHarmonySession = eventSessionKey.startsWith('agent:main:harmony:') || eventSessionKey === 'agent:main:main';
+      if (text.length > 0 && event.state !== 'error' && isHarmonySession) {
+        this.log.info('ChatPage', `Unsolicited agent event: runId=${event.runId} state=${event.state} sessionKey=${eventSessionKey} textLen=${text.length}`);
         this.handleUnsolicitedAgentEvent(event, text);
       } else {
-        this.log.info('ChatPage', `Ignoring unsolicited event: no text or error state`);
+        this.log.info('ChatPage', `Ignoring unsolicited event: text=${text.length > 0} error=${event.state === 'error'} harmonySession=${isHarmonySession} sessionKey=${eventSessionKey}`);
       }
       return;
     }

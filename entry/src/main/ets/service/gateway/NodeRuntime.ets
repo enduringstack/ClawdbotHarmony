@@ -827,7 +827,8 @@ export class NodeRuntime {
       path = path.substring(1);
     }
     let scheme = ep.useTls ? 'https' : 'http';
-    return `${scheme}://${ep.host}:${ep.port}/media/${path}`;
+    let cleanHost = ep.host.replace(/\/+$/, '');
+    return `${scheme}://${cleanHost}:${ep.port}/media/${path}`;
   }
 
   /** Resolve gateway agent avatar to a loadable URL. Returns undefined if not resolvable. */
@@ -849,7 +850,8 @@ export class NodeRuntime {
     if (!ep) return undefined;
     let path = av.startsWith('/') ? av.substring(1) : av;
     let scheme = ep.useTls ? 'https' : 'http';
-    return `${scheme}://${ep.host}:${ep.port}/media/${path}`;
+    let cleanHost = ep.host.replace(/\/+$/, '');
+    return `${scheme}://${cleanHost}:${ep.port}/media/${path}`;
   }
 
   /** Download avatar image from URL and cache locally. Dispatches identity again with updated avatar. */
@@ -863,7 +865,8 @@ export class NodeRuntime {
 
     // Build candidate URLs: try /avatar/{agentId} first (OpenClaw gateway), then /media/{path}
     let scheme = ep.useTls ? 'https' : 'http';
-    let baseUrl = `${scheme}://${ep.host}:${ep.port}`;
+    let cleanHost = ep.host.replace(/\/+$/, '');
+    let baseUrl = `${scheme}://${cleanHost}:${ep.port}`;
     let urls: string[] = [
       `${baseUrl}/avatar/${this._agentId}`,
       `${baseUrl}/media/${identity.avatar}`,
