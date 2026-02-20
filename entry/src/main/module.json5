@@ -123,6 +123,17 @@
       //   }
       // },
       {
+        "name": "ohos.permission.ACCELEROMETER"
+      },
+      {
+        "name": "ohos.permission.ACTIVITY_MOTION",
+        "reason": "$string:motion_reason",
+        "usedScene": {
+          "abilities": ["EntryAbility"],
+          "when": "inuse"
+        }
+      },
+      {
         "name": "ohos.permission.READ_CALENDAR",
         "reason": "$string:calendar_reason",
         "usedScene": {

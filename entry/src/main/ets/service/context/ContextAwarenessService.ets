@@ -6,13 +6,13 @@
 import { sensor } from '@kit.SensorServiceKit';
 import { batteryInfo } from '@kit.BasicServicesKit';
 import { wifiManager } from '@kit.ConnectivityKit';
-import { common } from '@kit.AbilityKit';
+import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { LogService } from '../../common/LogService';
 import { Constants } from '../../common/Constants';
 import { GeofenceManager, GeofenceEvent } from './GeofenceManager';
 import { BehaviorLogger } from './BehaviorLogger';
-import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, ContextAction, MatchResult, GeofenceBinding } from './ContextEngine';
+import { ContextEngineService, ContextSnapshot, ContextRule as EngineRule, ContextCondition as EngineCondition, ContextAction as EngineAction, MatchResult, GeofenceBinding } from './ContextEngine';
 import { LocationDiscoveryService, GeofenceSuggestion, DiscoveryStatsInfo } from './LocationDiscoveryService';
 import { FeedbackService } from './FeedbackService';
 import { LocationFusionService, LearnedSignalsSummary } from './LocationFusionService';
@@ -181,7 +181,8 @@ export class ContextAwarenessService {
       // 启动位置监控
       await this.geofenceMgr.startMonitoring();
       
-      // 启动传感器
+      // 请求运动传感器权限并启动
+      await this.requestMotionPermission();
       this.startMotionSensors();
       
       // 启动定时规则评估
@@ -216,6 +217,20 @@ export class ContextAwarenessService {
   }
   
   
+  private async requestMotionPermission(): Promise<boolean> {
+    try {
+      let atManager = abilityAccessCtrl.createAtManager();
+      let result = await atManager.requestPermissionsFromUser(this.context as common.UIAbilityContext,
+        ['ohos.permission.ACTIVITY_MOTION']);
+      let granted = result.authResults[0] === 0;
+      this.log.info(TAG, `ACTIVITY_MOTION permission: ${granted ? 'granted' : 'denied'}`);
+      return granted;
+    } catch (err) {
+      this.log.warn(TAG, `Motion permission request failed: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
   private startMotionSensors(): void {
     try {
       // 加速度计 - 用于运动状态检测
@@ -622,15 +637,15 @@ export class ContextAwarenessService {
 
     // === Persist LLM result as a C++ engine rule for future matching ===
     try {
-      let conditions: ContextCondition[] = this.snapshotToConditions(snapshot);
+      let conditions: EngineCondition[] = this.snapshotToConditions(snapshot);
       let actionPayload = `${llmResult.title}: ${llmResult.content}`;
       let cooldownMs = llmResult.priority === 'high' ? 3600000 : llmResult.priority === 'medium' ? 14400000 : 28800000;
 
-      let newRule: ContextRule = {
+      let newRule: EngineRule = {
         id: llmRuleId,
         name: llmResult.title,
         conditions: conditions,
-        action: { id: `llm_action_${Date.now()}`, type: 'suggestion', payload: actionPayload } as ContextAction,
+        action: { id: `llm_action_${Date.now()}`, type: 'suggestion', payload: actionPayload } as EngineAction,
         priority: llmResult.priority === 'high' ? 2.0 : llmResult.priority === 'medium' ? 1.5 : 1.0,
         cooldownMs: cooldownMs,
         enabled: true,
@@ -770,8 +785,8 @@ export class ContextAwarenessService {
    * Convert a ContextSnapshot into ContextCondition[] for rule persistence.
    * Extracts the key fields that defined this context moment.
    */
-  private snapshotToConditions(snapshot: ContextSnapshot): ContextCondition[] {
-    let conditions: ContextCondition[] = [];
+  private snapshotToConditions(snapshot: ContextSnapshot): EngineCondition[] {
+    let conditions: EngineCondition[] = [];
 
     // Time of day
     conditions.push({ key: 'timeOfDay', op: 'eq', value: snapshot.timeOfDay });
