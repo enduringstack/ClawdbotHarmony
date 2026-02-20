@@ -41,6 +41,7 @@ import { buffer } from '@kit.ArkTS';
 import { webview } from '@kit.ArkWeb';
 import { componentSnapshot } from '@kit.ArkUI';
 import { preferences } from '@kit.ArkData';
+import { ConfigManager } from '../ConfigManager';
 import { http } from '@kit.NetworkKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { LogService } from '../../common/LogService';
@@ -1440,25 +1441,31 @@ export class NodeRuntime {
     } catch { /* ignore */ }
   }
 
-  /** Load cached identity and avatar from preferences. Call before connect(). */
+  /** Load cached identity and avatar from ConfigManager. Call before connect(). */
   async loadCachedIdentity(context: common.UIAbilityContext): Promise<void> {
     try {
-      let store = await preferences.getPreferences(context, Constants.PREFS_SETTINGS);
-      let cachedPath = (await store.get('cached_avatar_path', '')) as string;
-      let identityJson = (await store.get('cached_identity', '')) as string;
-
-      if (cachedPath.length > 0) {
+      let configMgr = ConfigManager.getInstance();
+      await configMgr.init(context);
+      
+      let identity = configMgr.getIdentity();
+      
+      if (identity.cachedAvatarPath.length > 0) {
         try {
-          fileIo.accessSync(cachedPath);
-          this._cachedAvatarPath = cachedPath;
-          this.log.info(TAG, `Loaded cached avatar: ${cachedPath}`);
+          fileIo.accessSync(identity.cachedAvatarPath);
+          this._cachedAvatarPath = identity.cachedAvatarPath;
+          this.log.info(TAG, `Loaded cached avatar: ${identity.cachedAvatarPath}`);
         } catch {
           this._cachedAvatarPath = '';
         }
       }
 
-      if (identityJson.length > 0) {
-        let obj = JSON.parse(identityJson) as AgentIdentity;
+      if (identity.name.length > 0) {
+        let obj: AgentIdentity = {
+          name: identity.name,
+          theme: identity.theme,
+          emoji: identity.emoji,
+          avatar: identity.avatar
+        };
         this._agentIdentity = obj;
         this.log.info(TAG, `Loaded cached identity: ${obj.name}`);
         // 立即派发给 UI
@@ -1467,16 +1474,22 @@ export class NodeRuntime {
     } catch { /* ignore */ }
   }
 
-  /** Save identity and avatar path to preferences. */
+  /** Save identity and avatar path to ConfigManager. */
   private async saveCachedIdentity(): Promise<void> {
-    if (!this._context) return;
     try {
-      let store = await preferences.getPreferences(this._context, Constants.PREFS_SETTINGS);
-      await store.put('cached_avatar_path', this._cachedAvatarPath);
+      let configMgr = ConfigManager.getInstance();
       if (this._agentIdentity) {
-        await store.put('cached_identity', JSON.stringify(this._agentIdentity));
+        configMgr.updateIdentity(
+          this._agentIdentity.name,
+          this._agentIdentity.theme ?? '',
+          this._agentIdentity.emoji ?? '',
+          this._agentIdentity.avatar ?? '',
+          this._cachedAvatarPath
+        );
+      } else {
+        configMgr.updateCachedAvatarPath(this._cachedAvatarPath);
       }
-      await store.flush();
+      await configMgr.flush();
     } catch { /* ignore */ }
   }
 
