@@ -8,6 +8,7 @@ import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { LogService } from '../../common/LogService';
 import { Geofence, GeofenceCategory, LocationState } from './ContextModels';
+import { ContextEngineService, GeofenceBinding } from './ContextEngine';
 
 const TAG = 'GeofenceManager';
 const PREFS_NAME = 'clawdbot_geofences';
@@ -54,8 +55,10 @@ export class GeofenceManager {
     
     // 添加一些默认的常用地点（用户可以自定义）
     if (this.geofences.size === 0) {
-      this.addDefaultGeofences();
+      // 不再加载默认围栏，由用户通过管理页面添加
     }
+    // 初始化后绑定已有围栏到规则引擎
+    this.rebindEngineRules();
     
     this.initialized = true;
     this.log.info(TAG, `Initialized with ${this.geofences.size} geofences`);
@@ -135,6 +138,7 @@ export class GeofenceManager {
   addGeofence(geofence: Geofence): void {
     this.geofences.set(geofence.id, geofence);
     this.log.info(TAG, `Added geofence: ${geofence.name} (${geofence.id})`);
+    this.rebindEngineRules();
   }
   
   removeGeofence(id: string): boolean {
@@ -142,8 +146,21 @@ export class GeofenceManager {
     this.currentlyInside.delete(id);
     if (removed) {
       this.log.info(TAG, `Removed geofence: ${id}`);
+      this.rebindEngineRules();
     }
     return removed;
+  }
+
+  /** 围栏变更后，重新绑定 C++ 引擎规则中的占位符 */
+  private rebindEngineRules(): void {
+    let bindings: GeofenceBinding[] = [];
+    this.geofences.forEach((gf: Geofence) => {
+      let binding: GeofenceBinding = { id: gf.id, category: gf.category };
+      bindings.push(binding);
+    });
+    ContextEngineService.getInstance().rebindGeofences(bindings).catch((err: Error) => {
+      this.log.warn(TAG, `rebindEngineRules error: ${err.message}`);
+    });
   }
   
   getGeofence(id: string): Geofence | undefined {

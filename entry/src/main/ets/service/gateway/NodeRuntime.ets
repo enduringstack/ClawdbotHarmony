@@ -111,6 +111,18 @@ export class NodeRuntime {
   private _agentActiveRunId: string = '';
   private _harmonyRunIds: Set<string> = new Set();
 
+  // Pending doc viewer content (set by canvas.navigate .md handler, consumed by ChatPage A2UI listener)
+  _pendingDocTitle: string = '';
+  _pendingDocContent: string = '';
+
+  consumePendingDoc(): Record<string, string> | undefined {
+    if (this._pendingDocContent.length === 0) return undefined;
+    let result: Record<string, string> = { 'title': this._pendingDocTitle, 'content': this._pendingDocContent };
+    this._pendingDocTitle = '';
+    this._pendingDocContent = '';
+    return result;
+  }
+
   // Multi-session routing: map runId → chatSessionId
   private _runSessionMap: Map<string, string> = new Map<string, string>();
 
@@ -1725,6 +1737,33 @@ export class NodeRuntime {
             } catch { /* ignore */ }
           }
           this.log.info(TAG, `canvas.navigate inline: url=${url.substring(0, 200)}`);
+
+          // Markdown files: fetch content and dispatch via A2UI for DocViewerPage
+          if (url.endsWith('.md')) {
+            this.log.info(TAG, `Markdown file detected, fetching for DocViewer`);
+            let mdPath = url.startsWith('file://') ? url.substring(7) : url;
+            let mdTitle = 'Document';
+            let mdSlash = mdPath.lastIndexOf('/');
+            if (mdSlash >= 0) mdTitle = mdPath.substring(mdSlash + 1);
+            try {
+              let fileResult = await this.requestFile(mdPath);
+              this.log.info(TAG, `DocViewer: got file, data length=${fileResult.data.length}`);
+              let rawStr = fileResult.data;
+              let commaIdx = rawStr.indexOf(',');
+              if (commaIdx >= 0 && commaIdx < 100) rawStr = rawStr.substring(commaIdx + 1);
+              let bytes = buffer.from(rawStr, 'base64');
+              let decoded = bytes.toString('utf-8');
+              this._pendingDocTitle = mdTitle;
+              this._pendingDocContent = decoded;
+              this.dispatchA2UI('doc.open', mdTitle);
+              result = '{"ok":true,"action":"doc_viewer"}';
+            } catch (mdErr) {
+              this.log.error(TAG, `DocViewer fetch error: ${(mdErr as Error).message ?? ''}`);
+              result = `{"ok":false,"error":"fetch failed"}`;
+            }
+            break;
+          }
+
           this.dispatchA2UI('canvas.navigate', url);
           if (this._inlineCanvasController) {
             this._inlineCanvasController.loadUrl(url);

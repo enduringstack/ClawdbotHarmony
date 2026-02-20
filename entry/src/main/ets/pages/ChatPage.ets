@@ -2262,6 +2262,12 @@ Respond ONLY with the JSON array.`;
     } else if (type === 'canvas.hide') {
       // Inline canvas: keep the rendered content visible (don't remove)
       this.canvasControllerFn = undefined;
+    } else if (type === 'doc.open') {
+      // Open markdown document in DocViewerPage
+      let pending = NodeRuntime.getInstance().consumePendingDoc();
+      if (pending) {
+        router.pushUrl({ url: 'pages/DocViewerPage', params: pending });
+      }
     }
   }
 
