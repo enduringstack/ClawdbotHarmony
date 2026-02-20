@@ -959,6 +959,10 @@ export class NodeRuntime {
     if (identity && identity.avatar.length > 0 && this._cachedAvatarPath.length === 0) {
       this.downloadAndCacheAvatar();
     }
+    // Persist identity for faster resume
+    if (identity && identity.name.length > 0) {
+      this.saveCachedIdentity();
+    }
   }
 
   async resolveApproval(approvalId: string, decision: string): Promise<void> {
@@ -1099,6 +1103,8 @@ export class NodeRuntime {
         fileIo.closeSync(file);
         this._cachedAvatarPath = destPath;
         this.log.info(TAG, `Avatar cached to: ${destPath} (${data.byteLength} bytes)`);
+        // Save to preferences for next launch
+        this.saveCachedIdentity();
         // Re-dispatch identity so listeners pick up the cached avatar
         if (this._agentIdentity) {
           this.dispatchIdentity(this._agentIdentity);
@@ -1431,6 +1437,46 @@ export class NodeRuntime {
       let store = await preferences.getPreferences(context, Constants.PREFS_SETTINGS);
       this._displayName = (await store.get('assistant_name', '')) as string;
       this.log.info(TAG, `Loaded displayName: "${this._displayName}"`);
+    } catch { /* ignore */ }
+  }
+
+  /** Load cached identity and avatar from preferences. Call before connect(). */
+  async loadCachedIdentity(context: common.UIAbilityContext): Promise<void> {
+    try {
+      let store = await preferences.getPreferences(context, Constants.PREFS_SETTINGS);
+      let cachedPath = (await store.get('cached_avatar_path', '')) as string;
+      let identityJson = (await store.get('cached_identity', '')) as string;
+
+      if (cachedPath.length > 0) {
+        try {
+          fileIo.accessSync(cachedPath);
+          this._cachedAvatarPath = cachedPath;
+          this.log.info(TAG, `Loaded cached avatar: ${cachedPath}`);
+        } catch {
+          this._cachedAvatarPath = '';
+        }
+      }
+
+      if (identityJson.length > 0) {
+        let obj = JSON.parse(identityJson) as AgentIdentity;
+        this._agentIdentity = obj;
+        this.log.info(TAG, `Loaded cached identity: ${obj.name}`);
+        // 立即派发给 UI
+        this.dispatchIdentity(obj);
+      }
+    } catch { /* ignore */ }
+  }
+
+  /** Save identity and avatar path to preferences. */
+  private async saveCachedIdentity(): Promise<void> {
+    if (!this._context) return;
+    try {
+      let store = await preferences.getPreferences(this._context, Constants.PREFS_SETTINGS);
+      await store.put('cached_avatar_path', this._cachedAvatarPath);
+      if (this._agentIdentity) {
+        await store.put('cached_identity', JSON.stringify(this._agentIdentity));
+      }
+      await store.flush();
     } catch { /* ignore */ }
   }
 

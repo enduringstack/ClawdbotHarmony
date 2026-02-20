@@ -67,6 +67,7 @@ struct Index {
       let runtime = NodeRuntime.getInstance();
       runtime.updateCapabilities(capLocation, capCamera, capCanvas, capScreen, capNotification, undefined, capMicrophone, capSpeaker);
       await runtime.loadDisplayName(ctx);
+      await runtime.loadCachedIdentity(ctx);
       runtime.connect(ctx, endpoint,
         token.length > 0 ? token : undefined,
         password.length > 0 ? password : undefined,

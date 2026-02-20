@@ -2113,6 +2113,7 @@ export struct SettingsPage {
       this.capMicrophone, this.capSpeaker, this.capEmail
     );
     await runtime.loadDisplayName(ctx);
+    await runtime.loadCachedIdentity(ctx);
     if (connectOperator && connectNode) {
       runtime.connect(ctx, endpoint, token, password);
     } else if (connectOperator) {
