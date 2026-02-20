@@ -394,6 +394,17 @@ export interface FeedbackRuleStat {
   avgReward: number;
 }
 
+// ==================== LLM 兜底推荐 ====================
+
+/** LLM fallback recommendation (when C++ engine returns no matches) */
+export interface LLMRecommendation {
+  action: string;
+  title: string;
+  content: string;
+  priority: string;   // 'low' | 'medium' | 'high'
+  source: string;     // 'llm'
+}
+
 // ==================== 每日摘要 ====================
 
 /** 每日健康摘要 */

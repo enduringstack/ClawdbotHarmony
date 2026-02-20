@@ -25,7 +25,9 @@ import {
   Geofence,
   LocationState,
   FeedbackStats,
+  LLMRecommendation,
 } from './ContextModels';
+import { LLMFallbackService } from './LLMFallbackService';
 
 const TAG = 'ContextService';
 
@@ -82,6 +84,9 @@ export class ContextAwarenessService {
   private discoveryTimer: number = -1;
   private static readonly DISCOVERY_INTERVAL_MS = 60 * 60 * 1000;  // 1小时发现一次
 
+  // LLM 兜底服务
+  private llmFallback: LLMFallbackService = LLMFallbackService.getInstance();
+
   private constructor() {
     this.geofenceMgr = GeofenceManager.getInstance();
     this.behaviorLog = BehaviorLogger.getInstance();
@@ -112,6 +117,9 @@ export class ContextAwarenessService {
     // 初始化位置发现服务
     await this.locationDiscovery.init(context);
     await this.feedbackSvc.init(context);
+
+    // 初始化 LLM 兜底服务
+    this.llmFallback.init(context);
 
     // 监听地理围栏事件
     this.geofenceMgr.addListener((event) => this.onGeofenceEvent(event));
@@ -243,7 +251,7 @@ export class ContextAwarenessService {
     if (!this.isRunning) return;
     let ctx = await this.getCurrentContext();
     let snapshot = this.buildSnapshot(ctx);
-    this.evaluateAndDeliver(snapshot);
+    await this.evaluateAndDeliver(snapshot);
   }
 
 
@@ -383,34 +391,68 @@ export class ContextAwarenessService {
   }
 
   /**
-   * 评估并推送推荐
+   * 评估并推送推荐，无匹配时调用 LLM 兜底
    */
-  private evaluateAndDeliver(snapshot: ContextSnapshot): void {
+  private async evaluateAndDeliver(snapshot: ContextSnapshot): Promise<void> {
     let results = this.engine.evaluate(snapshot, 3);
-    if (results.length === 0) return;
 
-    let top = results[0];
-    if (this.isOnCooldown(top.ruleId)) return;
+    if (results.length > 0) {
+      let top = results[0];
+      if (this.isOnCooldown(top.ruleId)) return;
 
-    // 转换为推荐格式
+      let rec: ContextRecommendation = {
+        rule: {
+          id: top.ruleId,
+          trigger: {} as RuleTrigger,
+          action: top.action as UserAction,
+          confidence: top.confidence,
+          triggerCount: 0,
+          acceptCount: 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          enabled: true
+        },
+        action: top.action as UserAction,
+        reason: `基于当前情景推荐 (${Math.round(top.confidence * 100)}% 匹配)`
+      };
+
+      this.notifyRecommendation(rec);
+      this.setOnCooldown(top.ruleId);
+      return;
+    }
+
+    // C++ engine returned no matches — try LLM fallback
+    this.log.info(TAG, 'No engine matches, trying LLM fallback');
+    let llmResult = await this.llmFallback.analyzeContext(snapshot);
+    if (!llmResult) return;
+
+    let llmRuleId = `llm_${Date.now()}`;
+    if (this.isOnCooldown('llm_fallback')) return;
+
     let rec: ContextRecommendation = {
       rule: {
-        id: top.ruleId,
+        id: llmRuleId,
         trigger: {} as RuleTrigger,
-        action: top.action as UserAction,
-        confidence: top.confidence,
+        action: { type: 'show_info', target: 'llm_suggestion' } as UserAction,
+        confidence: llmResult.priority === 'high' ? 0.9 : llmResult.priority === 'medium' ? 0.7 : 0.5,
         triggerCount: 0,
         acceptCount: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         enabled: true
       },
-      action: top.action as UserAction,
-      reason: `基于当前情景推荐 (${Math.round(top.confidence * 100)}% 匹配)`
+      action: { type: 'show_info', target: 'llm_suggestion' } as UserAction,
+      reason: `${llmResult.title}: ${llmResult.content}`
     };
 
     this.notifyRecommendation(rec);
-    this.setOnCooldown(top.ruleId);
+    this.setOnCooldown('llm_fallback');
+
+    // Log to BehaviorLogger with source='llm'
+    let ctx = this.currentContext ?? await this.getCurrentContext();
+    let llmAction: UserAction = { type: 'show_info', target: 'llm_suggestion', params: { 'source': 'llm', 'title': llmResult.title } };
+    await this.behaviorLog.logBehavior(ctx, llmAction);
+    this.log.info(TAG, `LLM fallback delivered: ${llmResult.title}`);
   }
 
   
@@ -431,7 +473,7 @@ export class ContextAwarenessService {
     let ctx = await this.getCurrentContext();
     let snapshot = this.buildSnapshot(ctx);
     this.log.info(TAG, `Geofence trigger evaluate: geofence=${snapshot.geofence ?? 'none'}`);
-    this.evaluateAndDeliver(snapshot);
+    await this.evaluateAndDeliver(snapshot);
     
     // 同时尝试旧的 BehaviorLogger 匹配（兼容过渡）
     let rules = this.behaviorLog.getMatchingRules(ctx);
