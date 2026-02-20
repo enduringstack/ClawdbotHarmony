@@ -283,6 +283,9 @@ static napi_module geo_utils_module = {
     .reserved = {0},
 };
 
-napi_module_import(&geo_utils_module);
 
 EXTERN_C_END
+
+extern "C" __attribute__((constructor)) void RegisterGeoUtilsModule(void) {
+    napi_module_register(&geo_utils_module);
+}

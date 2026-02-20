@@ -81,7 +81,7 @@ static napi_value CreateIntArray(napi_env env, const std::vector<int>& arr) {
  * points: [{ latitude, longitude, timestamp, accuracy }]
  * config: { epsilonMeters?, minSamples? }
  */
-static napi_value Cluster(napi_env env, napi_callback_info info) {
+static napi_value RunCluster(napi_env env, napi_callback_info info) {
     size_t argc = 2;
     napi_value args[2];
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
@@ -168,7 +168,7 @@ EXTERN_C_START
 
 static napi_value Init(napi_env env, napi_value exports) {
     napi_property_descriptor desc[] = {
-        {"cluster", nullptr, Cluster, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"cluster", nullptr, RunCluster, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
@@ -185,6 +185,9 @@ static napi_module dbscan_module = {
     .reserved = {0},
 };
 
-napi_module_import(&dbscan_module);
 
 EXTERN_C_END
+
+extern "C" __attribute__((constructor)) void RegisterDbscanModule(void) {
+    napi_module_register(&dbscan_module);
+}

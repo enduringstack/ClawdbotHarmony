@@ -1,7 +1,5 @@
 /**
  * Dbscan.ets — ArkTS wrapper for native dbscan C++ NAPI module
- *
- * 高性能 DBSCAN 聚类
  */
 
 import dbscanNative from 'libdbscan.so';
@@ -40,21 +38,14 @@ export interface ClusterResult {
 }
 
 /** 聚类配置 */
-export interface ClusterConfig {
-  epsilonMeters?: number;   // 默认 50
-  minSamples?: number;      // 默认 10
+export class ClusterConfig {
+  epsilonMeters: number = 50;
+  minSamples: number = 10;
 }
 
-/**
- * 执行 DBSCAN 聚类
- */
 export function cluster(points: ClusterPoint[], config?: ClusterConfig): ClusterResult[] {
   if (config) {
     return dbscanNative.cluster(points, config) as ClusterResult[];
   }
   return dbscanNative.cluster(points) as ClusterResult[];
 }
-
-export default {
-  cluster
-};

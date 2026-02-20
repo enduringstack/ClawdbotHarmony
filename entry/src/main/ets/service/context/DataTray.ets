@@ -5,6 +5,7 @@
  */
 
 import dataTrayNative from 'libdata_tray.so';
+import { ContextSnapshot } from './ContextEngine';
 
 /** 托盘槽位 */
 export interface TraySlot {
@@ -35,21 +36,8 @@ export interface TrayStatus {
   source: string;
 }
 
-/** 上下文快照 */
-export interface ContextSnapshot {
-  timeOfDay: string;
-  hour: string;
-  dayOfWeek: string;
-  isWeekend: string;
-  motionState: string;
-  batteryLevel: string;
-  isCharging: string;
-  networkType: string;
-  geofence?: string;
-  latitude?: string;
-  longitude?: string;
-  stepCount?: string;
-}
+// 复用 ContextEngine 的 ContextSnapshot 类型
+export { ContextSnapshot } from './ContextEngine';
 
 /**
  * 数据托盘 - 单例模式

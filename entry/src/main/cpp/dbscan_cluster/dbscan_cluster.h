@@ -14,7 +14,11 @@
 
 namespace dbscan {
 
-using namespace geo_utils;
+// 使用 geo_utils 的特定函数而非整个命名空间
+using geo_utils::GeoPoint;
+using geo_utils::haversineDistance;
+using geo_utils::calculateCenter;
+using geo_utils::calculatePercentileRadius;
 
 // ============================================================
 // 数据类型

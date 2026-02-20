@@ -55,7 +55,7 @@ import { ContextAwarenessService, ContextRecommendation } from '../context/Conte
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.37.0';
+const APP_VERSION = '2.38.0';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;

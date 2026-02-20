@@ -1,15 +1,13 @@
 /**
  * LocationFusionNative.ets — ArkTS wrapper for native location_fusion C++ NAPI module
- *
- * 多源位置融合
  */
 
 import locationFusionNative from 'liblocation_fusion.so';
 
 /** 已学习信号 */
 export interface LearnedSignals {
-  wifiSsids: Record<string, number>;   // ssid → count
-  btDevices: Record<string, number>;   // device → count
+  wifiSsids: Record<string, number>;
+  btDevices: Record<string, number>;
   totalObservations: number;
 }
 
@@ -20,37 +18,38 @@ export interface FusionResult {
   gpsConfidence: number;
   wifiConfidence: number;
   btConfidence: number;
-  source: string;  // 'gps' | 'wifi' | 'bt'
+  source: string;
 }
 
-/**
- * 计算单个围栏的置信度
- */
-export function calculateConfidence(params: {
+/** 单个围栏置信度计算参数 */
+export interface ConfidenceParams {
   geofenceId: string;
   distance: number;
   gpsAccuracy: number;
   currentWifiSsid: string;
   currentBtDevices: string[];
   signals: LearnedSignals;
-}): FusionResult {
-  return locationFusionNative.calculateConfidence(params) as FusionResult;
 }
 
-/**
- * 批量计算所有围栏的置信度
- */
-export function calculateAllConfidences(params: {
-  geofenceDistances: Array<{ id: string; distance: number }>;
+/** 围栏距离 */
+export interface GeofenceDistance {
+  id: string;
+  distance: number;
+}
+
+/** 批量计算参数 */
+export interface AllConfidencesParams {
+  geofenceDistances: GeofenceDistance[];
   gpsAccuracy: number;
   currentWifiSsid: string;
   currentBtDevices: string[];
   allSignals: Record<string, LearnedSignals>;
-}): FusionResult[] {
-  return locationFusionNative.calculateAllConfidences(params) as FusionResult[];
 }
 
-export default {
-  calculateConfidence,
-  calculateAllConfidences
-};
+export function calculateConfidence(params: ConfidenceParams): FusionResult {
+  return locationFusionNative.calculateConfidence(params) as FusionResult;
+}
+
+export function calculateAllConfidences(params: AllConfidencesParams): FusionResult[] {
+  return locationFusionNative.calculateAllConfidences(params) as FusionResult[];
+}

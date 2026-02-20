@@ -8,9 +8,23 @@ export interface ChangelogEntry {
   fixes: string[];
 }
 
-export const APP_VERSION: string = '2.37.0';
+export const APP_VERSION: string = '2.38.0';
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.38.0',
+    date: '2026-02-20',
+    features: [
+      '核心计算迁移到 C++ NAPI (高性能)',
+      'C++ 数据托盘: 传感器缓存+TTL+质量衰减',
+      'C++ 地理工具: Haversine距离计算+围栏检测',
+      'C++ DBSCAN聚类: 位置自动发现算法',
+      'C++ 位置融合: GPS+WiFi+蓝牙多源置信度计算',
+    ],
+    fixes: [
+
+    ],
+  },
   {
     version: '2.37.0',
     date: '2026-02-20',
@@ -454,4 +468,4 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export const LATEST_VERSION: string = '2.37.0';
+export const LATEST_VERSION: string = '2.38.0';

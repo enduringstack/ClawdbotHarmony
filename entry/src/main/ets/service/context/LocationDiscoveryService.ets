@@ -150,32 +150,49 @@ export class LocationDiscoveryService {
     this.lastDiscoveryTime = Date.now();
 
     // 使用 C++ DBSCAN 聚类
-    let clusterPoints: Dbscan.ClusterPoint[] = this.history.map(p => ({
-      latitude: p.latitude,
-      longitude: p.longitude,
-      timestamp: p.timestamp,
-      accuracy: p.accuracy
-    }));
+    let clusterPoints: Dbscan.ClusterPoint[] = [];
+    for (let i = 0; i < this.history.length; i++) {
+      let p = this.history[i];
+      let cp: Dbscan.ClusterPoint = {
+        latitude: p.latitude,
+        longitude: p.longitude,
+        timestamp: p.timestamp,
+        accuracy: p.accuracy
+      };
+      clusterPoints.push(cp);
+    }
     
-    let clusterResults = Dbscan.cluster(clusterPoints, {
-      epsilonMeters: EPSILON_METERS,
-      minSamples: MIN_SAMPLES
-    });
+    let config = new Dbscan.ClusterConfig();
+    config.epsilonMeters = EPSILON_METERS;
+    config.minSamples = MIN_SAMPLES;
+    let clusterResults = Dbscan.cluster(clusterPoints, config);
     
     // 转换为 LocationCluster 格式
-    this.clusters = clusterResults.map(cr => ({
-      id: cr.id,
-      centerLat: cr.centerLat,
-      centerLng: cr.centerLng,
-      radiusMeters: cr.radiusMeters,
-      pointCount: cr.pointCount,
-      firstSeen: cr.firstSeen,
-      lastSeen: cr.lastSeen,
-      totalStayMs: cr.totalStayMs,
-      timePattern: cr.timePattern,
-      suggestedCategory: cr.suggestedCategory,
-      suggestedName: cr.suggestedName
-    }));
+    this.clusters = [];
+    for (let i = 0; i < clusterResults.length; i++) {
+      let cr = clusterResults[i];
+      let tp: TimePattern = {
+        weekdayHours: cr.timePattern.weekdayHours,
+        weekendHours: cr.timePattern.weekendHours,
+        nightCount: cr.timePattern.nightCount,
+        workdayCount: cr.timePattern.workdayCount,
+        weekendCount: cr.timePattern.weekendCount,
+      };
+      let lc: LocationCluster = {
+        id: cr.id,
+        centerLat: cr.centerLat,
+        centerLng: cr.centerLng,
+        radiusMeters: cr.radiusMeters,
+        pointCount: cr.pointCount,
+        firstSeen: cr.firstSeen,
+        lastSeen: cr.lastSeen,
+        totalStayMs: cr.totalStayMs,
+        timePattern: tp,
+        suggestedCategory: cr.suggestedCategory,
+        suggestedName: cr.suggestedName
+      };
+      this.clusters.push(lc);
+    }
 
     // 分析时间模式并生成建议
     let suggestions: GeofenceSuggestion[] = [];

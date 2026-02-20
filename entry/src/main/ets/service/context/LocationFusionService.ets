@@ -152,13 +152,14 @@ export class LocationFusionService {
     let gpsAccuracy = location?.accuracy ?? 9999;
 
     // 构建 C++ 批量计算参数
-    let geofenceDistances: Array<{ id: string; distance: number }> = [];
+    let geofenceDistances: LocationFusionNative.GeofenceDistance[] = [];
     for (let i = 0; i < geofences.length; i++) {
       let gf = geofences[i];
       let dist = location
         ? this.haversineDistance(location.latitude, location.longitude, gf.latitude, gf.longitude)
         : 99999;
-      geofenceDistances.push({ id: gf.id, distance: dist });
+      let gfd: LocationFusionNative.GeofenceDistance = { id: gf.id, distance: dist };
+      geofenceDistances.push(gfd);
     }
 
     // 构建 allSignals
@@ -168,13 +169,14 @@ export class LocationFusionService {
     }
 
     // 调用 C++ 批量融合
-    let fusionResults = LocationFusionNative.calculateAllConfidences({
-      geofenceDistances,
-      gpsAccuracy,
-      currentWifiSsid,
-      currentBtDevices,
-      allSignals,
-    });
+    let allParams: LocationFusionNative.AllConfidencesParams = {
+      geofenceDistances: geofenceDistances,
+      gpsAccuracy: gpsAccuracy,
+      currentWifiSsid: currentWifiSsid,
+      currentBtDevices: currentBtDevices,
+      allSignals: allSignals,
+    };
+    let fusionResults = LocationFusionNative.calculateAllConfidences(allParams);
 
     for (let i = 0; i < fusionResults.length; i++) {
       result.set(fusionResults[i].geofenceId, fusionResults[i].confidence);
@@ -203,14 +205,15 @@ export class LocationFusionService {
         : 99999;
 
       // 调用 C++ 单个融合计算
-      let fr = LocationFusionNative.calculateConfidence({
+      let params: LocationFusionNative.ConfidenceParams = {
         geofenceId: gf.id,
         distance: dist,
         gpsAccuracy: location?.accuracy ?? 9999,
-        currentWifiSsid,
-        currentBtDevices,
+        currentWifiSsid: currentWifiSsid,
+        currentBtDevices: currentBtDevices,
         signals: this.toNativeSignals(gf.id),
-      });
+      };
+      let fr = LocationFusionNative.calculateConfidence(params);
 
       if (fr.confidence > bestConf) {
         bestConf = fr.confidence;

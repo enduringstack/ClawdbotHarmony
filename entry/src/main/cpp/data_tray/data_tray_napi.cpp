@@ -87,10 +87,28 @@ static napi_value Put(napi_env env, napi_callback_info info) {
         return nullptr;
     }
 
-    std::string key = GetStringProp(env, args[0], "");
-    std::string value = GetStringProp(env, args[1], "");
-    double quality = (argc >= 3) ? GetDoubleProp(env, args[2], 1.0) : 1.0;
-    std::string source = (argc >= 4) ? GetStringProp(env, args[3], "") : "";
+    // 直接从参数取值，不是从对象属性取
+    size_t len;
+    std::string key, value, source;
+    
+    napi_get_value_string_utf8(env, args[0], nullptr, 0, &len);
+    key.resize(len);
+    napi_get_value_string_utf8(env, args[0], &key[0], len + 1, &len);
+    
+    napi_get_value_string_utf8(env, args[1], nullptr, 0, &len);
+    value.resize(len);
+    napi_get_value_string_utf8(env, args[1], &value[0], len + 1, &len);
+    
+    double quality = 1.0;
+    if (argc >= 3) {
+        napi_get_value_double(env, args[2], &quality);
+    }
+    
+    if (argc >= 4) {
+        napi_get_value_string_utf8(env, args[3], nullptr, 0, &len);
+        source.resize(len);
+        napi_get_value_string_utf8(env, args[3], &source[0], len + 1, &len);
+    }
 
     SensorDataTray::getInstance().put(key, value, quality, source);
 
@@ -110,7 +128,11 @@ static napi_value Get(napi_env env, napi_callback_info info) {
         return nullptr;
     }
 
-    std::string key = GetStringProp(env, args[0], "");
+    size_t keyLen;
+    napi_get_value_string_utf8(env, args[0], nullptr, 0, &keyLen);
+    std::string key(keyLen, '\0');
+    napi_get_value_string_utf8(env, args[0], &key[0], keyLen + 1, &keyLen);
+    
     TrayReadResult result = SensorDataTray::getInstance().get(key);
 
     napi_value obj;
@@ -180,8 +202,13 @@ static napi_value SetTTL(napi_env env, napi_callback_info info) {
         return nullptr;
     }
 
-    std::string key = GetStringProp(env, args[0], "");
-    int64_t ttlMs = GetInt64Prop(env, args[1], 120000);
+    size_t keyLen;
+    napi_get_value_string_utf8(env, args[0], nullptr, 0, &keyLen);
+    std::string key(keyLen, '\0');
+    napi_get_value_string_utf8(env, args[0], &key[0], keyLen + 1, &keyLen);
+    
+    int64_t ttlMs;
+    napi_get_value_int64(env, args[1], &ttlMs);
 
     SensorDataTray::getInstance().setTTL(key, ttlMs);
 
@@ -266,6 +293,9 @@ static napi_module data_tray_module = {
     .reserved = {0},
 };
 
-napi_module_import(&data_tray_module);
 
 EXTERN_C_END
+
+extern "C" __attribute__((constructor)) void RegisterDataTrayModule(void) {
+    napi_module_register(&data_tray_module);
+}

@@ -303,6 +303,9 @@ static napi_module location_fusion_module = {
     .reserved = {0},
 };
 
-napi_module_import(&location_fusion_module);
 
 EXTERN_C_END
+
+extern "C" __attribute__((constructor)) void RegisterLocationFusionModule(void) {
+    napi_module_register(&location_fusion_module);
+}

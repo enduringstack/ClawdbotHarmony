@@ -1,7 +1,5 @@
 /**
  * GeoUtils.ets — ArkTS wrapper for native geo_utils C++ NAPI module
- *
- * 高性能地理计算
  */
 
 import geoUtilsNative from 'libgeo_utils.so';
@@ -31,37 +29,28 @@ export interface GeofenceMatch {
   inside: boolean;
 }
 
-/**
- * 计算两点间距离（Haversine 公式）
- */
+/** 中心点 */
+export interface CenterResult {
+  latitude: number;
+  longitude: number;
+}
+
 export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   return geoUtilsNative.haversineDistance(lat1, lon1, lat2, lon2) as number;
 }
 
-/**
- * 检查点是否在围栏内
- */
 export function isInsideGeofence(lat: number, lon: number, geofence: Geofence): boolean {
   return geoUtilsNative.isInsideGeofence(lat, lon, geofence) as boolean;
 }
 
-/**
- * 获取点所在的所有围栏
- */
 export function getGeofencesAtLocation(lat: number, lon: number, geofences: Geofence[]): GeofenceMatch[] {
   return geoUtilsNative.getGeofencesAtLocation(lat, lon, geofences) as GeofenceMatch[];
 }
 
-/**
- * 计算一组点的中心点
- */
-export function calculateCenter(points: GeoPoint[]): { latitude: number; longitude: number } {
-  return geoUtilsNative.calculateCenter(points) as { latitude: number; longitude: number };
+export function calculateCenter(points: GeoPoint[]): CenterResult {
+  return geoUtilsNative.calculateCenter(points) as CenterResult;
 }
 
-/**
- * 计算围栏半径（百分位数）
- */
 export function calculateRadius(
   points: GeoPoint[],
   centerLat: number,
@@ -70,11 +59,3 @@ export function calculateRadius(
 ): number {
   return geoUtilsNative.calculateRadius(points, centerLat, centerLng, percentile) as number;
 }
-
-export default {
-  haversineDistance,
-  isInsideGeofence,
-  getGeofencesAtLocation,
-  calculateCenter,
-  calculateRadius
-};
