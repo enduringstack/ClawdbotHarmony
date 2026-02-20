@@ -52,6 +52,7 @@ import { ExperiencePack, Experience, Skill, Memory, ShareLevel, generateId } fro
 import { MemoryService } from '../MemoryService';
 import { Monitor } from '../ModuleMonitor';
 import { ContextAwarenessService, ContextRecommendation } from '../context/ContextAwarenessService';
+import { ContextEngineService, ContextSnapshot, MatchResult, GeofenceBinding } from '../context/ContextEngine';
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
@@ -2020,6 +2021,11 @@ export class NodeRuntime {
           result = await this.execCapability.execute(paramsJson);
           break;
         }
+        case Command.CONTEXT_TEST: {
+          this.log.info(TAG, 'Executing context.test...');
+          result = await this.handleContextTest(paramsJson);
+          break;
+        }
         default:
           this.log.warn(TAG, `Unsupported invoke command: ${command}`);
           this.dispatchInvoke(command, paramsStr, `unsupported command: ${command}`, true);
@@ -2037,6 +2043,99 @@ export class NodeRuntime {
   }
 
   /** Extract JSONL content from A2UI push params. */
+  /**
+   * Handle context.test invoke: accept a test scenario, evaluate through C++ engine,
+   * return matched rules and scores.
+   *
+   * Params JSON format:
+   * {
+   *   "scenario": "string — description for logging",
+   *   "snapshot": { ContextSnapshot fields },
+   *   "maxResults": number (optional, default 5),
+   *   "loadDefaultRules": boolean (optional — reload built-in rules before eval),
+   *   "geofences": [{ id, category }] (optional — rebind geofence placeholders)
+   * }
+   *
+   * Returns:
+   * {
+   *   "scenario": "...",
+   *   "ruleCount": N,
+   *   "matches": [ { ruleId, confidence, action: { id, type, payload } } ],
+   *   "snapshot": { ... the snapshot that was evaluated }
+   * }
+   */
+  private async handleContextTest(paramsJson: string | undefined): Promise<string> {
+    if (!paramsJson || paramsJson.length === 0) {
+      return '{"error":"missing params"}';
+    }
+
+    try {
+      let params = JSON.parse(paramsJson) as Record<string, Object>;
+      let scenario = (params['scenario'] as string) ?? 'unnamed';
+      let maxResults = (params['maxResults'] as number) ?? 5;
+
+      let engine = ContextEngineService.getInstance();
+
+      // Ensure engine is initialized
+      if (this._context) {
+        await engine.init(this._context);
+      }
+
+      // Optionally reload default rules
+      if (params['loadDefaultRules'] === true) {
+        await engine.loadDefaultRules();
+        this.log.info(TAG, `context.test: reloaded default rules, count=${engine.getRuleCount()}`);
+      }
+
+      // Optionally rebind geofences
+      if (params['geofences'] !== undefined) {
+        let geoArr = params['geofences'] as Array<Record<string, string>>;
+        let bindings: GeofenceBinding[] = [];
+        for (let i = 0; i < geoArr.length; i++) {
+          let b: GeofenceBinding = { id: geoArr[i]['id'] ?? '', category: geoArr[i]['category'] ?? '' };
+          bindings.push(b);
+        }
+        await engine.rebindGeofences(bindings);
+        this.log.info(TAG, `context.test: rebound ${bindings.length} geofences`);
+      }
+
+      // Build snapshot from params
+      let snapObj = params['snapshot'] as Record<string, string>;
+      let snapshot: ContextSnapshot = {
+        timeOfDay: snapObj['timeOfDay'] ?? 'morning',
+        hour: snapObj['hour'] ?? '9',
+        dayOfWeek: snapObj['dayOfWeek'] ?? '1',
+        isWeekend: snapObj['isWeekend'] ?? 'false',
+        motionState: snapObj['motionState'] ?? 'stationary',
+        batteryLevel: snapObj['batteryLevel'] ?? '80',
+        isCharging: snapObj['isCharging'] ?? 'false',
+        networkType: snapObj['networkType'] ?? 'wifi',
+        geofence: snapObj['geofence'],
+        latitude: snapObj['latitude'],
+        longitude: snapObj['longitude'],
+        stepCount: snapObj['stepCount'],
+      };
+
+      // Evaluate
+      let matches: MatchResult[] = engine.evaluate(snapshot, maxResults);
+
+      this.log.info(TAG, `context.test [${scenario}]: ${matches.length} matches from ${engine.getRuleCount()} rules`);
+
+      let resultObj: Record<string, Object> = {
+        'scenario': scenario as Object,
+        'ruleCount': engine.getRuleCount() as Object,
+        'matches': matches as Object,
+        'snapshot': snapshot as Object,
+      };
+
+      return JSON.stringify(resultObj);
+    } catch (err) {
+      let msg = (err as Error).message ?? 'unknown error';
+      this.log.error(TAG, `context.test error: ${msg}`);
+      return `{"error":${JSON.stringify(msg)}}`;
+    }
+  }
+
   private extractA2UIContent(paramsJson: string | undefined): string {
     if (!paramsJson || paramsJson.length === 0) return '';
     try {
@@ -2479,6 +2578,9 @@ export class NodeRuntime {
       caps.push(Capability.Exec);
       commands.push(Command.EXEC_RUN);
     }
+
+    // Context engine test — always available
+    commands.push(Command.CONTEXT_TEST);
 
     return {
       role: 'node',

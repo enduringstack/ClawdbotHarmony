@@ -60,4 +60,6 @@ export class Command {
   static readonly EXEC_RUN: string = 'exec.run';
   // File transfer
   static readonly FILE_GET: string = 'file.get';
+  // Context engine test
+  static readonly CONTEXT_TEST: string = 'context.test';
 }

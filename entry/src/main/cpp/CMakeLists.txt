@@ -8,6 +8,9 @@ set(NATIVERENDER_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(exec SHARED napi_exec.cpp)
 target_link_libraries(exec PUBLIC libace_napi.z.so)
 
+# context_engine module - rule engine + MAB + LinUCB
+add_subdirectory(context_engine)
+
 # voiceprint module - stub implementation for UI testing
 add_subdirectory(voiceprint)
 

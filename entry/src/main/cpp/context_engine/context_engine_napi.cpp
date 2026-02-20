@@ -427,6 +427,9 @@ static napi_value ImportLinUCB(napi_env env, napi_callback_info info) {
     if (argc < 1) return nullptr;
     auto json = napiGetString(env, args[0]);
     g_engine.linucb().importJson(json);
+    return nullptr;
+}
+
 static napi_value PushEvent(napi_env env, napi_callback_info info) {
     size_t argc = 1;
     napi_value args[1];
