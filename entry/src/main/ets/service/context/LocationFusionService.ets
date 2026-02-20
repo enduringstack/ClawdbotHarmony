@@ -327,6 +327,34 @@ export class LocationFusionService {
   /**
    * 获取所有围栏的已学习信号摘要（用于 UI）
    */
+  /** 获取单个围栏的已学习信号摘要 */
+  getLearnedSignalsSummary(gf: Geofence): LearnedSignalsSummary | null {
+    let signals = this.learnedSignals.get(gf.id);
+    if (!signals || signals.totalObservations === 0) return null;
+
+    let wifiList: string[] = [];
+    signals.wifiSsids.forEach((count: number, ssid: string) => {
+      if (count >= LEARNING_MIN_OBSERVATIONS) {
+        wifiList.push(ssid);
+      }
+    });
+
+    let btList: string[] = [];
+    signals.btDevices.forEach((count: number, name: string) => {
+      if (count >= LEARNING_MIN_OBSERVATIONS) {
+        btList.push(name);
+      }
+    });
+
+    return {
+      geofenceId: gf.id,
+      geofenceName: gf.name,
+      wifiSsids: wifiList,
+      btDevices: btList,
+      totalObservations: signals.totalObservations,
+    };
+  }
+
   getLearnedSignalsSummaries(geofences: Geofence[]): LearnedSignalsSummary[] {
     let summaries: LearnedSignalsSummary[] = [];
 

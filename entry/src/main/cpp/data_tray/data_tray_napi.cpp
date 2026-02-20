@@ -176,6 +176,12 @@ static napi_value GetSnapshot(napi_env env, napi_callback_info info) {
     if (snap.geofence.has_value()) {
         napi_set_named_property(env, obj, "geofence", CreateString(env, snap.geofence.value()));
     }
+    if (snap.wifiSsid.has_value()) {
+        napi_set_named_property(env, obj, "wifiSsid", CreateString(env, snap.wifiSsid.value()));
+    }
+    if (snap.wifiLostWork.has_value()) {
+        napi_set_named_property(env, obj, "wifiLostWork", CreateString(env, snap.wifiLostWork.value()));
+    }
     if (snap.latitude.has_value()) {
         napi_set_named_property(env, obj, "latitude", CreateString(env, snap.latitude.value()));
     }

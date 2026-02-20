@@ -60,7 +60,7 @@ export class WifiPlugin implements DigitalPlugin {
     this.log.info(TAG, 'Destroyed');
   }
 
-  private refreshState(): void {
+  private async refreshState(): Promise<void> {
     try {
       this.connected = wifiManager.isConnected();
     } catch {
@@ -75,7 +75,7 @@ export class WifiPlugin implements DigitalPlugin {
     }
 
     try {
-      let info = wifiManager.getLinkedInfo();
+      let info = await wifiManager.getLinkedInfo();
       this.ssid = info.ssid || '';
       this.rssi = info.rssi || 0;
       this.frequency = info.frequency || 0;

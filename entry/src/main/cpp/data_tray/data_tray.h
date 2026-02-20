@@ -60,6 +60,8 @@ struct ContextSnapshot {
     std::string isCharging;
     std::string networkType;
     std::optional<std::string> geofence;
+    std::optional<std::string> wifiSsid;
+    std::optional<std::string> wifiLostWork;
     std::optional<std::string> latitude;
     std::optional<std::string> longitude;
     std::optional<std::string> stepCount;
@@ -189,6 +191,14 @@ public:
         auto geofence = getUnlocked("geofence");
         if (geofence.value.has_value()) {
             snap.geofence = geofence.value;
+        }
+        auto wifiSsid = getUnlocked("wifiSsid");
+        if (wifiSsid.value.has_value()) {
+            snap.wifiSsid = wifiSsid.value;
+        }
+        auto wifiLostWork = getUnlocked("wifiLostWork");
+        if (wifiLostWork.value.has_value()) {
+            snap.wifiLostWork = wifiLostWork.value;
         }
         auto lat = getUnlocked("latitude");
         if (lat.value.has_value()) {

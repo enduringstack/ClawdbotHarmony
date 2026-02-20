@@ -99,6 +99,8 @@ export interface ContextSnapshot {
   isCharging: string;      // "true"/"false"
   networkType: string;     // wifi, cellular, none
   geofence?: string;       // current geofence id, if any
+  wifiSsid?: string;       // current WiFi SSID
+  wifiLostWork?: string;   // "true" if recently lost work WiFi (auto-detected)
   latitude?: string;
   longitude?: string;
   stepCount?: string;
@@ -532,7 +534,7 @@ export class ContextEngineService {
       },
       {
         id: 'rule_leave_work',
-        name: '下班离开公司',
+        name: '下班离开公司（围栏）',
         conditions: [
           { key: 'geofence', op: 'neq', value: '{{work}}' },
           { key: 'timeOfDay', op: 'in', value: 'evening,night' },
@@ -542,8 +544,19 @@ export class ContextEngineService {
         priority: 1.5, cooldownMs: 28800000, enabled: true
       },
       {
+        id: 'rule_leave_work_wifi',
+        name: '离开公司（WiFi丢失）',
+        conditions: [
+          { key: 'wifiLostWork', op: 'eq', value: 'true' },
+          { key: 'timeOfDay', op: 'in', value: 'afternoon,evening,night' },
+          { key: 'isWeekend', op: 'eq', value: 'false' }
+        ],
+        action: { id: 'suggest_leave_work', type: 'suggestion', payload: '检测到离开公司WiFi，下班了？查看回家路线？' },
+        priority: 2.0, cooldownMs: 28800000, enabled: true
+      },
+      {
         id: 'rule_leave_work_music',
-        name: '离开公司步行听音乐',
+        name: '离开公司步行听音乐（围栏）',
         conditions: [
           { key: 'geofence', op: 'neq', value: '{{work}}' },
           { key: 'motionState', op: 'eq', value: 'walking' },
@@ -551,6 +564,17 @@ export class ContextEngineService {
         ],
         action: { id: 'suggest_music', type: 'suggestion', payload: '走路中 🎵 打开音乐放松一下？' },
         priority: 2.0, cooldownMs: 28800000, enabled: true
+      },
+      {
+        id: 'rule_leave_work_music_wifi',
+        name: '离开公司步行听音乐（WiFi丢失）',
+        conditions: [
+          { key: 'wifiLostWork', op: 'eq', value: 'true' },
+          { key: 'motionState', op: 'eq', value: 'walking' },
+          { key: 'isWeekend', op: 'eq', value: 'false' }
+        ],
+        action: { id: 'suggest_music', type: 'suggestion', payload: '走路中 🎵 打开音乐放松一下？' },
+        priority: 2.5, cooldownMs: 28800000, enabled: true
       },
       {
         id: 'rule_arrive_gym',

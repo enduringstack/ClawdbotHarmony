@@ -88,6 +88,11 @@ export class ContextAwarenessService {
   private accelerometerData: AccelerometerData = { x: 0, y: 0, z: 0 } as AccelerometerData;
   private stepCount: number = 0;
   
+  // WiFi 状态跟踪
+  private lastWifiSsid: string = '';
+  private wifiLostWorkTimestamp: number = 0;
+  private static readonly WIFI_LOST_WORK_TTL_MS = 10 * 60 * 1000;  // WiFi丢失标记保持10分钟
+  
   // 推荐监听器
   private recommendationListeners: RecommendationListener[] = [];
   
@@ -185,6 +190,9 @@ export class ContextAwarenessService {
       await this.requestMotionPermission();
       this.startMotionSensors();
       
+      // 启动 WiFi 状态监听
+      this.startWifiMonitoring();
+      
       // 启动定时规则评估
       this.startPeriodicEvaluation();
 
@@ -208,6 +216,7 @@ export class ContextAwarenessService {
     
     this.geofenceMgr.stopMonitoring();
     this.stopMotionSensors();
+    this.stopWifiMonitoring();
     this.stopPeriodicEvaluation();
     this.stopLocationDiscovery();
     this.digitalWorld.stop();
@@ -216,6 +225,76 @@ export class ContextAwarenessService {
     this.log.info(TAG, 'Context Awareness Service stopped');
   }
   
+  
+  // ==================== WiFi 状态监听 ====================
+  
+  private wifiConnectionCallback: ((state: number) => void) | undefined;
+  
+  private startWifiMonitoring(): void {
+    try {
+      this.wifiConnectionCallback = (state: number) => {
+        // state: 0=disconnected, 1=connected
+        if (state === 0) {
+          this.onWifiDisconnected();
+        } else if (state === 1) {
+          this.onWifiConnected();
+        }
+      };
+      wifiManager.on('wifiConnectionChange', this.wifiConnectionCallback);
+      this.log.info(TAG, 'WiFi monitoring started');
+    } catch (err) {
+      this.log.warn(TAG, `WiFi monitoring failed: ${(err as Error).message}`);
+    }
+  }
+  
+  private stopWifiMonitoring(): void {
+    try {
+      if (this.wifiConnectionCallback) {
+        wifiManager.off('wifiConnectionChange', this.wifiConnectionCallback);
+        this.wifiConnectionCallback = undefined;
+      }
+    } catch { /* ignore */ }
+  }
+  
+  private onWifiDisconnected(): void {
+    let lostSsid = this.lastWifiSsid;
+    this.log.info(TAG, `WiFi disconnected, last SSID: ${lostSsid}`);
+    
+    if (lostSsid.length === 0) return;
+    
+    // 检查丢失的 WiFi 是否是公司围栏学习到的信号
+    let workGeofences = this.geofenceMgr.getGeofencesByCategory('work');
+    let isWorkWifi = false;
+    
+    for (let gf of workGeofences) {
+      let summary = this.locationFusion.getLearnedSignalsSummary(gf);
+      if (summary && summary.wifiSsids.includes(lostSsid)) {
+        isWorkWifi = true;
+        break;
+      }
+    }
+    
+    if (isWorkWifi) {
+      this.log.info(TAG, `Work WiFi lost: ${lostSsid} — likely leaving office`);
+      this.wifiLostWorkTimestamp = Date.now();
+      this.tray.put('wifiLostWork', 'true', 0.8, 'wifi');
+      this.engine.pushEvent('wifi_lost_work');
+      
+      // 立即触发评估
+      this.refreshTray().then(() => {
+        let snapshot = this.tray.getSnapshot();
+        this.evaluateAndDeliver(snapshot);
+      });
+    }
+    
+    this.lastWifiSsid = '';
+  }
+  
+  private onWifiConnected(): void {
+    // WiFi 重新连接，清除丢失标记
+    this.wifiLostWorkTimestamp = 0;
+    this.log.debug(TAG, 'WiFi connected');
+  }
   
   private async requestMotionPermission(): Promise<boolean> {
     try {
@@ -409,15 +488,32 @@ export class ContextAwarenessService {
       // ignore
     }
 
-    // 网络
+    // 网络 + WiFi SSID
     try {
       if (wifiManager.isWifiActive()) {
         this.tray.put('networkType', 'wifi', 1.0, 'wifi');
+        try {
+          let info = await wifiManager.getLinkedInfo();
+          let ssid = info.ssid || '';
+          if (ssid.startsWith('"') && ssid.endsWith('"')) {
+            ssid = ssid.substring(1, ssid.length - 1);
+          }
+          if (ssid.length > 0) {
+            this.tray.put('wifiSsid', ssid, 1.0, 'wifi');
+            this.lastWifiSsid = ssid;
+          }
+        } catch { /* ignore */ }
       } else {
         this.tray.put('networkType', 'cellular', 0.8, 'network');
       }
     } catch {
       // ignore
+    }
+    
+    // WiFi丢失工作标记（有效期内）
+    if (this.wifiLostWorkTimestamp > 0 &&
+        Date.now() - this.wifiLostWorkTimestamp < ContextAwarenessService.WIFI_LOST_WORK_TTL_MS) {
+      this.tray.put('wifiLostWork', 'true', 0.8, 'wifi');
     }
 
     // 位置 / 围栏
