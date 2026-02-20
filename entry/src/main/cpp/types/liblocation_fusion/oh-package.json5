@@ -1,0 +1,6 @@
+{
+  "name": "liblocation_fusion",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "Native multi-source location fusion (GPS + WiFi + BT)"
+}

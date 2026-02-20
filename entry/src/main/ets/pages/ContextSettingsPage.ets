@@ -10,7 +10,7 @@ import { Geofence, GeofenceCategory, FeedbackStats, FeedbackRuleStat } from '../
 import { LocationDiscoveryService, GeofenceSuggestion } from '../service/context/LocationDiscoveryService';
 import { LearnedSignalsSummary } from '../service/context/LocationFusionService';
 import { GeofenceSuggestionCard } from '../components/GeofenceSuggestionCard';
-import { TrayStatus } from '../service/context/SensorDataTray';
+import { TrayStatus } from '../service/context/DataTray';
 
 @Entry
 @Component

@@ -17,7 +17,7 @@ import { LocationDiscoveryService, GeofenceSuggestion, DiscoveryStatsInfo } from
 import { FeedbackService } from './FeedbackService';
 import { LocationFusionService, LearnedSignalsSummary } from './LocationFusionService';
 import { DigitalWorldService } from './DigitalWorldService';
-import { SensorDataTray, TrayStatus } from './SensorDataTray';
+import DataTray, { DataTray as SensorDataTray, TrayStatus } from './DataTray';
 import {
   EnvironmentContext,
   MotionState,
@@ -116,7 +116,7 @@ export class ContextAwarenessService {
   // 数字世界感知
   private digitalWorld: DigitalWorldService = DigitalWorldService.getInstance();
   // 传感器数据托盘
-  private tray: SensorDataTray = SensorDataTray.getInstance();
+  private tray: SensorDataTray = DataTray;
 
   private constructor() {
     this.geofenceMgr = GeofenceManager.getInstance();

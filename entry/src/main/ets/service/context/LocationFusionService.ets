@@ -12,6 +12,8 @@ import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { LogService } from '../../common/LogService';
 import { Geofence, LocationState } from './ContextModels';
+import * as LocationFusionNative from './LocationFusionNative';
+import * as GeoUtils from './GeoUtils';
 
 const TAG = 'LocationFusion';
 
@@ -113,11 +115,31 @@ export class LocationFusionService {
   // ==================== 核心融合 ====================
 
   /**
-   * 获取每个已知围栏的位置置信度
-   *
-   * @param geofences 所有已知围栏
-   * @param location 当前 GPS 位置（可能不精确）
-   * @returns placeId → 置信度 (0~1) 映射
+   * 将 Map<string, number> 转为 Record<string, number>（C++ NAPI 需要）
+   */
+  private mapToRecord(map: Map<string, number>): Record<string, number> {
+    let rec: Record<string, number> = {};
+    map.forEach((v: number, k: string) => { rec[k] = v; });
+    return rec;
+  }
+
+  /**
+   * 将已学习信号转为 C++ NAPI 格式
+   */
+  private toNativeSignals(gfId: string): LocationFusionNative.LearnedSignals {
+    let signals = this.learnedSignals.get(gfId);
+    if (!signals) {
+      return { wifiSsids: {}, btDevices: {}, totalObservations: 0 };
+    }
+    return {
+      wifiSsids: this.mapToRecord(signals.wifiSsids),
+      btDevices: this.mapToRecord(signals.btDevices),
+      totalObservations: signals.totalObservations,
+    };
+  }
+
+  /**
+   * 获取每个已知围栏的位置置信度（使用 C++ 融合引擎）
    */
   async getLocationConfidence(
     geofences: Geofence[],
@@ -125,36 +147,37 @@ export class LocationFusionService {
   ): Promise<Map<string, number>> {
     let result: Map<string, number> = new Map();
 
-    // 获取当前 WiFi 和 BT 信号
     let currentWifiSsid = await this.getCurrentWifiSsid();
     let currentBtDevices = this.getCurrentBtDevices();
-
     let gpsAccuracy = location?.accuracy ?? 9999;
-    let gpsLowQuality = gpsAccuracy > GPS_LOW_QUALITY_ACCURACY;
 
+    // 构建 C++ 批量计算参数
+    let geofenceDistances: Array<{ id: string; distance: number }> = [];
     for (let i = 0; i < geofences.length; i++) {
       let gf = geofences[i];
+      let dist = location
+        ? this.haversineDistance(location.latitude, location.longitude, gf.latitude, gf.longitude)
+        : 99999;
+      geofenceDistances.push({ id: gf.id, distance: dist });
+    }
 
-      // GPS 置信度
-      let gpsConf = this.calcGpsConfidence(gf, location);
+    // 构建 allSignals
+    let allSignals: Record<string, LocationFusionNative.LearnedSignals> = {};
+    for (let i = 0; i < geofences.length; i++) {
+      allSignals[geofences[i].id] = this.toNativeSignals(geofences[i].id);
+    }
 
-      // WiFi 置信度
-      let wifiConf = this.calcWifiConfidence(gf.id, currentWifiSsid);
+    // 调用 C++ 批量融合
+    let fusionResults = LocationFusionNative.calculateAllConfidences({
+      geofenceDistances,
+      gpsAccuracy,
+      currentWifiSsid,
+      currentBtDevices,
+      allSignals,
+    });
 
-      // BT 置信度
-      let btConf = this.calcBtConfidence(gf.id, currentBtDevices);
-
-      // 融合：max(gps, wifi, bt)
-      // GPS 低质量时，WiFi/BT 已经通过 max 自然获得更高权重
-      let confidence = Math.max(gpsConf, wifiConf, btConf);
-
-      // GPS 低质量且 WiFi/BT 有信号时，略微提升非 GPS 信号
-      if (gpsLowQuality && (wifiConf > 0.5 || btConf > 0.5)) {
-        let nonGpsMax = Math.max(wifiConf, btConf);
-        confidence = Math.max(confidence, Math.min(nonGpsMax + 0.05, 1.0));
-      }
-
-      result.set(gf.id, confidence);
+    for (let i = 0; i < fusionResults.length; i++) {
+      result.set(fusionResults[i].geofenceId, fusionResults[i].confidence);
     }
 
     return result;
@@ -175,96 +198,41 @@ export class LocationFusionService {
 
     for (let i = 0; i < geofences.length; i++) {
       let gf = geofences[i];
-      let gpsConf = this.calcGpsConfidence(gf, location);
-      let wifiConf = this.calcWifiConfidence(gf.id, currentWifiSsid);
-      let btConf = this.calcBtConfidence(gf.id, currentBtDevices);
+      let dist = location
+        ? this.haversineDistance(location.latitude, location.longitude, gf.latitude, gf.longitude)
+        : 99999;
 
-      let confidence = Math.max(gpsConf, wifiConf, btConf);
+      // 调用 C++ 单个融合计算
+      let fr = LocationFusionNative.calculateConfidence({
+        geofenceId: gf.id,
+        distance: dist,
+        gpsAccuracy: location?.accuracy ?? 9999,
+        currentWifiSsid,
+        currentBtDevices,
+        signals: this.toNativeSignals(gf.id),
+      });
 
-      // 确定主要来源
-      let source = 'gps';
-      if (wifiConf >= gpsConf && wifiConf >= btConf) source = 'wifi';
-      else if (btConf >= gpsConf && btConf >= wifiConf) source = 'bt';
-
-      if (confidence > bestConf) {
-        bestConf = confidence;
+      if (fr.confidence > bestConf) {
+        bestConf = fr.confidence;
         best = {
-          geofenceId: gf.id,
-          confidence,
-          gpsConfidence: gpsConf,
-          wifiConfidence: wifiConf,
-          btConfidence: btConf,
-          source,
+          geofenceId: fr.geofenceId,
+          confidence: fr.confidence,
+          gpsConfidence: fr.gpsConfidence,
+          wifiConfidence: fr.wifiConfidence,
+          btConfidence: fr.btConfidence,
+          source: fr.source,
         };
       }
     }
 
-    // 只返回置信度 > 0.5 的结果
     if (best && best.confidence > 0.5) {
       return best;
     }
     return Promise.resolve(null);
   }
 
-  // ==================== 信号置信度计算 ====================
-
-  private calcGpsConfidence(gf: Geofence, location: LocationState | undefined): number {
-    if (!location) return GPS_MIN_CONFIDENCE;
-
-    let dist = this.haversineDistance(
-      location.latitude, location.longitude,
-      gf.latitude, gf.longitude
-    );
-
-    if (dist < GPS_HIGH_CONFIDENCE_RADIUS) {
-      return 1.0;
-    }
-    if (dist < GPS_DECAY_SCALE * 3) {
-      // 指数衰减: exp(-dist/scale)
-      return Math.max(Math.exp(-dist / GPS_DECAY_SCALE), GPS_MIN_CONFIDENCE);
-    }
-    return GPS_MIN_CONFIDENCE;
-  }
-
-  private calcWifiConfidence(geofenceId: string, currentSsid: string): number {
-    if (currentSsid.length === 0) return 0;
-
-    let signals = this.learnedSignals.get(geofenceId);
-    if (!signals || signals.totalObservations < LEARNING_MIN_OBSERVATIONS) {
-      return 0;  // 观测不足，WiFi 信号尚不可用
-    }
-
-    let ssidCount = signals.wifiSsids.get(currentSsid);
-    if (ssidCount !== undefined && ssidCount >= LEARNING_MIN_OBSERVATIONS) {
-      return WIFI_MATCH_CONFIDENCE;
-    }
-
-    // 有已学习的 WiFi 但当前不匹配
-    if (signals.wifiSsids.size > 0) {
-      return WIFI_NO_MATCH_CONFIDENCE;
-    }
-
-    return 0;
-  }
-
-  private calcBtConfidence(geofenceId: string, currentDevices: string[]): number {
-    if (currentDevices.length === 0) return 0;
-
-    let signals = this.learnedSignals.get(geofenceId);
-    if (!signals || signals.totalObservations < LEARNING_MIN_OBSERVATIONS) {
-      return 0;
-    }
-
-    // 任一已学习的 BT 设备匹配即可
-    for (let i = 0; i < currentDevices.length; i++) {
-      let deviceCount = signals.btDevices.get(currentDevices[i]);
-      if (deviceCount !== undefined && deviceCount >= LEARNING_MIN_OBSERVATIONS) {
-        return BT_MATCH_CONFIDENCE;
-      }
-    }
-
-    return 0;
-  }
+  // ==================== 信号置信度计算（已迁移到 C++ location_fusion） ====================
+  // calcGpsConfidence, calcWifiConfidence, calcBtConfidence 已由 C++ 实现
 
   // ==================== 信号获取 ====================
 
@@ -483,15 +451,8 @@ export class LocationFusionService {
 
   // ==================== 工具方法 ====================
 
-  /** Haversine 距离（米） */
+  /** Haversine 距离（米）— 委托 C++ geo_utils */
   private haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    let R = 6371000;
-    let dLat = (lat2 - lat1) * Math.PI / 180;
-    let dLon = (lon2 - lon1) * Math.PI / 180;
-    let a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    return GeoUtils.haversineDistance(lat1, lon1, lat2, lon2);
   }
 }

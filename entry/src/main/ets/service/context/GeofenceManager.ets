@@ -10,6 +10,7 @@ import { util } from '@kit.ArkTS';
 import { LogService } from '../../common/LogService';
 import { Geofence, GeofenceCategory, LocationState } from './ContextModels';
 import { ContextEngineService, GeofenceBinding } from './ContextEngine';
+import * as GeoUtils from './GeoUtils';
 
 /** user_places.json 配置文件结构 */
 interface UserPlace {
@@ -161,8 +162,7 @@ export class GeofenceManager {
    * 检查位置是否在指定围栏内
    */
   isInsideGeofence(lat: number, lon: number, geofence: Geofence): boolean {
-    let distance = this.calculateDistance(lat, lon, geofence.latitude, geofence.longitude);
-    return distance <= geofence.radiusMeters;
+    return GeoUtils.isInsideGeofence(lat, lon, geofence as GeoUtils.Geofence);
   }
   
   /**
@@ -442,17 +442,10 @@ export class GeofenceManager {
   // ==================== 工具方法 ====================
   
   /**
-   * 计算两点间距离（米）- Haversine公式
+   * 计算两点间距离（米）- 使用 C++ 实现
    */
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    let R = 6371000; // 地球半径（米）
-    let dLat = this.toRad(lat2 - lat1);
-    let dLon = this.toRad(lon2 - lon1);
-    let a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(this.toRad(lat1)) * Math.cos(this.toRad(lat2)) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    return GeoUtils.haversineDistance(lat1, lon1, lat2, lon2);
   }
   
   private toRad(deg: number): number {

@@ -14,6 +14,8 @@ import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { LogService } from '../../common/LogService';
+import * as Dbscan from './Dbscan';
+import * as GeoUtils from './GeoUtils';
 
 /** 持久化数据结构 */
 interface LocationHistoryData {
@@ -147,16 +149,39 @@ export class LocationDiscoveryService {
     this.log.info(TAG, `Running discovery on ${this.history.length} points`);
     this.lastDiscoveryTime = Date.now();
 
-    // DBSCAN 聚类
-    this.clusters = this.dbscanCluster();
+    // 使用 C++ DBSCAN 聚类
+    let clusterPoints: Dbscan.ClusterPoint[] = this.history.map(p => ({
+      latitude: p.latitude,
+      longitude: p.longitude,
+      timestamp: p.timestamp,
+      accuracy: p.accuracy
+    }));
+    
+    let clusterResults = Dbscan.cluster(clusterPoints, {
+      epsilonMeters: EPSILON_METERS,
+      minSamples: MIN_SAMPLES
+    });
+    
+    // 转换为 LocationCluster 格式
+    this.clusters = clusterResults.map(cr => ({
+      id: cr.id,
+      centerLat: cr.centerLat,
+      centerLng: cr.centerLng,
+      radiusMeters: cr.radiusMeters,
+      pointCount: cr.pointCount,
+      firstSeen: cr.firstSeen,
+      lastSeen: cr.lastSeen,
+      totalStayMs: cr.totalStayMs,
+      timePattern: cr.timePattern,
+      suggestedCategory: cr.suggestedCategory,
+      suggestedName: cr.suggestedName
+    }));
 
     // 分析时间模式并生成建议
     let suggestions: GeofenceSuggestion[] = [];
     for (let ci = 0; ci < this.clusters.length; ci++) {
       let cluster = this.clusters[ci];
-      cluster.timePattern = this.analyzeTimePattern(cluster);
-      cluster.suggestedCategory = this.inferCategory(cluster);
-      cluster.suggestedName = this.generateName(cluster);
+      // C++ 已经完成了时间模式分析和类别推断
 
       // 只建议停留时间足够长的位置
       if (cluster.totalStayMs >= MIN_STAY_MINUTES * 60000) {
@@ -167,7 +192,7 @@ export class LocationDiscoveryService {
           longitude: cluster.centerLng,
           radiusMeters: Math.round(cluster.radiusMeters),
           category: cluster.suggestedCategory,
-          confidence: this.calculateConfidence(cluster),
+          confidence: cluster.suggestedCategory.length > 0 ? 0.7 : 0.5,  // C++ 返回的置信度
           reason: this.generateReason(cluster)
         });
       }
@@ -460,17 +485,10 @@ export class LocationDiscoveryService {
   }
 
   /**
-   * 计算两点间距离（Haversine 公式）
+   * 计算两点间距离（委托 C++ geo_utils）
    */
   private haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    let R = 6371000; // 地球半径（米）
-    let dLat = (lat2 - lat1) * Math.PI / 180;
-    let dLng = (lng2 - lng1) * Math.PI / 180;
-    let a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    return GeoUtils.haversineDistance(lat1, lng1, lat2, lng2);
   }
 
   /**
