@@ -6,7 +6,7 @@ import { router } from '@kit.ArkUI';
 import { LogService } from '../common/LogService';
 import { ContextAwarenessService } from '../service/context/ContextAwarenessService';
 import { ContextEngineService } from '../service/context/ContextEngine';
-import { Geofence, GeofenceCategory } from '../service/context/ContextModels';
+import { Geofence, GeofenceCategory, FeedbackStats, FeedbackRuleStat } from '../service/context/ContextModels';
 
 @Entry
 @Component
@@ -25,6 +25,14 @@ struct ContextSettingsPage {
   @State newLon: string = '';
   @State newRadius: string = '100';
   @State selectedCat: number = 6;
+
+  // 反馈统计
+  @State fbTotal: number = 0;
+  @State fbPositive: number = 0;
+  @State fbNegative: number = 0;
+  @State fbRatioText: string = '--';
+  @State fbTopRuleNames: string[] = [];
+  @State fbTopRuleScores: string[] = [];
 
   private catIds: string[] = ['home', 'work', 'transit', 'shopping', 'restaurant', 'gym', 'custom'];
   private catLabels: string[] = ['🏠 家', '🏢 公司', '🚇 交通', '🛒 购物', '🍜 餐饮', '💪 健身', '📍 自定义'];
@@ -65,6 +73,34 @@ struct ContextSettingsPage {
       this.ruleCount = ContextEngineService.getInstance().getRuleCount();
     } catch (err) {
       this.ruleCount = 0;
+    }
+    this.refreshFeedbackStats();
+  }
+
+  private refreshFeedbackStats(): void {
+    try {
+      let cas = ContextAwarenessService.getInstance();
+      let stats: FeedbackStats = cas.getFeedbackStats();
+      this.fbTotal = stats.totalCount;
+      this.fbPositive = stats.positiveCount;
+      this.fbNegative = stats.negativeCount;
+      if (stats.positiveCount + stats.negativeCount > 0) {
+        this.fbRatioText = Math.round(stats.positiveRatio * 100).toString() + '%';
+      } else {
+        this.fbRatioText = '--';
+      }
+      let names: string[] = [];
+      let scores: string[] = [];
+      for (let i = 0; i < stats.topRules.length; i++) {
+        let tr: FeedbackRuleStat = stats.topRules[i];
+        names.push(tr.ruleName);
+        scores.push(tr.avgReward.toFixed(2) + ' (' + tr.feedbackCount.toString() + ' fb)');
+      }
+      this.fbTopRuleNames = names;
+      this.fbTopRuleScores = scores;
+    } catch (err) {
+      this.fbTotal = 0;
+      this.fbRatioText = '--';
     }
   }
 
@@ -161,6 +197,102 @@ struct ContextSettingsPage {
                     Divider().color('#F0F0F0')
                   }
                 }, (gfId: string) => gfId)
+              }
+            }
+            .width('100%')
+            .padding(16)
+            .backgroundColor(Color.White)
+            .borderRadius(12)
+
+            // ===== 反馈统计 =====
+            Column() {
+              Row() {
+                Text('反馈统计')
+                  .fontSize(16)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor('#1A1A1A')
+                  .layoutWeight(1)
+                Text('刷新')
+                  .fontSize(14)
+                  .fontColor('#007AFF')
+                  .onClick(() => { this.refreshFeedbackStats(); })
+              }
+              .width('100%')
+              .margin({ bottom: 12 })
+
+              // 数字统计行
+              Row() {
+                Column() {
+                  Text(this.fbTotal.toString())
+                    .fontSize(22)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor('#1A1A1A')
+                  Text('总反馈')
+                    .fontSize(11)
+                    .fontColor('#999999')
+                    .margin({ top: 2 })
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Center)
+
+                Column() {
+                  Text(this.fbRatioText)
+                    .fontSize(22)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor('#4CAF50')
+                  Text('好评率')
+                    .fontSize(11)
+                    .fontColor('#999999')
+                    .margin({ top: 2 })
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Center)
+
+                Column() {
+                  Text(this.fbPositive.toString() + ' / ' + this.fbNegative.toString())
+                    .fontSize(16)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor('#1A1A1A')
+                  Text('\uD83D\uDC4D / \uD83D\uDC4E')
+                    .fontSize(11)
+                    .fontColor('#999999')
+                    .margin({ top: 2 })
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Center)
+              }
+              .width('100%')
+              .padding({ top: 4, bottom: 8 })
+
+              // Top 规则
+              if (this.fbTopRuleNames.length > 0) {
+                Divider().color('#F0F0F0').margin({ top: 8, bottom: 8 })
+                Text('最有效规则 Top ' + this.fbTopRuleNames.length.toString())
+                  .fontSize(13)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor('#666666')
+                  .width('100%')
+                  .margin({ bottom: 6 })
+                ForEach(this.fbTopRuleNames, (name: string, idx: number) => {
+                  Row() {
+                    Text((idx + 1).toString() + '.')
+                      .fontSize(13)
+                      .fontColor('#007AFF')
+                      .fontWeight(FontWeight.Bold)
+                      .width(20)
+                    Text(name)
+                      .fontSize(13)
+                      .fontColor('#1A1A1A')
+                      .layoutWeight(1)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(idx < this.fbTopRuleScores.length ? this.fbTopRuleScores[idx] : '')
+                      .fontSize(12)
+                      .fontColor('#999999')
+                  }
+                  .width('100%')
+                  .padding({ top: 3, bottom: 3 })
+                }, (name: string, idx: number) => name + '_' + idx.toString())
               }
             }
             .width('100%')
