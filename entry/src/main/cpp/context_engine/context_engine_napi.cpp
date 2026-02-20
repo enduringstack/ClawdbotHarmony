@@ -308,8 +308,8 @@ static napi_value Evaluate(napi_env env, napi_callback_info info) {
 }
 
 static napi_value UpdateReward(napi_env env, napi_callback_info info) {
-    size_t argc = 2;
-    napi_value args[2];
+    size_t argc = 3;
+    napi_value args[3];
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
     if (argc < 2) {
         napi_throw_error(env, nullptr, "updateReward requires actionId and reward");
@@ -318,7 +318,17 @@ static napi_value UpdateReward(napi_env env, napi_callback_info info) {
     auto actionId = napiGetString(env, args[0]);
     double reward;
     napi_get_value_double(env, args[1], &reward);
+
+    // Always update MAB (backward compat)
     g_engine.mab().update(actionId, reward);
+
+    // If context provided, also update LinUCB
+    if (argc >= 3) {
+        auto contextJson = napiGetString(env, args[2]);
+        auto ctx = parseContextMap(contextJson);
+        g_engine.linucb().update(actionId, reward, ctx);
+    }
+
     return nullptr;
 }
 
@@ -362,31 +372,61 @@ static napi_value ExportRules(napi_env env, napi_callback_info info) {
     return napiString(env, g_engine.exportRulesJson());
 }
 
-static napi_value SelectAction(napi_env env, napi_callback_info info) {
-    size_t argc = 1;
-    napi_value args[1];
-    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-    if (argc < 1) {
-        napi_throw_error(env, nullptr, "selectAction requires JSON array of action IDs");
-        return nullptr;
-    }
-    // Parse simple JSON array of strings: ["id1","id2",...]
-    auto json = napiGetString(env, args[0]);
-    std::vector<std::string> actionIds;
+// Parse simple JSON array of strings: ["id1","id2",...]
+static std::vector<std::string> parseStringArray(const std::string& json) {
+    std::vector<std::string> result;
     size_t pos = 0;
     while (pos < json.size()) {
         auto qs = json.find('"', pos);
         if (qs == std::string::npos) break;
         auto qe = json.find('"', qs + 1);
         if (qe == std::string::npos) break;
-        actionIds.push_back(json.substr(qs + 1, qe - qs - 1));
+        result.push_back(json.substr(qs + 1, qe - qs - 1));
         pos = qe + 1;
     }
+    return result;
+}
 
-    int idx = g_engine.mab().select(actionIds);
+static napi_value SelectAction(napi_env env, napi_callback_info info) {
+    size_t argc = 2;
+    napi_value args[2];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    if (argc < 1) {
+        napi_throw_error(env, nullptr, "selectAction requires JSON array of action IDs");
+        return nullptr;
+    }
+
+    auto actionIdsJson = napiGetString(env, args[0]);
+    auto actionIds = parseStringArray(actionIdsJson);
+
+    int idx;
+    if (argc >= 2) {
+        // Context provided → use LinUCB
+        auto contextJson = napiGetString(env, args[1]);
+        auto ctx = parseContextMap(contextJson);
+        idx = g_engine.linucb().select(actionIds, ctx);
+    } else {
+        // No context → fallback to epsilon-greedy MAB
+        idx = g_engine.mab().select(actionIds);
+    }
+
     napi_value val;
     napi_create_int32(env, idx, &val);
     return val;
+}
+
+static napi_value ExportLinUCB(napi_env env, napi_callback_info info) {
+    return napiString(env, g_engine.linucb().exportJson());
+}
+
+static napi_value ImportLinUCB(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    if (argc < 1) return nullptr;
+    auto json = napiGetString(env, args[0]);
+    g_engine.linucb().importJson(json);
+    return nullptr;
 }
 
 // ============================================================
@@ -406,6 +446,8 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"loadStats",    nullptr, LoadStats,    nullptr, nullptr, nullptr, napi_default, nullptr},
         {"getRuleCount", nullptr, GetRuleCount, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"exportRules",  nullptr, ExportRules,  nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"exportLinUCB", nullptr, ExportLinUCB, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"importLinUCB", nullptr, ImportLinUCB, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

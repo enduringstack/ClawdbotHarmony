@@ -11,6 +11,7 @@
 
 #include <string>
 #include <vector>
+#include <array>
 #include <unordered_map>
 #include <optional>
 #include <cstdint>
@@ -105,6 +106,47 @@ private:
 };
 
 // ============================================================
+// LinUCB Contextual Bandit
+// ============================================================
+
+constexpr int LINUCB_DIM = 8;  // feature dimension
+
+/** Per-arm state for LinUCB: A matrix and b vector */
+struct LinUCBArm {
+    std::array<std::array<double, LINUCB_DIM>, LINUCB_DIM> A;  // d×d matrix
+    std::array<double, LINUCB_DIM> b;                           // d-vector
+};
+
+class LinUCB {
+public:
+    explicit LinUCB(double alpha = 1.0);
+
+    /**
+     * Build feature vector from context map.
+     * Features: [hour_sin, hour_cos, battery/100, isCharging, isWeekend,
+     *            motion_stationary, motion_active, motion_vehicle]
+     */
+    std::array<double, LINUCB_DIM> buildFeatureVec(const ContextMap& ctx) const;
+
+    /** Select best arm using UCB scores. Returns index into actionIds. */
+    int select(const std::vector<std::string>& actionIds, const ContextMap& ctx);
+
+    /** Update arm with observed reward and the context that was active. */
+    void update(const std::string& actionId, double reward, const ContextMap& ctx);
+
+    /** Export all arm state as JSON (for persistence). */
+    std::string exportJson() const;
+
+    /** Import arm state from JSON. */
+    void importJson(const std::string& json);
+
+private:
+    double alpha_;
+    std::unordered_map<std::string, LinUCBArm> arms_;
+    mutable std::mutex mu_;
+};
+
+// ============================================================
 // Soft matching
 // ============================================================
 
@@ -135,6 +177,9 @@ public:
     /** Get the MAB for external reward updates */
     MAB& mab() { return mab_; }
 
+    /** Get the LinUCB bandit for contextual action selection */
+    LinUCB& linucb() { return linucb_; }
+
     /** Get rule count */
     size_t ruleCount() const { return rules_.size(); }
 
@@ -149,6 +194,7 @@ private:
     std::vector<Rule> rules_;
     std::vector<TreeNode> tree_;
     MAB mab_;
+    LinUCB linucb_;
     std::unordered_map<std::string, int64_t> lastFired_;  // ruleId → timestamp
     mutable std::mutex mu_;
 };

@@ -45,6 +45,12 @@ function nativeGetRuleCount(): number {
 function nativeExportRules(): string {
   return contextEngine.exportRules() as string;
 }
+function nativeExportLinUCB(): string {
+  return contextEngine.exportLinUCB() as string;
+}
+function nativeImportLinUCB(json: string): void {
+  contextEngine.importLinUCB(json);
+}
 
 /** Rule definition for ArkTS side */
 export interface ContextRule {
@@ -126,6 +132,13 @@ export class ContextEngineService {
       let statsJson: string = String(await this.prefsStore.get('mab_stats', '{}'));
       nativeLoadStats(statsJson);
 
+      // Load LinUCB state
+      let linucbJson: string = String(await this.prefsStore.get('linucb_state', ''));
+      if (linucbJson.length > 0) {
+        nativeImportLinUCB(linucbJson);
+        log.info(TAG, 'LinUCB state restored');
+      }
+
       this.initialized = true;
     } catch (err) {
       let error = err as Error;
@@ -179,15 +192,23 @@ export class ContextEngineService {
     }
   }
 
-  /** Record user feedback for MAB learning */
-  async feedback(actionId: string, reward: number): Promise<void> {
-    nativeUpdateReward(actionId, reward);
+  /** Record user feedback for MAB + LinUCB learning */
+  async feedback(actionId: string, reward: number, snapshot?: ContextSnapshot): Promise<void> {
+    if (snapshot) {
+      contextEngine.updateReward(actionId, reward, JSON.stringify(snapshot));
+    } else {
+      nativeUpdateReward(actionId, reward);
+    }
     await this.persistStats();
+    await this.persistLinUCB();
   }
 
-  /** MAB action selection from candidates */
-  selectAction(actionIds: string[]): number {
+  /** Action selection from candidates. Uses LinUCB if context provided, MAB fallback otherwise. */
+  selectAction(actionIds: string[], snapshot?: ContextSnapshot): number {
     let json = JSON.stringify(actionIds);
+    if (snapshot) {
+      return contextEngine.selectAction(json, JSON.stringify(snapshot)) as number;
+    }
     return nativeSelectAction(json);
   }
 
@@ -397,6 +418,13 @@ export class ContextEngineService {
     if (!this.prefsStore) return;
     let json = nativeGetStats();
     await this.prefsStore.put('mab_stats', json);
+    await this.prefsStore.flush();
+  }
+
+  private async persistLinUCB(): Promise<void> {
+    if (!this.prefsStore) return;
+    let json = nativeExportLinUCB();
+    await this.prefsStore.put('linucb_state', json);
     await this.prefsStore.flush();
   }
 }
