@@ -2026,6 +2026,11 @@ export class NodeRuntime {
           result = await this.handleContextTest(paramsJson);
           break;
         }
+        case Command.CONTEXT_SIMULATE: {
+          this.log.info(TAG, 'Executing context.simulate...');
+          result = await this.handleContextSimulate(paramsJson);
+          break;
+        }
         default:
           this.log.warn(TAG, `Unsupported invoke command: ${command}`);
           this.dispatchInvoke(command, paramsStr, `unsupported command: ${command}`, true);
@@ -2132,6 +2137,92 @@ export class NodeRuntime {
     } catch (err) {
       let msg = (err as Error).message ?? 'unknown error';
       this.log.error(TAG, `context.test error: ${msg}`);
+      return `{"error":${JSON.stringify(msg)}}`;
+    }
+  }
+
+  /**
+   * Handle context.simulate invoke: run the full UI delivery pipeline
+   * (cooldown check, notifyRecommendation, system notification) and return results.
+   *
+   * Params JSON format: same as context.test
+   * Returns: { scenario, ruleCount, matches, delivered, snapshot }
+   */
+  private async handleContextSimulate(paramsJson: string | undefined): Promise<string> {
+    if (!paramsJson || paramsJson.length === 0) {
+      return '{"error":"missing params"}';
+    }
+
+    try {
+      let cas = ContextAwarenessService.getInstance();
+      if (!cas.isActive()) {
+        return '{"error":"情景智能服务未启动，请先启动 Context Awareness Service"}';
+      }
+
+      let params = JSON.parse(paramsJson) as Record<string, Object>;
+      let scenario = (params['scenario'] as string) ?? 'unnamed';
+      let maxResults = (params['maxResults'] as number) ?? 5;
+
+      let engine = ContextEngineService.getInstance();
+
+      // Ensure engine is initialized
+      if (this._context) {
+        await engine.init(this._context);
+      }
+
+      // Optionally reload default rules
+      if (params['loadDefaultRules'] === true) {
+        await engine.loadDefaultRules();
+        this.log.info(TAG, `context.simulate: reloaded default rules, count=${engine.getRuleCount()}`);
+      }
+
+      // Optionally rebind geofences
+      if (params['geofences'] !== undefined) {
+        let geoArr = params['geofences'] as Array<Record<string, string>>;
+        let bindings: GeofenceBinding[] = [];
+        for (let i = 0; i < geoArr.length; i++) {
+          let b: GeofenceBinding = { id: geoArr[i]['id'] ?? '', category: geoArr[i]['category'] ?? '' };
+          bindings.push(b);
+        }
+        await engine.rebindGeofences(bindings);
+        this.log.info(TAG, `context.simulate: rebound ${bindings.length} geofences`);
+      }
+
+      // Build snapshot from params
+      let snapObj = params['snapshot'] as Record<string, string>;
+      let snapshot: ContextSnapshot = {
+        timeOfDay: snapObj['timeOfDay'] ?? 'morning',
+        hour: snapObj['hour'] ?? '9',
+        dayOfWeek: snapObj['dayOfWeek'] ?? '1',
+        isWeekend: snapObj['isWeekend'] ?? 'false',
+        motionState: snapObj['motionState'] ?? 'stationary',
+        batteryLevel: snapObj['batteryLevel'] ?? '80',
+        isCharging: snapObj['isCharging'] ?? 'false',
+        networkType: snapObj['networkType'] ?? 'wifi',
+        geofence: snapObj['geofence'],
+        latitude: snapObj['latitude'],
+        longitude: snapObj['longitude'],
+        stepCount: snapObj['stepCount'],
+      };
+
+      // Run full pipeline: evaluateAndDeliver (cooldown, notifyRecommendation, system notification)
+      let matches: MatchResult[] = await cas.simulateContext(snapshot);
+      let delivered = matches.length > 0;
+
+      this.log.info(TAG, `context.simulate [${scenario}]: ${matches.length} matches, delivered=${delivered}`);
+
+      let resultObj: Record<string, Object> = {
+        'scenario': scenario as Object,
+        'ruleCount': engine.getRuleCount() as Object,
+        'matches': matches as Object,
+        'delivered': delivered as Object,
+        'snapshot': snapshot as Object,
+      };
+
+      return JSON.stringify(resultObj);
+    } catch (err) {
+      let msg = (err as Error).message ?? 'unknown error';
+      this.log.error(TAG, `context.simulate error: ${msg}`);
       return `{"error":${JSON.stringify(msg)}}`;
     }
   }
@@ -2579,8 +2670,9 @@ export class NodeRuntime {
       commands.push(Command.EXEC_RUN);
     }
 
-    // Context engine test — always available
+    // Context engine test / simulate — always available
     commands.push(Command.CONTEXT_TEST);
+    commands.push(Command.CONTEXT_SIMULATE);
 
     return {
       role: 'node',

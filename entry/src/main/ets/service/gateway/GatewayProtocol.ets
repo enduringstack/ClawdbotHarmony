@@ -62,4 +62,6 @@ export class Command {
   static readonly FILE_GET: string = 'file.get';
   // Context engine test
   static readonly CONTEXT_TEST: string = 'context.test';
+  // Context engine simulate (full UI delivery)
+  static readonly CONTEXT_SIMULATE: string = 'context.simulate';
 }

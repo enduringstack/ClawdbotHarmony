@@ -1057,6 +1057,16 @@ export class ContextAwarenessService {
   }
 
 
+  /**
+   * 模拟情景智能完整 UI 提醒流程（含 cooldown 检查、notifyRecommendation、系统通知）
+   * 用于调试：与 evaluateAndDeliver 走相同路径，但返回匹配结果供调用方检查。
+   */
+  async simulateContext(snapshot: ContextSnapshot): Promise<MatchResult[]> {
+    await this.evaluateAndDeliver(snapshot);
+    // 返回引擎匹配结果（evaluateAndDeliver 内部已处理推送）
+    return this.engine.evaluate(snapshot, 3);
+  }
+
   getStatus(): string {
     let stats = this.behaviorLog.getStats();
     return `Running: ${this.isRunning}, ` +
