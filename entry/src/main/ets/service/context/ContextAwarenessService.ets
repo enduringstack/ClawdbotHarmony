@@ -17,6 +17,7 @@ import { LocationDiscoveryService, GeofenceSuggestion, DiscoveryStatsInfo } from
 import { FeedbackService } from './FeedbackService';
 import { LocationFusionService, LearnedSignalsSummary } from './LocationFusionService';
 import { DigitalWorldService } from './DigitalWorldService';
+import { SensorDataTray, TrayStatus } from './SensorDataTray';
 import {
   EnvironmentContext,
   MotionState,
@@ -113,6 +114,8 @@ export class ContextAwarenessService {
   private suggestionStateLoaded: boolean = false;
   // 数字世界感知
   private digitalWorld: DigitalWorldService = DigitalWorldService.getInstance();
+  // 传感器数据托盘
+  private tray: SensorDataTray = SensorDataTray.getInstance();
 
   private constructor() {
     this.geofenceMgr = GeofenceManager.getInstance();
@@ -223,6 +226,7 @@ export class ContextAwarenessService {
       // 计步器
       sensor.on(sensor.SensorId.PEDOMETER, (data: sensor.PedometerResponse) => {
         this.stepCount = data.steps;
+        this.tray.put('stepCount', data.steps.toString(), 1.0, 'pedometer');
       }, { interval: 5000000000 });  // 5秒采样
       
       this.log.info(TAG, 'Motion sensors started');
@@ -264,6 +268,9 @@ export class ContextAwarenessService {
       newState = this.lastLocation?.speed && this.lastLocation.speed > 5 ? 'driving' : 'walking';
     }
     
+    // Always update tray with latest motion data
+    this.tray.put('motionState', newState, 0.9, 'accelerometer');
+
     if (newState !== this.lastMotionState) {
       this.log.debug(TAG, `Motion state: ${this.lastMotionState} -> ${newState}`);
       this.engine.pushEvent('motion_' + newState);
@@ -293,6 +300,10 @@ export class ContextAwarenessService {
     let ctx = await this.getCurrentContext();
     let snapshot = this.buildSnapshot(ctx);
     await this.evaluateAndDeliver(snapshot);
+    // Refresh tray with latest sensor data, then read snapshot from tray
+    await this.refreshTray();
+    let snapshot = this.tray.getSnapshot();
+    this.evaluateAndDeliver(snapshot);
   }
 
 
@@ -354,21 +365,93 @@ export class ContextAwarenessService {
 
   
   /**
-   * 获取当前完整的环境上下文
+   * 刷新托盘：将所有可轮询的传感器数据写入托盘
+   * 事件驱动的数据（加速度计、围栏）由回调直接写入。
    */
-  async getCurrentContext(): Promise<EnvironmentContext> {
+  private async refreshTray(): Promise<void> {
     let now = new Date();
     let hour = now.getHours();
-    
+
+    // 时间（实时计算，TTL=∞）
     let timeOfDay: TimeOfDay;
     if (hour >= 5 && hour < 12) timeOfDay = 'morning';
     else if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
     else if (hour >= 17 && hour < 21) timeOfDay = 'evening';
     else timeOfDay = 'night';
-    
+
     let dayOfWeek = now.getDay();
     let isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    
+
+    this.tray.put('hour', hour.toString(), 1.0, 'system');
+    this.tray.put('timeOfDay', timeOfDay, 1.0, 'system');
+    this.tray.put('dayOfWeek', dayOfWeek.toString(), 1.0, 'system');
+    this.tray.put('isWeekend', isWeekend ? 'true' : 'false', 1.0, 'system');
+
+    // 电池
+    try {
+      this.tray.put('batteryLevel', batteryInfo.batterySOC.toString(), 1.0, 'battery');
+      let charging = batteryInfo.chargingStatus === batteryInfo.BatteryChargeState.ENABLE;
+      this.tray.put('isCharging', charging ? 'true' : 'false', 1.0, 'battery');
+    } catch {
+      // ignore
+    }
+
+    // 网络
+    try {
+      if (wifiManager.isWifiActive()) {
+        this.tray.put('networkType', 'wifi', 1.0, 'wifi');
+      } else {
+        this.tray.put('networkType', 'cellular', 0.8, 'network');
+      }
+    } catch {
+      // ignore
+    }
+
+    // 位置 / 围栏
+    if (this.lastLocation) {
+      this.tray.put('latitude', this.lastLocation.latitude.toString(), 1.0, 'gps');
+      this.tray.put('longitude', this.lastLocation.longitude.toString(), 1.0, 'gps');
+
+      let geofences = this.geofenceMgr.getGeofencesAtLocation(
+        this.lastLocation.latitude,
+        this.lastLocation.longitude
+      );
+      if (geofences.length > 0) {
+        this.tray.put('geofence', geofences[0].id, 1.0, 'geofence');
+      }
+    }
+
+    // 步数
+    if (this.stepCount > 0) {
+      this.tray.put('stepCount', this.stepCount.toString(), 1.0, 'pedometer');
+    }
+
+    // 运动状态（加速度计回调已写入，这里确保有值）
+    if (this.lastMotionState !== 'unknown') {
+      this.tray.put('motionState', this.lastMotionState, 0.9, 'accelerometer');
+    }
+  }
+
+  /**
+   * 获取当前完整的环境上下文
+   * 保留供反馈路径和兼容旧 API 使用。内部同时刷新托盘。
+   */
+  async getCurrentContext(): Promise<EnvironmentContext> {
+    // 刷新托盘（所有传感器数据写入）
+    await this.refreshTray();
+
+    let now = new Date();
+    let hour = now.getHours();
+
+    let timeOfDay: TimeOfDay;
+    if (hour >= 5 && hour < 12) timeOfDay = 'morning';
+    else if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
+    else if (hour >= 17 && hour < 21) timeOfDay = 'evening';
+    else timeOfDay = 'night';
+
+    let dayOfWeek = now.getDay();
+    let isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
     // 设备状态
     let batteryLevel = 100;
     let isCharging = false;
@@ -378,20 +461,22 @@ export class ContextAwarenessService {
     } catch {
       // ignore
     }
-    
+
     // 网络状态
     let networkType: NetworkType = 'none';
     try {
       if (wifiManager.isWifiActive()) {
         networkType = 'wifi';
       } else {
-        networkType = 'cellular';  // 简化处理
+        networkType = 'cellular';
       }
     } catch {
       // ignore
     }
     
     // 当前围栏（多源融合）
+
+    // 当前围栏
     let currentGeofence: Geofence | undefined;
     let allGeofences = this.geofenceMgr.getAllGeofences();
     let fusionResult = this.locationFusion.getBestMatch(allGeofences, this.lastLocation);
@@ -406,8 +491,9 @@ export class ContextAwarenessService {
         this.lastLocation.longitude
       );
       currentGeofence = gpsGeofences[0];
+      currentGeofence = geofences[0];
     }
-    
+
     let ctx: EnvironmentContext = {
       timestamp: Date.now(),
       location: this.lastLocation,
@@ -420,9 +506,9 @@ export class ContextAwarenessService {
       batteryLevel,
       isCharging,
       networkType,
-      screenOn: true,  // 简化处理
+      screenOn: true,
     };
-    
+
     this.currentContext = ctx;
     return ctx;
   }
@@ -480,6 +566,7 @@ export class ContextAwarenessService {
 
   /**
    * 评估并推送推荐，无匹配时调用 LLM 兜底
+   * 评估并推送推荐
    */
   private async evaluateAndDeliver(snapshot: ContextSnapshot): Promise<void> {
     let results = this.engine.evaluate(snapshot, 3);
@@ -550,6 +637,13 @@ export class ContextAwarenessService {
     // 更新位置
     this.lastLocation = event.location;
 
+    // 写入托盘
+    this.tray.put('latitude', event.location.latitude.toString(), 1.0, 'gps');
+    this.tray.put('longitude', event.location.longitude.toString(), 1.0, 'gps');
+    if (event.type === 'enter') {
+      this.tray.put('geofence', event.geofence.id, 1.0, 'geofence');
+    }
+
     // Push event to engine buffer for temporal/sequence rules
     let eventType = event.type === 'enter' ? 'geofence_enter' : 'geofence_exit';
     this.engine.pushEvent(eventType);
@@ -561,14 +655,17 @@ export class ContextAwarenessService {
 
     // 只处理进入事件
     if (event.type !== 'enter') return;
-    
-    // 获取当前上下文并通过 C++ 规则引擎评估
-    let ctx = await this.getCurrentContext();
-    let snapshot = this.buildSnapshot(ctx);
+
+    // 刷新托盘 + 通过 C++ 规则引擎评估
+    await this.refreshTray();
+    let snapshot = this.tray.getSnapshot();
     this.log.info(TAG, `Geofence trigger evaluate: geofence=${snapshot.geofence ?? 'none'}`);
     await this.evaluateAndDeliver(snapshot);
     
+    this.evaluateAndDeliver(snapshot);
+
     // 同时尝试旧的 BehaviorLogger 匹配（兼容过渡）
+    let ctx = await this.getCurrentContext();
     let rules = this.behaviorLog.getMatchingRules(ctx);
     if (rules.length > 0) {
       let topRule = rules[0];
@@ -970,6 +1067,11 @@ export class ContextAwarenessService {
            `Records: ${stats.totalRecords}, ` +
            `Rules: ${stats.enabledRules}/${stats.totalRules}, ` +
            `AvgConf: ${(stats.avgConfidence * 100).toFixed(0)}%`;
+  }
+
+  /** 获取数据托盘状态（调试用） */
+  getTrayStatus(): TrayStatus[] {
+    return this.tray.getStatus();
   }
   
   isActive(): boolean {
