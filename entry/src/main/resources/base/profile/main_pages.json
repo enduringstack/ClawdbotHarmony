@@ -10,6 +10,7 @@
     "pages/ExperienceRoutePage",
     "pages/AboutRoutePage",
     "pages/ConversationsRoutePage",
-    "pages/DocViewerPage"
+    "pages/DocViewerPage",
+    "pages/ContextSettingsPage"
   ]
 }
