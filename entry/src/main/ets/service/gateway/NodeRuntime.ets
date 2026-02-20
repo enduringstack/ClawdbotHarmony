@@ -56,7 +56,7 @@ import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, C
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.41.0';
+const APP_VERSION = '2.42.0';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -356,7 +356,13 @@ export class NodeRuntime {
         // Listen for recommendations and dispatch as chat events
         cas.addRecommendationListener((rec: ContextRecommendation) => {
           this.log.info(TAG, `情景推荐: ${rec.reason}`);
-          // Send as a chat message to listeners
+          let ruleId = rec.rule.id;
+          let confidence = Math.round((rec.rule.confidence ?? 1) * 100);
+
+          // Build A2UI card JSONL for the recommendation
+          let a2uiJsonl = this.buildContextRecommendationA2UI(ruleId, ruleId, rec.reason, confidence);
+
+          // Send as a chat message (text fallback)
           let event: GatewayChatEvent = {
             runId: `ctx-${Date.now()}`,
             sessionKey: '',
@@ -368,6 +374,10 @@ export class NodeRuntime {
             },
           };
           this.dispatchChatEvent(event);
+
+          // Push A2UI card to chat inline view
+          this.dispatchA2UI('push', a2uiJsonl);
+
           // Also send system notification if in background
           if (!this._isInForeground) {
             NotificationHelper.getInstance().send('💡 情景智能', rec.reason).catch(() => { /* ignore */ });
@@ -2344,6 +2354,28 @@ export class NodeRuntime {
       this.log.error(TAG, `context.listRules error: ${msg}`);
       return `{"error":${JSON.stringify(msg)}}`;
     }
+  }
+
+  /**
+   * Build A2UI JSONL for a context recommendation card using simplified format.
+   * Shows: rule name, recommendation, confidence, and feedback buttons.
+   */
+  private buildContextRecommendationA2UI(ruleId: string, ruleName: string, reason: string, confidence: number): string {
+    // Escape strings for JSON embedding
+    let safeReason = reason.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    let safeRuleId = ruleId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+    // Use simplified A2UI format: {"type":"form","children":[...]}
+    let jsonl = `{"type":"form","id":"ctx_rec_${Date.now()}","children":[` +
+      `{"type":"text","text":"💡 情景智能推荐","style":{"fontSize":20,"fontWeight":"bold"}},` +
+      `{"type":"text","text":"${safeReason}","style":{"fontSize":15}},` +
+      `{"type":"text","text":"📋 规则: ${safeRuleId}  |  置信度: ${confidence}%","style":{"fontSize":12,"color":"#888"}},` +
+      `{"type":"button","text":"✅ 有用","variant":"primary","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"accept"}}}},` +
+      `{"type":"button","text":"❌ 不准","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"reject"}}}},` +
+      `{"type":"button","text":"🙈 忽略","variant":"borderless","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"dismiss"}}}}` +
+      `]}`;
+
+    return jsonl;
   }
 
   private extractA2UIContent(paramsJson: string | undefined): string {
