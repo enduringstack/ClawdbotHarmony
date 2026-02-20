@@ -101,6 +101,21 @@ void RuleEngine::evaluateNode(int nodeIdx, const ContextMap& ctx,
 std::vector<MatchResult> RuleEngine::evaluate(const ContextMap& ctx, int maxResults) {
     std::lock_guard<std::mutex> lock(mu_);
 
+    // Build priority lookup once: O(n) instead of O(n²) during sort
+    std::unordered_map<std::string, double> priorityMap;
+    priorityMap.reserve(rules_.size());
+    for (const auto& rule : rules_) {
+        priorityMap[rule.id] = rule.priority;
+    }
+
+    auto sortByScore = [&](std::vector<MatchResult>& results) {
+        std::sort(results.begin(), results.end(), [&](const MatchResult& a, const MatchResult& b) {
+            double pa = priorityMap.count(a.ruleId) ? priorityMap[a.ruleId] : 1.0;
+            double pb = priorityMap.count(b.ruleId) ? priorityMap[b.ruleId] : 1.0;
+            return a.confidence * pa > b.confidence * pb;
+        });
+    };
+
     if (tree_.empty()) {
         // No tree compiled, evaluate all rules linearly
         std::vector<MatchResult> results;
@@ -120,14 +135,7 @@ std::vector<MatchResult> RuleEngine::evaluate(const ContextMap& ctx, int maxResu
                 results.push_back({rule.id, confidence, rule.action});
             }
         }
-        // Sort by confidence × priority
-        std::sort(results.begin(), results.end(), [&](const MatchResult& a, const MatchResult& b) {
-            auto ra = std::find_if(rules_.begin(), rules_.end(), [&](const Rule& r) { return r.id == a.ruleId; });
-            auto rb = std::find_if(rules_.begin(), rules_.end(), [&](const Rule& r) { return r.id == b.ruleId; });
-            double pa = (ra != rules_.end()) ? ra->priority : 1.0;
-            double pb = (rb != rules_.end()) ? rb->priority : 1.0;
-            return a.confidence * pa > b.confidence * pb;
-        });
+        sortByScore(results);
         if (static_cast<int>(results.size()) > maxResults) results.resize(maxResults);
         return results;
     }
@@ -135,23 +143,33 @@ std::vector<MatchResult> RuleEngine::evaluate(const ContextMap& ctx, int maxResu
     std::vector<MatchResult> results;
     evaluateNode(0, ctx, results);
 
-    // Sort by confidence × priority (descending)
-    std::sort(results.begin(), results.end(), [&](const MatchResult& a, const MatchResult& b) {
-        auto ra = std::find_if(rules_.begin(), rules_.end(), [&](const Rule& r) { return r.id == a.ruleId; });
-        auto rb = std::find_if(rules_.begin(), rules_.end(), [&](const Rule& r) { return r.id == b.ruleId; });
-        double pa = (ra != rules_.end()) ? ra->priority : 1.0;
-        double pb = (rb != rules_.end()) ? rb->priority : 1.0;
-        return a.confidence * pa > b.confidence * pb;
-    });
+    // Deduplicate results (same rule may appear in multiple branches)
+    std::unordered_map<std::string, size_t> seen;
+    std::vector<MatchResult> deduped;
+    deduped.reserve(results.size());
+    for (auto& r : results) {
+        auto it = seen.find(r.ruleId);
+        if (it == seen.end()) {
+            seen[r.ruleId] = deduped.size();
+            deduped.push_back(std::move(r));
+        } else {
+            // Keep higher confidence
+            if (r.confidence > deduped[it->second].confidence) {
+                deduped[it->second] = std::move(r);
+            }
+        }
+    }
+    results = std::move(deduped);
+
+    sortByScore(results);
 
     if (static_cast<int>(results.size()) > maxResults) {
         results.resize(maxResults);
     }
 
-    // Update lastFired timestamps
-    int64_t now = nowMs();
-    for (const auto& r : results) {
-        lastFired_[r.ruleId] = now;
+    // Only update lastFired for top result (the one actually executed)
+    if (!results.empty()) {
+        lastFired_[results[0].ruleId] = nowMs();
     }
 
     return results;

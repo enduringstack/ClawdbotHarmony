@@ -72,81 +72,80 @@ void RuleEngine::compileTree() {
         }
     }
 
-    // BFS-style tree building with a stack
-    struct BuildTask {
-        std::vector<int> indices;
-        std::unordered_set<std::string> usedKeys;
-        int parentIdx;
-        std::string branchValue;
-    };
+    if (allIndices.empty()) return;
 
-    // Reserve root node
-    tree_.push_back(TreeNode{});
+    // Recursive tree building (cleaner than iterative with correct indexing)
+    struct BuildContext {
+        const std::vector<Rule>& rules;
+        std::vector<TreeNode>& tree;
 
-    std::vector<BuildTask> stack;
-    stack.push_back({allIndices, {}, -1, ""});
+        int build(const std::vector<int>& indices, std::unordered_set<std::string> usedKeys) {
+            int nodeIdx = static_cast<int>(tree.size());
+            tree.push_back(TreeNode{});
 
-    while (!stack.empty()) {
-        auto task = std::move(stack.back());
-        stack.pop_back();
+            // Find best split key
+            std::string splitKey = pickSplitKey(rules, indices, usedKeys);
 
-        int nodeIdx = (task.parentIdx == -1) ? 0 : static_cast<int>(tree_.size());
-        if (task.parentIdx != -1) {
-            tree_.push_back(TreeNode{});
-        }
+            // Leaf if: no good split, or few rules, or max depth reached
+            if (splitKey.empty() || indices.size() <= 2 || usedKeys.size() >= 5) {
+                tree[nodeIdx].splitKey = "";
+                tree[nodeIdx].defaultChild = -1;
+                tree[nodeIdx].ruleIndices = indices;
+                return nodeIdx;
+            }
 
-        // Find best split key
-        std::string splitKey = pickSplitKey(rules_, task.indices, task.usedKeys);
+            // Internal node: group rules by their condition value for splitKey
+            tree[nodeIdx].splitKey = splitKey;
 
-        // Leaf if: no good split, or few rules, or max depth reached
-        if (splitKey.empty() || task.indices.size() <= 2 || task.usedKeys.size() >= 5) {
-            // Leaf node
-            tree_[nodeIdx].splitKey = "";
-            tree_[nodeIdx].defaultChild = -1;
-            tree_[nodeIdx].ruleIndices = task.indices;
-            continue;
-        }
+            std::unordered_map<std::string, std::vector<int>> groups;
+            std::vector<int> noCondition;  // rules that don't use this key
 
-        // Internal node: group rules by their condition value for splitKey
-        tree_[nodeIdx].splitKey = splitKey;
-        tree_[nodeIdx].defaultChild = -1;
-
-        std::unordered_map<std::string, std::vector<int>> groups;
-        std::vector<int> noCondition;  // rules that don't use this key
-
-        for (int idx : task.indices) {
-            bool found = false;
-            for (const auto& cond : rules_[idx].conditions) {
-                if (cond.key == splitKey && cond.op == "eq") {
-                    groups[cond.value].push_back(idx);
-                    found = true;
-                    break;
+            for (int idx : indices) {
+                bool found = false;
+                for (const auto& cond : rules[idx].conditions) {
+                    if (cond.key == splitKey && cond.op == "eq") {
+                        groups[cond.value].push_back(idx);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    noCondition.push_back(idx);
                 }
             }
-            if (!found) {
-                noCondition.push_back(idx);
+
+            auto childUsedKeys = usedKeys;
+            childUsedKeys.insert(splitKey);
+
+            // Build child nodes for each branch value
+            // Note: we must build children AFTER this node is fully set up
+            std::vector<std::pair<std::string, std::vector<int>>> branches;
+            for (auto& [value, ruleIdxs] : groups) {
+                // Add noCondition rules to every branch (they match regardless)
+                for (int nc : noCondition) ruleIdxs.push_back(nc);
+                branches.emplace_back(value, std::move(ruleIdxs));
             }
-        }
 
-        auto childUsedKeys = task.usedKeys;
-        childUsedKeys.insert(splitKey);
+            // Now build children (tree may grow, so indices are correct)
+            for (auto& [value, ruleIdxs] : branches) {
+                int childIdx = build(ruleIdxs, childUsedKeys);
+                tree[nodeIdx].branches.emplace_back(value, childIdx);
+            }
 
-        // Create child nodes for each branch value
-        for (auto& [value, ruleIdxs] : groups) {
-            // Add noCondition rules to every branch (they match regardless)
-            for (int nc : noCondition) ruleIdxs.push_back(nc);
-            int childIdx = static_cast<int>(tree_.size());
-            tree_[nodeIdx].branches.emplace_back(value, childIdx);
-            stack.push_back({std::move(ruleIdxs), childUsedKeys, nodeIdx, value});
-        }
+            // Default branch for values not seen in any rule
+            if (!noCondition.empty()) {
+                int defaultIdx = build(noCondition, childUsedKeys);
+                tree[nodeIdx].defaultChild = defaultIdx;
+            } else {
+                tree[nodeIdx].defaultChild = -1;
+            }
 
-        // Default branch for values not seen in any rule
-        if (!noCondition.empty()) {
-            int defaultIdx = static_cast<int>(tree_.size());
-            tree_[nodeIdx].defaultChild = defaultIdx;
-            stack.push_back({noCondition, childUsedKeys, nodeIdx, "__default__"});
+            return nodeIdx;
         }
-    }
+    };
+
+    BuildContext ctx{rules_, tree_};
+    ctx.build(allIndices, {});
 }
 
 }  // namespace context_engine
