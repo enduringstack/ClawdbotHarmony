@@ -166,11 +166,9 @@ export struct ChatPage {
           this.gwAgentEmoji = id.emoji;
           this.gwAgentTheme = id.theme;
           this.gwAgentAvatar = NodeRuntime.getInstance().resolveAgentAvatarUrl() ?? '';
-          // Retry after delay in case avatar download is still in progress
-          if (this.gwAgentAvatar.length === 0 || this.gwAgentAvatar.startsWith('http')) {
-            setTimeout(() => {
-              this.gwAgentAvatar = NodeRuntime.getInstance().resolveAgentAvatarUrl() ?? '';
-            }, 3000);
+          // If avatar not yet cached, retry periodically
+          if (id.avatar.length > 0 && (this.gwAgentAvatar.length === 0 || this.gwAgentAvatar.startsWith('http'))) {
+            this.retryAvatarResolve(5, 2000);
           }
         }
       }
@@ -184,6 +182,10 @@ export struct ChatPage {
         this.gwAgentTheme = identity.theme;
         this.gwAgentAvatar = NodeRuntime.getInstance().resolveAgentAvatarUrl() ?? '';
         this.log.info('ChatPage', `Gateway identity received: name="${identity.name}" emoji="${identity.emoji}" avatar="${identity.avatar}" resolvedAvatar="${this.gwAgentAvatar}"`);
+        // If avatar not yet cached locally, retry periodically until download completes
+        if (identity.avatar.length > 0 && (this.gwAgentAvatar.length === 0 || this.gwAgentAvatar.startsWith('http'))) {
+          this.retryAvatarResolve(5, 2000);
+        }
       } else {
         this.gwAgentName = '';
         this.gwAgentEmoji = '';
@@ -1092,6 +1094,21 @@ export struct ChatPage {
       return `向 ${name} 提问...`;
     }
     return `Ask ${name} anything...`;
+  }
+
+  private retryAvatarResolve(retries: number, delayMs: number): void {
+    if (retries <= 0) return;
+    setTimeout(() => {
+      let resolved = NodeRuntime.getInstance().resolveAgentAvatarUrl() ?? '';
+      if (resolved.length > 0 && !resolved.startsWith('http')) {
+        // Got a local cached path — update
+        this.gwAgentAvatar = resolved;
+        this.log.info('ChatPage', `Avatar resolved on retry: ${resolved}`);
+      } else {
+        // Still not cached, keep retrying
+        this.retryAvatarResolve(retries - 1, delayMs);
+      }
+    }, delayMs);
   }
 
   private getEffectiveAvatar(): string {
