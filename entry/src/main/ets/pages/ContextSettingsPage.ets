@@ -8,6 +8,7 @@ import { ContextAwarenessService } from '../service/context/ContextAwarenessServ
 import { ContextEngineService } from '../service/context/ContextEngine';
 import { Geofence, GeofenceCategory, FeedbackStats, FeedbackRuleStat } from '../service/context/ContextModels';
 import { LocationDiscoveryService, GeofenceSuggestion } from '../service/context/LocationDiscoveryService';
+import { TrayStatus } from '../service/context/SensorDataTray';
 
 @Entry
 @Component
@@ -37,12 +38,32 @@ struct ContextSettingsPage {
   @State fbTopRuleNames: string[] = [];
   @State fbTopRuleScores: string[] = [];
 
+  // 数据托盘
+  @State trayKeys: string[] = [];
+  @State trayValues: string[] = [];
+  @State trayAges: string[] = [];
+  @State trayIndicators: string[] = [];   // 🟢/🟡/🔴
+  @State trayQualities: string[] = [];
+  private trayTimer: number = -1;
+
   private catIds: string[] = ['home', 'work', 'transit', 'shopping', 'restaurant', 'gym', 'custom'];
   private catLabels: string[] = ['🏠 家', '🏢 公司', '🚇 交通', '🛒 购物', '🍜 餐饮', '💪 健身', '📍 自定义'];
 
   aboutToAppear(): void {
     this.log.info('CtxSettings', 'Page opened');
     this.refresh();
+    this.refreshTrayStatus();
+    // Auto-refresh tray every 5 seconds
+    this.trayTimer = setInterval(() => {
+      this.refreshTrayStatus();
+    }, 5000);
+  }
+
+  aboutToDisappear(): void {
+    if (this.trayTimer !== -1) {
+      clearInterval(this.trayTimer);
+      this.trayTimer = -1;
+    }
   }
 
   private getCatLabel(cat: string): string {
@@ -150,6 +171,100 @@ struct ContextSettingsPage {
                 .fontSize(13)
                 .fontColor('#666666')
                 .margin({ top: 4 })
+            }
+            .width('100%')
+            .padding(16)
+            .backgroundColor(Color.White)
+            .borderRadius(12)
+
+            // ===== 数据托盘 =====
+            Column() {
+              Row() {
+                Text('\u{1F4E1} 数据托盘 (' + this.trayKeys.length.toString() + ')')
+                  .fontSize(16)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor('#1A1A1A')
+                  .layoutWeight(1)
+                Text('刷新')
+                  .fontSize(14)
+                  .fontColor('#007AFF')
+                  .onClick(() => { this.refreshTrayStatus(); })
+              }
+              .width('100%')
+              .margin({ bottom: 8 })
+
+              Text('每 5 秒自动刷新')
+                .fontSize(11)
+                .fontColor('#BBBBBB')
+                .width('100%')
+                .margin({ bottom: 8 })
+
+              if (this.trayKeys.length === 0) {
+                Text('托盘为空（传感器未开始写入）')
+                  .fontSize(13)
+                  .fontColor('#999999')
+                  .width('100%')
+                  .textAlign(TextAlign.Center)
+                  .padding(16)
+              } else {
+                // Header row
+                Row() {
+                  Text('Key')
+                    .fontSize(11)
+                    .fontColor('#999999')
+                    .fontWeight(FontWeight.Medium)
+                    .width(90)
+                  Text('Value')
+                    .fontSize(11)
+                    .fontColor('#999999')
+                    .fontWeight(FontWeight.Medium)
+                    .layoutWeight(1)
+                  Text('Age')
+                    .fontSize(11)
+                    .fontColor('#999999')
+                    .fontWeight(FontWeight.Medium)
+                    .width(45)
+                  Text('Q')
+                    .fontSize(11)
+                    .fontColor('#999999')
+                    .fontWeight(FontWeight.Medium)
+                    .width(35)
+                  Text('')
+                    .width(18)
+                }
+                .width('100%')
+                .padding({ bottom: 4 })
+
+                ForEach(this.trayKeys, (key: string, idx: number) => {
+                  Row() {
+                    Text(key)
+                      .fontSize(12)
+                      .fontColor('#1A1A1A')
+                      .width(90)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(idx < this.trayValues.length ? this.trayValues[idx] : '')
+                      .fontSize(12)
+                      .fontColor('#666666')
+                      .layoutWeight(1)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(idx < this.trayAges.length ? this.trayAges[idx] : '')
+                      .fontSize(11)
+                      .fontColor('#999999')
+                      .width(45)
+                    Text(idx < this.trayQualities.length ? this.trayQualities[idx] : '')
+                      .fontSize(11)
+                      .fontColor('#999999')
+                      .width(35)
+                    Text(idx < this.trayIndicators.length ? this.trayIndicators[idx] : '')
+                      .fontSize(12)
+                      .width(18)
+                  }
+                  .width('100%')
+                  .padding({ top: 3, bottom: 3 })
+                }, (key: string, idx: number) => key + '_' + idx.toString())
+              }
             }
             .width('100%')
             .padding(16)
@@ -550,6 +665,46 @@ struct ContextSettingsPage {
     } catch (err) {
       this.log.error('CtxSettings', 'Accept suggestion error: ' + (err as Error).message);
     }
+  }
+
+  private refreshTrayStatus(): void {
+    try {
+      let cas = ContextAwarenessService.getInstance();
+      let statuses: TrayStatus[] = cas.getTrayStatus();
+      let keys: string[] = [];
+      let values: string[] = [];
+      let ages: string[] = [];
+      let indicators: string[] = [];
+      let qualities: string[] = [];
+      for (let i = 0; i < statuses.length; i++) {
+        let s: TrayStatus = statuses[i];
+        keys.push(s.key);
+        values.push(s.value.length > 20 ? s.value.substring(0, 20) + '...' : s.value);
+        ages.push(this.formatAge(s.ageMs));
+        if (s.fresh) {
+          indicators.push('\u{1F7E2}');  // green circle
+        } else if (s.effectiveQuality > 0) {
+          indicators.push('\u{1F7E1}');  // yellow circle
+        } else {
+          indicators.push('\u{1F534}');  // red circle
+        }
+        qualities.push((s.effectiveQuality * 100).toFixed(0) + '%');
+      }
+      this.trayKeys = keys;
+      this.trayValues = values;
+      this.trayAges = ages;
+      this.trayIndicators = indicators;
+      this.trayQualities = qualities;
+    } catch (err) {
+      this.trayKeys = [];
+    }
+  }
+
+  private formatAge(ms: number): string {
+    if (ms < 1000) return ms.toString() + 'ms';
+    if (ms < 60000) return (ms / 1000).toFixed(0) + 's';
+    if (ms < 3600000) return (ms / 60000).toFixed(1) + 'm';
+    return (ms / 3600000).toFixed(1) + 'h';
   }
 
   private deleteGeofence(id: string): void {
