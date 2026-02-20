@@ -518,7 +518,7 @@ export class ExperienceStorage {
     }
 
     if (totalRemoved > 0) {
-      await this.save(context);
+      await this.save(context, pack);
       this.log.info(TAG, `Dedup: removed ${totalRemoved} duplicate entries`);
     }
     return totalRemoved;

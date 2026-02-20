@@ -15,6 +15,21 @@ import { fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { LogService } from '../../common/LogService';
 
+/** 持久化数据结构 */
+interface LocationHistoryData {
+  version: number;
+  history: LocationPoint[];
+  clusters: LocationCluster[];
+  lastDiscovery: number;
+}
+
+/** 统计信息 */
+export interface DiscoveryStatsInfo {
+  historyCount: number;
+  clusterCount: number;
+  lastDiscovery: string;
+}
+
 const TAG = 'LocationDiscovery';
 const MIN_SAMPLES = 10;           // 聚类最小点数
 const EPSILON_METERS = 50;        // DBSCAN 半径（米）
@@ -475,7 +490,7 @@ export class LocationDiscoveryService {
     if (!this.context) return;
     try {
       let path = `${this.context.filesDir}/location_history.json`;
-      let data = {
+      let data: LocationHistoryData = {
         version: 1,
         history: this.history,
         clusters: this.clusters,
@@ -506,12 +521,7 @@ export class LocationDiscoveryService {
 
       let decoder = util.TextDecoder.create('utf-8');
       let json = decoder.decodeToString(new Uint8Array(buffer));
-      let data = JSON.parse(json) as {
-        version: number;
-        history: LocationPoint[];
-        clusters: LocationCluster[];
-        lastDiscovery: number;
-      };
+      let data: LocationHistoryData = JSON.parse(json) as LocationHistoryData;
 
       this.history = data.history || [];
       this.clusters = data.clusters || [];
@@ -534,32 +544,39 @@ export class LocationDiscoveryService {
    * 获取当前建议
    */
   getSuggestions(): GeofenceSuggestion[] {
-    return this.clusters
-      .filter(c => c.totalStayMs >= MIN_STAY_MINUTES * 60000)
-      .map(cluster => ({
-        id: cluster.id,
-        name: cluster.suggestedName,
-        latitude: cluster.centerLat,
-        longitude: cluster.centerLng,
-        radiusMeters: Math.round(cluster.radiusMeters),
-        category: cluster.suggestedCategory,
-        confidence: this.calculateConfidence(cluster),
-        reason: this.generateReason(cluster)
-      }))
-      .sort((a, b) => b.confidence - a.confidence);
+    let result: GeofenceSuggestion[] = [];
+    for (let i = 0; i < this.clusters.length; i++) {
+      let cluster = this.clusters[i];
+      if (cluster.totalStayMs >= MIN_STAY_MINUTES * 60000) {
+        let s: GeofenceSuggestion = {
+          id: cluster.id,
+          name: cluster.suggestedName,
+          latitude: cluster.centerLat,
+          longitude: cluster.centerLng,
+          radiusMeters: Math.round(cluster.radiusMeters),
+          category: cluster.suggestedCategory,
+          confidence: this.calculateConfidence(cluster),
+          reason: this.generateReason(cluster)
+        };
+        result.push(s);
+      }
+    }
+    result.sort((a, b) => b.confidence - a.confidence);
+    return result;
   }
 
   /**
    * 获取统计信息
    */
-  getStats(): { historyCount: number; clusterCount: number; lastDiscovery: string } {
-    return {
+  getStats(): DiscoveryStatsInfo {
+    let info: DiscoveryStatsInfo = {
       historyCount: this.history.length,
       clusterCount: this.clusters.length,
       lastDiscovery: this.lastDiscoveryTime > 0
         ? new Date(this.lastDiscoveryTime).toLocaleString()
         : '从未'
     };
+    return info;
   }
 
   /**

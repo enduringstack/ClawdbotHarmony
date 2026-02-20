@@ -8,9 +8,23 @@ export interface ChangelogEntry {
   fixes: string[];
 }
 
-export const APP_VERSION: string = '2.35.6';
+export const APP_VERSION: string = '2.35.7';
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.35.7',
+    date: '2026-02-19',
+    features: [
+      '位置自动发现: DBSCAN聚类+时间模式分析+类别推断',
+      '/发现 命令: 查看GPS历史聚类结果',
+      '情景智能页面: 位置发现UI+一键添加围栏',
+      '围栏添加/删除后自动保存+重新绑定规则',
+    ],
+    fixes: [
+      '修复围栏管理空操作(添加/删除后未保存未绑定)',
+      '补全缺失方法: 定时评估/上下文快照/规则推送',
+    ],
+  },
   {
     version: '2.35.4',
     date: '2026-02-19',
@@ -409,4 +423,4 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export const LATEST_VERSION: string = '2.35.4';
+export const LATEST_VERSION: string = '2.35.7';

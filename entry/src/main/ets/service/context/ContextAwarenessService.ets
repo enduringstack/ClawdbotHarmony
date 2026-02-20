@@ -11,7 +11,7 @@ import { LogService } from '../../common/LogService';
 import { GeofenceManager, GeofenceEvent } from './GeofenceManager';
 import { BehaviorLogger } from './BehaviorLogger';
 import { ContextEngineService, ContextSnapshot, MatchResult, GeofenceBinding } from './ContextEngine';
-import { LocationDiscoveryService, GeofenceSuggestion } from './LocationDiscoveryService';
+import { LocationDiscoveryService, GeofenceSuggestion, DiscoveryStatsInfo } from './LocationDiscoveryService';
 import {
   EnvironmentContext,
   MotionState,
@@ -283,7 +283,7 @@ export class ContextAwarenessService {
   }
 
   /** 获取位置发现统计 */
-  getLocationDiscoveryStats(): { historyCount: number; clusterCount: number; lastDiscovery: string } {
+  getLocationDiscoveryStats(): DiscoveryStatsInfo {
     return this.locationDiscovery.getStats();
   }
 
