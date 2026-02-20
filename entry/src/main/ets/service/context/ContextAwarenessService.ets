@@ -31,6 +31,7 @@ import {
   LocationState,
   FeedbackStats,
   LLMRecommendation,
+  GeofenceCategory,
 } from './ContextModels';
 import { LLMFallbackService } from './LLMFallbackService';
 
@@ -297,13 +298,10 @@ export class ContextAwarenessService {
 
   private async periodicEvaluate(): Promise<void> {
     if (!this.isRunning) return;
-    let ctx = await this.getCurrentContext();
-    let snapshot = this.buildSnapshot(ctx);
-    await this.evaluateAndDeliver(snapshot);
     // Refresh tray with latest sensor data, then read snapshot from tray
     await this.refreshTray();
     let snapshot = this.tray.getSnapshot();
-    this.evaluateAndDeliver(snapshot);
+    await this.evaluateAndDeliver(snapshot);
   }
 
 
@@ -479,7 +477,7 @@ export class ContextAwarenessService {
     // 当前围栏
     let currentGeofence: Geofence | undefined;
     let allGeofences = this.geofenceMgr.getAllGeofences();
-    let fusionResult = this.locationFusion.getBestMatch(allGeofences, this.lastLocation);
+    let fusionResult = await this.locationFusion.getBestMatch(allGeofences, this.lastLocation);
     if (fusionResult) {
       currentGeofence = this.geofenceMgr.getGeofence(fusionResult.geofenceId);
       this.log.debug(TAG,
@@ -491,7 +489,6 @@ export class ContextAwarenessService {
         this.lastLocation.longitude
       );
       currentGeofence = gpsGeofences[0];
-      currentGeofence = geofences[0];
     }
 
     let ctx: EnvironmentContext = {
@@ -992,8 +989,8 @@ export class ContextAwarenessService {
       this.suggestionState.blacklist.push(clusterId);
     }
     // Clean up deferred/lastShown entries
-    delete this.suggestionState.deferred[clusterId];
-    delete this.suggestionState.lastShown[clusterId];
+    this.suggestionState.deferred[clusterId] = 0;
+    this.suggestionState.lastShown[clusterId] = 0;
     this.saveSuggestionState();
     this.log.info(TAG, `Blacklisted suggestion: ${clusterId}`);
   }

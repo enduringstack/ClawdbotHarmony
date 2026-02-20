@@ -119,14 +119,14 @@ export class LocationFusionService {
    * @param location 当前 GPS 位置（可能不精确）
    * @returns placeId → 置信度 (0~1) 映射
    */
-  getLocationConfidence(
+  async getLocationConfidence(
     geofences: Geofence[],
     location: LocationState | undefined
-  ): Map<string, number> {
+  ): Promise<Map<string, number>> {
     let result: Map<string, number> = new Map();
 
     // 获取当前 WiFi 和 BT 信号
-    let currentWifiSsid = this.getCurrentWifiSsid();
+    let currentWifiSsid = await this.getCurrentWifiSsid();
     let currentBtDevices = this.getCurrentBtDevices();
 
     let gpsAccuracy = location?.accuracy ?? 9999;
@@ -163,11 +163,11 @@ export class LocationFusionService {
   /**
    * 获取最佳匹配的围栏（融合后置信度最高且 > 0.5）
    */
-  getBestMatch(
+  async getBestMatch(
     geofences: Geofence[],
     location: LocationState | undefined
-  ): FusionResult | null {
-    let currentWifiSsid = this.getCurrentWifiSsid();
+  ): Promise<FusionResult | null> {
+    let currentWifiSsid = await this.getCurrentWifiSsid();
     let currentBtDevices = this.getCurrentBtDevices();
 
     let best: FusionResult | null = null;
@@ -203,7 +203,7 @@ export class LocationFusionService {
     if (best && best.confidence > 0.5) {
       return best;
     }
-    return null;
+    return Promise.resolve(null);
   }
 
   // ==================== 信号置信度计算 ====================
@@ -268,11 +268,11 @@ export class LocationFusionService {
 
   // ==================== 信号获取 ====================
 
-  private getCurrentWifiSsid(): string {
+  private async getCurrentWifiSsid(): Promise<string> {
     try {
       if (!wifiManager.isWifiActive()) return '';
-      let info = wifiManager.getLinkedInfo();
-      let ssid = info.ssid || '';
+      let info = await wifiManager.getLinkedInfo();
+      let ssid: string = info.ssid || '';
       // 去掉可能的引号包裹
       if (ssid.startsWith('"') && ssid.endsWith('"')) {
         ssid = ssid.substring(1, ssid.length - 1);
@@ -302,7 +302,7 @@ export class LocationFusionService {
    *
    * 调用时机：GeofenceManager 确认进入围栏，且 GPS 精度 < 30m
    */
-  learnSignals(geofenceId: string, location: LocationState): void {
+  async learnSignals(geofenceId: string, location: LocationState): Promise<void> {
     // 精度检查
     if (location.accuracy > LEARNING_GPS_ACCURACY_THRESHOLD) return;
 
@@ -310,7 +310,7 @@ export class LocationFusionService {
     let lastLearn = this.learningCooldown.get(geofenceId);
     if (lastLearn !== undefined && Date.now() - lastLearn < LEARNING_COOLDOWN_MS) return;
 
-    let currentSsid = this.getCurrentWifiSsid();
+    let currentSsid = await this.getCurrentWifiSsid();
     let currentBt = this.getCurrentBtDevices();
 
     // 没有可学习的信号

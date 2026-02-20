@@ -764,6 +764,8 @@ struct ContextSettingsPage {
 
   private locationDiscovery(): LocationDiscoveryService {
     return LocationDiscoveryService.getInstance();
+  }
+
   private refreshTrayStatus(): void {
     try {
       let cas = ContextAwarenessService.getInstance();

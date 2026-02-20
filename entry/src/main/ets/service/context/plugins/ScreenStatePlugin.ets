@@ -54,10 +54,11 @@ export class ScreenStatePlugin implements DigitalPlugin {
     this.log.info(TAG, 'Destroyed');
   }
 
-  private refreshState(): void {
+  private async refreshState(): Promise<void> {
     // Check lock state via screenLock API
     try {
-      this.isLocked = screenLock.isLocked();
+      let locked = await screenLock.isScreenLocked();
+      this.isLocked = locked;
     } catch {
       this.isLocked = false;
     }
