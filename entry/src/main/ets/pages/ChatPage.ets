@@ -18,7 +18,7 @@ import { NotificationInfo } from '../service/gateway/NotificationCapability';
 import { LogService } from '../common/LogService';
 import { I18n } from '../common/I18n';
 import { ConversationLogger } from '../service/ConversationLogger';
-import { ContextEngineService } from '../service/context/ContextEngine';
+import { ContextEngineService, ContextRule, ContextCondition, ContextAction } from '../service/context/ContextEngine';
 import { LocationDiscoveryService, GeofenceSuggestion } from '../service/context/LocationDiscoveryService';
 import { ContextAwarenessService } from '../service/context/ContextAwarenessService';
 import { promptAction, router } from '@kit.ArkUI';
@@ -38,6 +38,7 @@ import { VadService } from '../service/VadService';
 interface ContextConditionPrint { key: string; op: string; value: string; }
 interface ContextActionPrint { id: string; type: string; payload: string; }
 interface ContextRulePrint { id: string; name: string; enabled: boolean; conditions: ContextConditionPrint[]; action: ContextActionPrint; }
+interface LlmParsedRule { id: string; name: string; conditions: ContextConditionPrint[]; action: ContextActionPrint; priority: number; cooldownMs: number; enabled: boolean; }
 
 // Interface for file info from gateway
 interface GatewayFileInfo {
@@ -3043,6 +3044,142 @@ Respond ONLY with the JSON array.`;
     }
   }
 
+  /** Handle context_rule intent: use LLM to parse user text into a structured rule */
+  private async handleContextRuleIntent(text: string, settings: SettingsData, ctx: common.UIAbilityContext): Promise<void> {
+    let ruleSystemPrompt = `用户想创建一个情景智能规则。请根据用户描述，返回如下 JSON 格式（只返回 JSON，不要其他文字）：
+{
+  "id": "user_<timestamp>",
+  "name": "规则名称",
+  "conditions": [{"key": "<context key>", "op": "<eq|neq|gt|lt|gte|lte|in>", "value": "<value>"}],
+  "action": {"id": "user_action_<timestamp>", "type": "suggestion|notification", "payload": "提示文字"},
+  "priority": 1.0,
+  "cooldownMs": 14400000,
+  "enabled": true
+}
+
+可用的 context key:
+- timeOfDay: dawn/morning/afternoon/evening/night（时段）
+- hour: 0-23（小时）
+- dayOfWeek: 0-6, 0=Sunday（星期几）
+- isWeekend: true/false（是否周末）
+- motionState: stationary/walking/running/driving/transit（运动状态）
+- batteryLevel: 0-100（电量百分比）
+- isCharging: true/false（是否在充电）
+- networkType: wifi/cellular/none（网络类型）
+- geofence: 围栏ID（位置围栏）
+
+注意：id 中的 <timestamp> 请替换为当前时间戳数字，action.id 同理。`;
+
+    // Create placeholder
+    let streamMsg = new ChatMessage('assistant', '');
+    this.messages.push(streamMsg);
+    let streamIdx = this.messages.length - 1;
+
+    try {
+      let onDelta = (deltaText: string): void => {
+        if (streamIdx >= 0 && streamIdx < this.messages.length) {
+          this.messages[streamIdx].content += deltaText;
+          this.scrollToEndThrottled();
+        }
+      };
+
+      let history: ChatMessage[] = [new ChatMessage('user', text)];
+      let result = await this.ai.chat(history, settings, ruleSystemPrompt, [], ctx, onDelta);
+
+      let responseText = '';
+      if (result.error.length > 0) {
+        this.messages[streamIdx].content = result.error;
+        this.isLoading = false;
+        this.loadingSessionId = '';
+        this.stopDotAnimation();
+        return;
+      }
+
+      // Get the assistant response text
+      for (let i = 0; i < result.messages.length; i++) {
+        if (result.messages[i].role === 'assistant') {
+          responseText = result.messages[i].content;
+          break;
+        }
+      }
+      if (responseText.length === 0) {
+        responseText = this.messages[streamIdx].content;
+      }
+
+      // Extract JSON from response (may be wrapped in markdown code block)
+      let jsonStr = responseText.trim();
+      let jsonStart = jsonStr.indexOf('{');
+      let jsonEnd = jsonStr.lastIndexOf('}');
+      if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        jsonStr = jsonStr.substring(jsonStart, jsonEnd + 1);
+      }
+
+      let parsed: LlmParsedRule = JSON.parse(jsonStr) as LlmParsedRule;
+
+      // Validate and fix id
+      if (!parsed.id || !parsed.id.startsWith('user_')) {
+        parsed.id = 'user_' + Date.now().toString();
+      }
+      if (!parsed.action.id) {
+        parsed.action.id = 'user_action_' + Date.now().toString();
+      }
+
+      // Build ContextRule
+      let conditions: ContextCondition[] = [];
+      for (let i = 0; i < parsed.conditions.length; i++) {
+        let c = parsed.conditions[i];
+        conditions.push({ key: c.key, op: c.op, value: c.value });
+      }
+      let action: ContextAction = { id: parsed.action.id, type: parsed.action.type, payload: parsed.action.payload };
+      let rule: ContextRule = {
+        id: parsed.id,
+        name: parsed.name,
+        conditions: conditions,
+        action: action,
+        priority: parsed.priority || 1.0,
+        cooldownMs: parsed.cooldownMs || 14400000,
+        enabled: parsed.enabled !== false
+      };
+
+      let ok = await ContextEngineService.getInstance().addRule(rule);
+      if (ok) {
+        this.messages[streamIdx].content = `\u2705 规则已添加：${rule.name}\n\n条件：${this.formatConditionsSummary(conditions)}\n动作：${action.payload}`;
+      } else {
+        this.messages[streamIdx].content = `\u274C 规则添加失败，请重试`;
+      }
+    } catch (e) {
+      let errMsg = (e as Error).message || String(e);
+      this.log.error('ChatPage', `handleContextRuleIntent error: ${errMsg}`);
+      this.messages[streamIdx].content = `\u274C 无法解析规则，请尝试更具体地描述。例如："每天早上8点提醒我喝水"`;
+    }
+
+    this.isLoading = false;
+    this.loadingSessionId = '';
+    this.stopDotAnimation();
+    this.scrollToEnd();
+    this.saveHistory();
+  }
+
+  /** Format conditions into a readable summary string */
+  private formatConditionsSummary(conditions: ContextCondition[]): string {
+    let parts: string[] = [];
+    let keyLabels: Record<string, string> = {
+      'timeOfDay': '时段', 'hour': '小时', 'dayOfWeek': '星期',
+      'isWeekend': '周末', 'motionState': '运动状态', 'batteryLevel': '电量',
+      'isCharging': '充电中', 'networkType': '网络', 'geofence': '位置'
+    };
+    let opLabels: Record<string, string> = {
+      'eq': '=', 'neq': '\u2260', 'gt': '>', 'lt': '<', 'gte': '\u2265', 'lte': '\u2264', 'in': '\u2208'
+    };
+    for (let i = 0; i < conditions.length; i++) {
+      let c = conditions[i];
+      let keyLabel = keyLabels[c.key] || c.key;
+      let opLabel = opLabels[c.op] || c.op;
+      parts.push(`${keyLabel}${opLabel}${c.value}`);
+    }
+    return parts.join(' & ');
+  }
+
   /** Send message through local AI service (direct HTTP API). */
   private async sendViaLocalAI(text: string): Promise<void> {
     try {
@@ -3064,6 +3201,12 @@ Respond ONLY with the JSON array.`;
          (this.messages[this.messages.length - 1].attachmentName?.length ?? 0) > 0);
       let intent = classifyIntent(text, hasMedia);
       this.log.info('ChatPage', `Intent: ${intent.type} skills=[${intent.skillIds.join(',')}]`);
+
+      // Special handling: context_rule intent — use LLM to parse into structured rule
+      if (intent.type === 'context_rule') {
+        await this.handleContextRuleIntent(text, settings, ctx);
+        return;
+      }
 
       let systemPrompt: string;
       let tools: import('../model/Models').ToolSchema[];

@@ -71,6 +71,15 @@ const INTENT_RULES: IntentRule[] = [
       'search', 'google', 'look up', 'find out',
       'open website', 'open webpage', 'browse'],
   },
+  {
+    type: 'context_rule',
+    skillIds: [],
+    keywords: ['添加规则', '新建规则', '创建规则', '设个规则', '设条规则', '加个规则',
+      '到家提醒', '到公司提醒', '到家时提醒', '到公司时提醒',
+      '每天提醒', '每天早上提醒', '低电量提醒', '低电量时',
+      '当我到', '到了提醒', '到时提醒', '到时通知',
+      'add rule', 'create rule', 'new rule'],
+  },
 ];
 
 // Chitchat patterns — greetings, thanks, meta questions
@@ -85,6 +94,9 @@ const CHITCHAT_KEYWORDS: string[] = [
 
 // Recurring schedule patterns like "每天 9点", "每小时", "every 30m"
 const SCHEDULE_REGEX = /每\d+[分秒时天]|每天|每小时|每周|每月|every\s+\d+\s*[mhds]/i;
+
+// Context rule patterns like "到...时提醒我", "当...时通知我"
+const CONTEXT_RULE_REGEX = /到.{1,10}时?提醒|当.{1,10}时通知|到.{1,10}提醒我|当.{1,10}提醒/;
 
 /**
  * Classify user intent from message text.
@@ -119,6 +131,17 @@ export function classifyIntent(text: string, hasMedia: boolean = false): IntentR
       let schedulerRule = INTENT_RULES.find(r => r.type === 'scheduler');
       if (schedulerRule) {
         matches.push(schedulerRule);
+      }
+    }
+  }
+
+  // Check context rule regex separately
+  if (CONTEXT_RULE_REGEX.test(text)) {
+    let hasContextRule = matches.some(m => m.type === 'context_rule');
+    if (!hasContextRule) {
+      let ctxRuleEntry = INTENT_RULES.find(r => r.type === 'context_rule');
+      if (ctxRuleEntry) {
+        matches.push(ctxRuleEntry);
       }
     }
   }

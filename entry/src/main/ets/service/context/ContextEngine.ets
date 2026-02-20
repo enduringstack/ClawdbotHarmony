@@ -122,17 +122,31 @@ export class ContextEngineService {
     return ContextEngineService.instance;
   }
 
-  /** Initialize engine: load persisted rules and MAB stats */
+  /** Initialize engine: load persisted rules (builtin + user) and MAB stats */
   async init(context: Context): Promise<void> {
     if (this.initialized) return;
 
     try {
       this.prefsStore = await preferences.getPreferences(context, 'context_engine');
 
-      // Load persisted rules
+      // Load persisted rules (builtin from native 'rules' key)
       let rulesJson: string = String(await this.prefsStore.get('rules', '[]'));
       let ok = nativeLoadRules(rulesJson);
-      log.info(TAG, `Engine init: loaded ${nativeGetRuleCount()} rules, success=${ok}`);
+      log.info(TAG, `Engine init: loaded ${nativeGetRuleCount()} builtin rules, success=${ok}`);
+
+      // Load user custom rules and add them to the engine
+      let userRulesJson: string = String(await this.prefsStore.get('user_rules', '[]'));
+      try {
+        let userRules: ContextRule[] = JSON.parse(userRulesJson) as ContextRule[];
+        for (let i = 0; i < userRules.length; i++) {
+          nativeAddRule(JSON.stringify(userRules[i]));
+        }
+        if (userRules.length > 0) {
+          log.info(TAG, `Loaded ${userRules.length} user rules`);
+        }
+      } catch (e) {
+        log.warn(TAG, `Failed to parse user_rules: ${(e as Error).message}`);
+      }
 
       // Load MAB stats
       let statsJson: string = String(await this.prefsStore.get('mab_stats', '{}'));
@@ -164,23 +178,96 @@ export class ContextEngineService {
     return ok;
   }
 
-  /** Add or update a single rule */
+  /** Add or update a single rule. User rules (id starts with 'user_') are persisted separately. */
   async addRule(rule: ContextRule): Promise<boolean> {
     let json = JSON.stringify(rule);
     let ok = nativeAddRule(json);
     if (ok) {
+      if (this.isUserRule(rule.id)) {
+        await this.persistUserRules();
+      }
       await this.persistRules();
     }
     return ok;
   }
 
-  /** Remove a rule by id */
+  /** Remove a rule by id. Only user rules (id starts with 'user_') can be removed. */
   async removeRule(ruleId: string): Promise<boolean> {
+    if (!this.isUserRule(ruleId)) {
+      log.warn(TAG, `Cannot remove builtin rule: ${ruleId}`);
+      return false;
+    }
     let ok = nativeRemoveRule(ruleId);
     if (ok) {
+      await this.persistUserRules();
       await this.persistRules();
     }
     return ok;
+  }
+
+  /** Check if a rule is user-created (id starts with 'user_') */
+  isUserRule(ruleId: string): boolean {
+    return ruleId.startsWith('user_');
+  }
+
+  /** Toggle a rule's enabled state */
+  async toggleRule(ruleId: string, enabled: boolean): Promise<boolean> {
+    // Export all rules, find the target, update enabled, re-add
+    try {
+      let allRulesJson = nativeExportRules();
+      let allRules: ContextRule[] = JSON.parse(allRulesJson) as ContextRule[];
+      let found = false;
+      for (let i = 0; i < allRules.length; i++) {
+        if (allRules[i].id === ruleId) {
+          allRules[i].enabled = enabled;
+          let ok = nativeAddRule(JSON.stringify(allRules[i]));
+          if (ok) {
+            found = true;
+          }
+          break;
+        }
+      }
+      if (found) {
+        await this.persistRules();
+        if (this.isUserRule(ruleId)) {
+          await this.persistUserRules();
+        }
+      }
+      return found;
+    } catch (e) {
+      log.error(TAG, `toggleRule error: ${(e as Error).message}`);
+      return false;
+    }
+  }
+
+  /** Get user-created rules only */
+  getUserRules(): ContextRule[] {
+    try {
+      let allRulesJson = nativeExportRules();
+      let allRules: ContextRule[] = JSON.parse(allRulesJson) as ContextRule[];
+      let userRules: ContextRule[] = [];
+      for (let i = 0; i < allRules.length; i++) {
+        if (this.isUserRule(allRules[i].id)) {
+          userRules.push(allRules[i]);
+        }
+      }
+      return userRules;
+    } catch (e) {
+      log.error(TAG, `getUserRules error: ${(e as Error).message}`);
+      return [];
+    }
+  }
+
+  /** Get all rules for display (builtin + user) */
+  getAllRulesForDisplay(): ContextRule[] {
+    try {
+      let allRulesJson = nativeExportRules();
+      let allRules: ContextRule[] = JSON.parse(allRulesJson) as ContextRule[];
+      return allRules;
+    } catch (e) {
+      log.error(TAG, `getAllRulesForDisplay error: ${(e as Error).message}`);
+      return [];
+    }
   }
 
   /** Evaluate current context and return ranked matches */
@@ -277,13 +364,24 @@ export class ContextEngineService {
    * 含占位符的规则：如果用户没有对应围栏，该规则自动 disabled
    */
   async loadDefaultRules(): Promise<void> {
+    // Save user rules before reloading
+    let savedUserRules = this.getUserRules();
     let rules = this.getBuiltinRuleTemplates();
     await this.loadRules(rules);
-    log.info(TAG, `Loaded ${rules.length} built-in rules`);
+    // Re-add user rules
+    for (let i = 0; i < savedUserRules.length; i++) {
+      nativeAddRule(JSON.stringify(savedUserRules[i]));
+    }
+    if (savedUserRules.length > 0) {
+      await this.persistRules();
+    }
+    log.info(TAG, `Loaded ${rules.length} built-in rules + ${savedUserRules.length} user rules`);
   }
 
-  /** 当用户添加/删除围栏后调用，重新绑定规则中的占位符 */
+  /** 当用户添加/删除围栏后调用，重新绑定规则中的占位符（保留用户规则） */
   async rebindGeofences(geofences: GeofenceBinding[]): Promise<void> {
+    // Save user rules before reloading builtin templates
+    let savedUserRules = this.getUserRules();
     let rules = this.getBuiltinRuleTemplates();
 
     // 按类别找到第一个围栏 ID
@@ -320,7 +418,16 @@ export class ContextEngineService {
     }
 
     await this.loadRules(rules);
-    log.info(TAG, `Rules rebound: ${rules.filter(r => r.enabled).length} enabled, ${rules.filter(r => !r.enabled).length} disabled (missing geofence)`);
+
+    // Re-add user rules
+    for (let i = 0; i < savedUserRules.length; i++) {
+      nativeAddRule(JSON.stringify(savedUserRules[i]));
+    }
+    if (savedUserRules.length > 0) {
+      await this.persistRules();
+    }
+
+    log.info(TAG, `Rules rebound: ${rules.filter(r => r.enabled).length} builtin enabled, ${savedUserRules.length} user rules preserved`);
   }
 
   private getBuiltinRuleTemplates(): ContextRule[] {
@@ -451,6 +558,15 @@ export class ContextEngineService {
     let json = nativeExportRules();
     await this.prefsStore.put('rules', json);
     await this.prefsStore.flush();
+  }
+
+  /** Persist only user rules to a separate preferences key */
+  private async persistUserRules(): Promise<void> {
+    if (!this.prefsStore) return;
+    let userRules = this.getUserRules();
+    await this.prefsStore.put('user_rules', JSON.stringify(userRules));
+    await this.prefsStore.flush();
+    log.info(TAG, `Persisted ${userRules.length} user rules`);
   }
 
   private async persistStats(): Promise<void> {

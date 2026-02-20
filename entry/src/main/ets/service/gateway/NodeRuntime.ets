@@ -56,7 +56,7 @@ import { ContextEngineService, ContextSnapshot, MatchResult, GeofenceBinding } f
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.38.0';
+const APP_VERSION = '2.39.0';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;

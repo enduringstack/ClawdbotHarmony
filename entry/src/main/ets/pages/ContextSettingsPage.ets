@@ -177,6 +177,13 @@ struct ContextSettingsPage {
                 .fontSize(13)
                 .fontColor('#666666')
                 .margin({ top: 4 })
+              Text('管理规则 \u2192')
+                .fontSize(14)
+                .fontColor('#007AFF')
+                .margin({ top: 10 })
+                .onClick(() => {
+                  router.pushUrl({ url: 'pages/RuleManagementPage' });
+                })
             }
             .width('100%')
             .padding(16)

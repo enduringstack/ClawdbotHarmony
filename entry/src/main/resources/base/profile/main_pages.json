@@ -11,6 +11,7 @@
     "pages/AboutRoutePage",
     "pages/ConversationsRoutePage",
     "pages/DocViewerPage",
-    "pages/ContextSettingsPage"
+    "pages/ContextSettingsPage",
+    "pages/RuleManagementPage"
   ]
 }
