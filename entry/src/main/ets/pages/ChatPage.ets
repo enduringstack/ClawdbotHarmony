@@ -1776,7 +1776,7 @@ Respond ONLY with the JSON array.`;
       router.pushUrl({ url: 'pages/ContextSettingsPage' });
       return true;
     }
-    if (has(['决策树', '规则', 'rules', 'tree'])) {
+    if (has(['决策树', '规则', 'rules', 'rule', 'tree'])) {
       this.inputText = '';
       this.printContextRules();
       return true;
