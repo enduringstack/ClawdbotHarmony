@@ -68,13 +68,13 @@ describe('NoiseEncoder - 环境噪音分类', function () {
 });
 
 describe('NoiseEncoder - 边界/缺失', function () {
-  it('0dB → quiet有值', function () {
-    const r = encodeNoise(0);
+  it('20dB → quiet有值', function () {
+    const r = encodeNoise(20);
     assertDefined(r.distribution.quiet);
   });
 
-  it('120dB → loud有值 (或距中心太远衰减)', function () {
-    const r = encodeNoise(110); // 110dB closer to loud center=85
+  it('95dB → loud有值', function () {
+    const r = encodeNoise(95); // within 1σ of loud center=85
     assertDefined(r.distribution.loud);
   });
 

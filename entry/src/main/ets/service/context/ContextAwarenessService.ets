@@ -12,7 +12,7 @@ import { LogService } from '../../common/LogService';
 import { Constants } from '../../common/Constants';
 import { GeofenceManager, GeofenceEvent } from './GeofenceManager';
 import { BehaviorLogger } from './BehaviorLogger';
-import { ContextEngineService, ContextSnapshot, MatchResult, GeofenceBinding } from './ContextEngine';
+import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, ContextAction, MatchResult, GeofenceBinding } from './ContextEngine';
 import { LocationDiscoveryService, GeofenceSuggestion, DiscoveryStatsInfo } from './LocationDiscoveryService';
 import { FeedbackService } from './FeedbackService';
 import { LocationFusionService, LearnedSignalsSummary } from './LocationFusionService';
@@ -598,7 +598,7 @@ export class ContextAwarenessService {
     let llmResult = await this.llmFallback.analyzeContext(snapshot);
     if (!llmResult) return;
 
-    let llmRuleId = `llm_${Date.now()}`;
+    let llmRuleId = `user_llm_${Date.now()}`;
     if (this.isOnCooldown('llm_fallback')) return;
 
     let rec: ContextRecommendation = {
@@ -620,11 +620,34 @@ export class ContextAwarenessService {
     this.notifyRecommendation(rec);
     this.setOnCooldown('llm_fallback');
 
+    // === Persist LLM result as a C++ engine rule for future matching ===
+    try {
+      let conditions: ContextCondition[] = this.snapshotToConditions(snapshot);
+      let actionPayload = `${llmResult.title}: ${llmResult.content}`;
+      let cooldownMs = llmResult.priority === 'high' ? 3600000 : llmResult.priority === 'medium' ? 14400000 : 28800000;
+
+      let newRule: ContextRule = {
+        id: llmRuleId,
+        name: llmResult.title,
+        conditions: conditions,
+        action: { id: `llm_action_${Date.now()}`, type: 'suggestion', payload: actionPayload } as ContextAction,
+        priority: llmResult.priority === 'high' ? 2.0 : llmResult.priority === 'medium' ? 1.5 : 1.0,
+        cooldownMs: cooldownMs,
+        enabled: true,
+      };
+
+      let engine = ContextEngineService.getInstance();
+      let ok = await engine.addRule(newRule);
+      this.log.info(TAG, `LLM rule persisted: id=${llmRuleId}, name=${llmResult.title}, ok=${ok}, totalRules=${engine.getRuleCount()}`);
+    } catch (err) {
+      this.log.warn(TAG, `Failed to persist LLM rule: ${(err as Error).message}`);
+    }
+
     // Log to BehaviorLogger with source='llm'
     let ctx = this.currentContext ?? await this.getCurrentContext();
     let llmAction: UserAction = { type: 'show_info', target: 'llm_suggestion', params: { 'source': 'llm', 'title': llmResult.title } };
     await this.behaviorLog.logBehavior(ctx, llmAction);
-    this.log.info(TAG, `LLM fallback delivered: ${llmResult.title}`);
+    this.log.info(TAG, `LLM fallback delivered and persisted: ${llmResult.title}`);
   }
 
   
@@ -743,6 +766,56 @@ export class ContextAwarenessService {
   }
   
   
+  /**
+   * Convert a ContextSnapshot into ContextCondition[] for rule persistence.
+   * Extracts the key fields that defined this context moment.
+   */
+  private snapshotToConditions(snapshot: ContextSnapshot): ContextCondition[] {
+    let conditions: ContextCondition[] = [];
+
+    // Time of day
+    conditions.push({ key: 'timeOfDay', op: 'eq', value: snapshot.timeOfDay });
+
+    // Hour range: ±1 hour for flexibility
+    let hour = parseInt(snapshot.hour);
+    if (!isNaN(hour)) {
+      let low = Math.max(0, hour - 1);
+      let high = Math.min(23, hour + 1);
+      conditions.push({ key: 'hour', op: 'range', value: `${low},${high}` });
+    }
+
+    // Weekend
+    conditions.push({ key: 'isWeekend', op: 'eq', value: snapshot.isWeekend });
+
+    // Motion state
+    if (snapshot.motionState && snapshot.motionState !== 'unknown') {
+      conditions.push({ key: 'motionState', op: 'eq', value: snapshot.motionState });
+    }
+
+    // Battery (only if notably low)
+    let battery = parseInt(snapshot.batteryLevel);
+    if (!isNaN(battery) && battery <= 20) {
+      conditions.push({ key: 'batteryLevel', op: 'lte', value: '20' });
+    }
+
+    // Charging
+    if (snapshot.isCharging === 'true') {
+      conditions.push({ key: 'isCharging', op: 'eq', value: 'true' });
+    }
+
+    // Network
+    if (snapshot.networkType && snapshot.networkType !== 'unknown') {
+      conditions.push({ key: 'networkType', op: 'eq', value: snapshot.networkType });
+    }
+
+    // Geofence
+    if (snapshot.geofence && snapshot.geofence.length > 0) {
+      conditions.push({ key: 'geofence', op: 'eq', value: snapshot.geofence });
+    }
+
+    return conditions;
+  }
+
   private isOnCooldown(ruleId: string): boolean {
     let lastTime = this.lastRecommendations.get(ruleId);
     if (!lastTime) return false;
