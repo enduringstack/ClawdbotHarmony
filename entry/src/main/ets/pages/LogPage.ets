@@ -5,6 +5,11 @@ import { fileIo, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction, router } from '@kit.ArkUI';
 
+class HighlightSpan {
+  text: string = '';
+  highlight: boolean = false;
+}
+
 class LogViewerParams {
   text: string = '';
   fileName: string = '';
@@ -20,6 +25,8 @@ export struct LogPage {
   @State debugEnabled: boolean = false;
   @State expandedTimestamps: number[] = [];
   @State @Watch('onLangChange') lang: string = 'zh';
+  @State searchText: string = '';
+  @State searchActive: boolean = false;
 
   private logSvc: LogService = LogService.getInstance();
   private logListener: (() => void) | undefined = undefined;
@@ -32,7 +39,7 @@ export struct LogPage {
     this.debugEnabled = this.logSvc.debugEnabled;
     this.logs = this.logSvc.getAll();
     this.logListener = () => {
-      this.logs = this.logSvc.getFiltered(this.filterLevel);
+      this.applyFilter();
       if (this.autoScroll) {
         setTimeout(() => {
           try { this.scroller.scrollEdge(Edge.Bottom); } catch { /* ignore */ }
@@ -139,18 +146,62 @@ export struct LogPage {
             .borderRadius(12)
             .onClick(() => {
               this.filterLevel = level;
-              this.logs = this.logSvc.getFiltered(level);
+              this.applyFilter();
             })
         }, (level: string): string => level)
 
         Blank()
 
+        Text('🔍')
+          .fontSize(14)
+          .padding({ left: 6, right: 6, top: 4, bottom: 4 })
+          .borderRadius(12)
+          .backgroundColor(this.searchActive ? '#E3F2FD' : '#F0F0F0')
+          .onClick(() => {
+            this.searchActive = !this.searchActive;
+            if (!this.searchActive) {
+              this.searchText = '';
+              this.applyFilter();
+            }
+          })
+
         Text(this.logs.length.toString() + ' ' + I18n.t('log.entries'))
           .fontSize(11)
           .fontColor('#999999')
+          .margin({ left: 4 })
       }
       .width('100%')
       .padding({ left: 20, right: 20, bottom: 8 })
+
+      // Search bar
+      if (this.searchActive) {
+        Row({ space: 8 }) {
+          TextInput({ placeholder: '搜索日志...', text: this.searchText })
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(13)
+            .borderRadius(18)
+            .backgroundColor('#FFFFFF')
+            .padding({ left: 12, right: 12 })
+            .onChange((value: string) => {
+              this.searchText = value;
+              this.applyFilter();
+            })
+
+          if (this.searchText.length > 0) {
+            Text('✕')
+              .fontSize(14)
+              .fontColor('#999999')
+              .padding(6)
+              .onClick(() => {
+                this.searchText = '';
+                this.applyFilter();
+              })
+          }
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: 8 })
+      }
 
       // log list
       if (this.logs.length === 0) {
@@ -187,14 +238,33 @@ export struct LogPage {
                   .width('100%')
                   .justifyContent(FlexAlign.Start)
 
-                  Text(entry.message)
-                    .fontSize(12)
-                    .fontColor(entry.level === 'ERROR' ? '#D32F2F' : entry.level === 'WARN' ? '#F57C00' : '#333333')
+                  if (this.searchText.length > 0) {
+                    Text() {
+                      ForEach(this.highlightSpans(entry.message), (span: HighlightSpan, idx: number) => {
+                        Span(span.text)
+                          .fontSize(12)
+                          .fontColor(entry.level === 'ERROR' ? '#D32F2F' : entry.level === 'WARN' ? '#F57C00' : '#333333')
+                          .fontWeight(span.highlight ? FontWeight.Bold : FontWeight.Normal)
+                          .textBackgroundStyle(span.highlight
+                            ? { color: '#FFEB3B', radius: 2 }
+                            : { color: Color.Transparent, radius: 0 })
+                      }, (_span: HighlightSpan, idx: number): string => `${idx}`)
+                    }
                     .lineHeight(16)
                     .width('100%')
                     .maxLines(this.expandedTimestamps.includes(entry.timestamp) ? 99999 : 5)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .copyOption(CopyOptions.LocalDevice)
+                  } else {
+                    Text(entry.message)
+                      .fontSize(12)
+                      .fontColor(entry.level === 'ERROR' ? '#D32F2F' : entry.level === 'WARN' ? '#F57C00' : '#333333')
+                      .lineHeight(16)
+                      .width('100%')
+                      .maxLines(this.expandedTimestamps.includes(entry.timestamp) ? 99999 : 5)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .copyOption(CopyOptions.LocalDevice)
+                  }
 
                   if (entry.message.length > 200 || entry.message.split('\n').length > 5) {
                     Text(this.expandedTimestamps.includes(entry.timestamp) ? I18n.t('log.showLess') : I18n.t('log.readMore'))
@@ -270,6 +340,51 @@ export struct LogPage {
   }
 
   /** Copy all visible logs to system clipboard */
+  private highlightSpans(message: string): HighlightSpan[] {
+    let result: HighlightSpan[] = [];
+    if (this.searchText.length === 0) {
+      let s = new HighlightSpan();
+      s.text = message;
+      result.push(s);
+      return result;
+    }
+    let query = this.searchText.toLowerCase();
+    let lower = message.toLowerCase();
+    let pos = 0;
+    while (pos < message.length) {
+      let idx = lower.indexOf(query, pos);
+      if (idx < 0) {
+        let s = new HighlightSpan();
+        s.text = message.substring(pos);
+        result.push(s);
+        break;
+      }
+      if (idx > pos) {
+        let s = new HighlightSpan();
+        s.text = message.substring(pos, idx);
+        result.push(s);
+      }
+      let h = new HighlightSpan();
+      h.text = message.substring(idx, idx + this.searchText.length);
+      h.highlight = true;
+      result.push(h);
+      pos = idx + this.searchText.length;
+    }
+    return result;
+  }
+
+  private applyFilter(): void {
+    let filtered = this.logSvc.getFiltered(this.filterLevel);
+    if (this.searchText.length > 0) {
+      let query = this.searchText.toLowerCase();
+      filtered = filtered.filter((entry: LogEntry): boolean => {
+        return entry.message.toLowerCase().indexOf(query) >= 0
+          || entry.tag.toLowerCase().indexOf(query) >= 0;
+      });
+    }
+    this.logs = filtered;
+  }
+
   private copyLogs(): void {
     if (this.logs.length === 0) return;
 

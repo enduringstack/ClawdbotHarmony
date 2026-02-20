@@ -2199,12 +2199,11 @@ export class NodeRuntime {
 
         // Filter: only show messages from harmony-originated runs
         // Skip messages from other channels (webchat, telegram, feishu, etc.)
-        if (runId.length > 0 && !this._harmonyRunIds.has(runId)) {
-          // Also allow harmony sessionKey pattern
-          if (sessionKey.indexOf('harmony') < 0) {
-            this.log.debug(TAG, `Skipping non-harmony agent event: runId=${runId} sessionKey=${sessionKey}`);
-            return;
-          }
+        let isHarmonyRun = runId.length > 0 && this._harmonyRunIds.has(runId);
+        let isHarmonySession = sessionKey.indexOf('harmony') >= 0;
+        if (!isHarmonyRun && !isHarmonySession) {
+          this.log.debug(TAG, `Skipping non-harmony agent event: runId=${runId} sessionKey=${sessionKey}`);
+          return;
         }
 
         this.dispatchChatEvent(chatEvent);

@@ -10,6 +10,20 @@ import { LogService } from '../../common/LogService';
 import { Geofence, GeofenceCategory, LocationState } from './ContextModels';
 import { ContextEngineService, GeofenceBinding } from './ContextEngine';
 
+/** user_places.json 配置文件结构 */
+interface UserPlace {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  category: string;
+}
+interface UserPlacesConfig {
+  version: number;
+  places: UserPlace[];
+}
+
 const TAG = 'GeofenceManager';
 const PREFS_NAME = 'clawdbot_geofences';
 const KEY_GEOFENCES = 'geofence_list';
@@ -53,9 +67,9 @@ export class GeofenceManager {
     // 加载保存的围栏
     await this.loadGeofences(context);
     
-    // 添加一些默认的常用地点（用户可以自定义）
+    // 首次使用：从配置文件加载用户地点
     if (this.geofences.size === 0) {
-      // 不再加载默认围栏，由用户通过管理页面添加
+      await this.loadPlacesFromConfig(context);
     }
     // 初始化后绑定已有围栏到规则引擎
     this.rebindEngineRules();
@@ -64,72 +78,38 @@ export class GeofenceManager {
     this.log.info(TAG, `Initialized with ${this.geofences.size} geofences`);
   }
   
-  private addDefaultGeofences(): void {
-    // 大温地区常见地点示例
-    let defaults: Geofence[] = [
-      // 地铁站示例
-      {
-        id: 'skytrain_metrotown',
-        name: 'Metrotown Station',
-        latitude: 49.2258,
-        longitude: -123.0036,
-        radiusMeters: 100,
-        category: 'transit',
-      },
-      {
-        id: 'skytrain_patterson',
-        name: 'Patterson Station',
-        latitude: 49.2298,
-        longitude: -123.0126,
-        radiusMeters: 100,
-        category: 'transit',
-      },
-      // 购物中心
-      {
-        id: 'costco_burnaby',
-        name: 'Costco Burnaby',
-        latitude: 49.2590,
-        longitude: -123.0065,
-        radiusMeters: 150,
-        category: 'shopping',
-      },
-      {
-        id: 'superstore_metrotown',
-        name: 'Superstore Metrotown',
-        latitude: 49.2279,
-        longitude: -122.9998,
-        radiusMeters: 100,
-        category: 'shopping',
-      },
-      // 公司
-      {
-        id: 'huawei_burnaby',
-        name: 'Huawei Burnaby Office',
-        latitude: 49.2282,
-        longitude: -123.0027,
-        radiusMeters: 200,
-        category: 'work',
-      },
-      {
-        id: 'huawei_vancouver',
-        name: 'Huawei Vancouver Office',
-        latitude: 49.2595,
-        longitude: -123.0125,
-        radiusMeters: 200,
-        category: 'work',
-      },
-      {
-        id: 'huawei_edmonton',
-        name: 'Huawei Edmonton Office',
-        latitude: 53.5225,
-        longitude: -113.5255,
-        radiusMeters: 200,
-        category: 'work',
-      },
-    ];
-    
-    for (const gf of defaults) {
-      this.geofences.set(gf.id, gf);
+  /**
+   * 从 rawfile/config/user_places.json 加载用户地点配置
+   * 首次使用时自动加载，之后用户可在管理页面编辑
+   */
+  private async loadPlacesFromConfig(context: common.UIAbilityContext): Promise<void> {
+    try {
+      let resourceMgr = context.resourceManager;
+      let rawData = await resourceMgr.getRawFileContent('config/user_places.json');
+      let bytes = new Uint8Array(rawData.buffer);
+      let jsonStr = '';
+      for (let i = 0; i < bytes.length; i++) {
+        jsonStr += String.fromCharCode(bytes[i]);
+      }
+      let parsed: Object = JSON.parse(jsonStr);
+      let config = parsed as UserPlacesConfig;
+      if (config.places) {
+        for (let place of config.places) {
+          let gf: Geofence = {
+            id: place.id,
+            name: place.name,
+            latitude: place.latitude,
+            longitude: place.longitude,
+            radiusMeters: place.radiusMeters,
+            category: place.category as GeofenceCategory,
+          };
+          this.geofences.set(gf.id, gf);
+        }
+        this.log.info(TAG, `Loaded ${config.places.length} places from config`);
+        await this.saveGeofences(context);
+      }
+    } catch (err) {
+      this.log.warn(TAG, `loadPlacesFromConfig error: ${(err as Error).message}`);
     }
   }
   

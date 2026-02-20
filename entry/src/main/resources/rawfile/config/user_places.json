@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "description": "用户常去地点配置。category: home/work/transit/shopping/restaurant/gym/custom。用户可在 app 内编辑。",
+  "places": [
+    {
+      "id": "home",
+      "name": "家",
+      "latitude": 49.2345,
+      "longitude": -122.9619,
+      "radiusMeters": 80,
+      "category": "home"
+    },
+    {
+      "id": "work_huawei",
+      "name": "Huawei Office",
+      "latitude": 49.2282,
+      "longitude": -123.0027,
+      "radiusMeters": 200,
+      "category": "work"
+    },
+    {
+      "id": "costco_vancouver",
+      "name": "Costco Vancouver",
+      "latitude": 49.2788,
+      "longitude": -123.1096,
+      "radiusMeters": 150,
+      "category": "shopping"
+    },
+    {
+      "id": "costco_burnaby",
+      "name": "Costco Burnaby",
+      "latitude": 49.2603,
+      "longitude": -123.0065,
+      "radiusMeters": 150,
+      "category": "shopping"
+    },
+    {
+      "id": "costco_richmond",
+      "name": "Costco Richmond",
+      "latitude": 49.1929,
+      "longitude": -123.1217,
+      "radiusMeters": 150,
+      "category": "shopping"
+    },
+    {
+      "id": "costco_business",
+      "name": "Costco Business Centre",
+      "latitude": 49.1886,
+      "longitude": -122.9524,
+      "radiusMeters": 150,
+      "category": "shopping"
+    },
+    {
+      "id": "superstore_metrotown",
+      "name": "Superstore Metrotown",
+      "latitude": 49.2254,
+      "longitude": -122.9971,
+      "radiusMeters": 100,
+      "category": "shopping"
+    }
+  ]
+}

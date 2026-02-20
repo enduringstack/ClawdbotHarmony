@@ -9,6 +9,7 @@
     "pages/MemoryRoutePage",
     "pages/ExperienceRoutePage",
     "pages/AboutRoutePage",
-    "pages/ConversationsRoutePage"
+    "pages/ConversationsRoutePage",
+    "pages/DocViewerPage"
   ]
 }
