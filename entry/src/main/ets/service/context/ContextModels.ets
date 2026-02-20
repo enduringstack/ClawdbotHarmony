@@ -355,6 +355,45 @@ export interface HealthRule {
   enabled: boolean;
 }
 
+// ==================== 反馈记录 ====================
+
+/** 反馈类型 */
+export type FeedbackType =
+  | 'thumbs_up'         // 用户点赞
+  | 'thumbs_down'       // 用户踩
+  | 'action_taken'      // 用户执行了推荐动作
+  | 'dismissed'          // 用户滑走/关闭
+  | 'ignored';           // 超时无交互
+
+/** 反馈记录 */
+export interface FeedbackRecord {
+  id: string;
+  ruleId: string;
+  timestamp: number;
+  feedbackType: FeedbackType;
+  reward: number;         // 实际发送给引擎的奖励值
+}
+
+/** 反馈统计 */
+export interface FeedbackStats {
+  totalCount: number;
+  positiveCount: number;  // thumbs_up + action_taken
+  negativeCount: number;  // thumbs_down
+  dismissCount: number;
+  ignoreCount: number;
+  positiveRatio: number;  // positiveCount / (positiveCount + negativeCount), 0 if no explicit feedback
+  topRules: FeedbackRuleStat[];
+}
+
+/** 单条规则的反馈统计 */
+export interface FeedbackRuleStat {
+  ruleId: string;
+  ruleName: string;
+  totalReward: number;
+  feedbackCount: number;
+  avgReward: number;
+}
+
 // ==================== 每日摘要 ====================
 
 /** 每日健康摘要 */

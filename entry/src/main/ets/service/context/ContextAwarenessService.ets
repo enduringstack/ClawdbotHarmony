@@ -12,6 +12,7 @@ import { GeofenceManager, GeofenceEvent } from './GeofenceManager';
 import { BehaviorLogger } from './BehaviorLogger';
 import { ContextEngineService, ContextSnapshot, MatchResult, GeofenceBinding } from './ContextEngine';
 import { LocationDiscoveryService, GeofenceSuggestion, DiscoveryStatsInfo } from './LocationDiscoveryService';
+import { FeedbackService } from './FeedbackService';
 import {
   EnvironmentContext,
   MotionState,
@@ -22,6 +23,7 @@ import {
   ContextRule,
   Geofence,
   LocationState,
+  FeedbackStats,
 } from './ContextModels';
 
 const TAG = 'ContextService';
@@ -47,6 +49,7 @@ export class ContextAwarenessService {
   
   private geofenceMgr: GeofenceManager;
   private behaviorLog: BehaviorLogger;
+  private feedbackSvc: FeedbackService;
   
   private initialized: boolean = false;
   private isRunning: boolean = false;
@@ -81,6 +84,7 @@ export class ContextAwarenessService {
   private constructor() {
     this.geofenceMgr = GeofenceManager.getInstance();
     this.behaviorLog = BehaviorLogger.getInstance();
+    this.feedbackSvc = FeedbackService.getInstance();
   }
   
   static getInstance(): ContextAwarenessService {
@@ -106,6 +110,7 @@ export class ContextAwarenessService {
     
     // 初始化位置发现服务
     await this.locationDiscovery.init(context);
+    await this.feedbackSvc.init(context);
 
     // 监听地理围栏事件
     this.geofenceMgr.addListener((event) => this.onGeofenceEvent(event));
@@ -521,25 +526,70 @@ export class ContextAwarenessService {
   }
   
   // ==================== 推荐反馈 ====================
-  
+
   /**
-   * 用户对推荐的反馈
+   * 用户对推荐的反馈（保留旧 API 兼容性）
    */
   async onRecommendationFeedback(
     rec: ContextRecommendation,
     accepted: boolean
   ): Promise<void> {
     let ctx = this.currentContext ?? await this.getCurrentContext();
-    
+
     let outcome: ActionOutcome = {
       accepted,
       feedback: accepted ? 1 : -1,
     };
-    
+
     // 记录行为
     await this.behaviorLog.logBehavior(ctx, rec.action, outcome);
-    
-    this.log.info(TAG, `Recommendation feedback: ${rec.rule.id} accepted=${accepted}`);
+
+    this.log.info(TAG, 'Recommendation feedback: ' + rec.rule.id + ' accepted=' + accepted.toString());
+  }
+
+  /**
+   * 卡片展示时通知 FeedbackService（启动超时定时器）
+   */
+  onCardShown(rec: ContextRecommendation): void {
+    this.feedbackSvc.onCardShown(rec);
+  }
+
+  /**
+   * 👍 反馈 → reward +1.0
+   */
+  async onThumbsUp(ruleId: string): Promise<void> {
+    let ctx = this.currentContext ?? await this.getCurrentContext();
+    await this.feedbackSvc.onThumbsUp(ruleId, ctx);
+  }
+
+  /**
+   * 👎 反馈 → reward -0.5
+   */
+  async onThumbsDown(ruleId: string): Promise<void> {
+    let ctx = this.currentContext ?? await this.getCurrentContext();
+    await this.feedbackSvc.onThumbsDown(ruleId, ctx);
+  }
+
+  /**
+   * 用户执行推荐动作 → reward +0.8
+   */
+  async onActionTaken(ruleId: string): Promise<void> {
+    let ctx = this.currentContext ?? await this.getCurrentContext();
+    await this.feedbackSvc.onActionTaken(ruleId, ctx);
+  }
+
+  /**
+   * 用户滑走卡片 → 5min 后 reward -0.1
+   */
+  onCardDismissed(ruleId: string): void {
+    this.feedbackSvc.onCardDismissed(ruleId);
+  }
+
+  /**
+   * 获取反馈统计
+   */
+  getFeedbackStats(): FeedbackStats {
+    return this.feedbackSvc.getStats();
   }
   
   // ==================== 监听器 ====================
@@ -554,12 +604,14 @@ export class ContextAwarenessService {
   }
   
   private notifyRecommendation(rec: ContextRecommendation): void {
-    this.log.info(TAG, `Recommendation: ${rec.reason}`);
-    for (const listener of this.recommendationListeners) {
+    this.log.info(TAG, 'Recommendation: ' + rec.reason);
+    // 注册卡片到 FeedbackService（启动超时定时器）
+    this.feedbackSvc.onCardShown(rec);
+    for (let i = 0; i < this.recommendationListeners.length; i++) {
       try {
-        listener(rec);
+        this.recommendationListeners[i](rec);
       } catch (err) {
-        this.log.warn(TAG, `Listener error: ${(err as Error).message}`);
+        this.log.warn(TAG, 'Listener error: ' + (err as Error).message);
       }
     }
   }
