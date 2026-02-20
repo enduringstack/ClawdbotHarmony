@@ -69,12 +69,19 @@ struct ContextSettingsPage {
   }
 
   private addGeofence(): void {
-    if (this.newName.length === 0 || this.newLat.length === 0 || this.newLon.length === 0) return;
+    this.log.info(TAG, 'addGeofence: name=' + this.newName + ' lat=' + this.newLat + ' lon=' + this.newLon + ' r=' + this.newRadius);
+    if (this.newName.length === 0 || this.newLat.length === 0 || this.newLon.length === 0) {
+      this.log.warn(TAG, 'addGeofence: empty fields');
+      return;
+    }
 
     let lat = parseFloat(this.newLat);
     let lon = parseFloat(this.newLon);
-    let radius = parseFloat(this.newRadius);
-    if (isNaN(lat) || isNaN(lon) || isNaN(radius)) return;
+    let radius = this.newRadius.length > 0 ? parseFloat(this.newRadius) : 100;
+    if (isNaN(lat) || isNaN(lon) || isNaN(radius)) {
+      this.log.warn(TAG, 'addGeofence: NaN');
+      return;
+    }
 
     let id = 'user_' + Date.now().toString();
     let category = this.categories[this.selectedCategoryIndex];
@@ -86,7 +93,12 @@ struct ContextSettingsPage {
       radiusMeters: radius,
       category: category as GeofenceCategory,
     };
-    ContextAwarenessService.getInstance().addGeofence(gf);
+    try {
+      ContextAwarenessService.getInstance().addGeofence(gf);
+      this.log.info(TAG, 'Geofence added: ' + gf.name);
+    } catch (err) {
+      this.log.error(TAG, 'addGeofence error: ' + (err as Error).message);
+    }
     this.showAddDialog = false;
     this.newName = '';
     this.newLat = '';
@@ -320,7 +332,10 @@ struct ContextSettingsPage {
                 .backgroundColor('#007AFF')
                 .fontColor(Color.White)
                 .layoutWeight(1)
-                .onClick(() => { this.addGeofence(); })
+                .onClick(() => {
+                  this.log.info(TAG, 'Add button clicked');
+                  this.addGeofence();
+                })
             }
             .width('100%')
             .margin({ top: 8 })

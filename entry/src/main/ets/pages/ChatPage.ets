@@ -159,6 +159,20 @@ export struct ChatPage {
       // When gateway first connects, sync memories from server
       if (!wasConnected && this.gwConnected) {
         this.syncMemoriesFromServer().catch(() => { /* ignore */ });
+        // Refresh identity/avatar (may have been dispatched before listener was ready)
+        let id = NodeRuntime.getInstance().agentIdentity;
+        if (id) {
+          this.gwAgentName = id.name;
+          this.gwAgentEmoji = id.emoji;
+          this.gwAgentTheme = id.theme;
+          this.gwAgentAvatar = NodeRuntime.getInstance().resolveAgentAvatarUrl() ?? '';
+          // Retry after delay in case avatar download is still in progress
+          if (this.gwAgentAvatar.length === 0 || this.gwAgentAvatar.startsWith('http')) {
+            setTimeout(() => {
+              this.gwAgentAvatar = NodeRuntime.getInstance().resolveAgentAvatarUrl() ?? '';
+            }, 3000);
+          }
+        }
       }
     };
     NodeRuntime.getInstance().addStateListener(this.gwListener);
