@@ -53,10 +53,11 @@ import { MemoryService } from '../MemoryService';
 import { Monitor } from '../ModuleMonitor';
 import { ContextAwarenessService, ContextRecommendation } from '../context/ContextAwarenessService';
 import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, ContextAction, MatchResult, GeofenceBinding } from '../context/ContextEngine';
+import { FeedbackService } from '../context/FeedbackService';
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.43.4';
+const APP_VERSION = '2.43.5';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -1009,13 +1010,16 @@ export class NodeRuntime {
 
       // Update rule based on feedback
       let engine = ContextEngineService.getInstance();
+      let fbService = FeedbackService.getInstance();
       if (feedback === 'accept') {
         // Positive: increase priority slightly
         this.adjustRulePriority(engine, ruleId, 0.2);
+        fbService.onThumbsUp(ruleId);
         this.sendFeedbackResponse('✅ 感谢反馈！已记录，此规则权重已提升');
       } else if (feedback === 'reject') {
         // Negative: decrease priority
         this.adjustRulePriority(engine, ruleId, -0.3);
+        fbService.onThumbsDown(ruleId);
         this.sendFeedbackResponse('❌ 已记录，此规则权重已降低');
         // Show follow-up: ask user what they're actually doing
         this.showSceneCorrectionCard(ruleId);
@@ -1028,6 +1032,7 @@ export class NodeRuntime {
         // Record scene correction locally for future learning
         // TODO: use this data to auto-generate/adjust rules based on actual user patterns
       } else if (feedback === 'dismiss') {
+        // Dismiss is a mild negative signal, don't record as thumbs_down
         this.sendFeedbackResponse('🙈 已忽略');
       }
     } catch (err) {
