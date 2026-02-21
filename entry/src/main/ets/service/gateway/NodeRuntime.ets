@@ -56,7 +56,7 @@ import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, C
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.43.0';
+const APP_VERSION = '2.43.1';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -986,6 +986,7 @@ export class NodeRuntime {
 
   /** Send A2UI action (user interaction) back to gateway. */
   sendA2UIAction(actionJson: string): void {
+    this.log.system(TAG, `sendA2UIAction called! json=${actionJson.substring(0, 200)}`);
     // Handle context feedback locally before forwarding
     this.handleA2UIAction(actionJson);
 
