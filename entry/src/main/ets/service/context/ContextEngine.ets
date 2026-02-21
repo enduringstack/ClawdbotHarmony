@@ -102,10 +102,15 @@ export interface ContextSnapshot {
   networkType: string;     // wifi, cellular, none
   geofence?: string;       // current geofence id, if any
   wifiSsid?: string;       // current WiFi SSID
-  wifiLostWork?: string;   // "true" if recently lost work WiFi (auto-detected)
+  wifiLostWork?: string;   // "true" if recently lost work WiFi (backward compat)
+  wifiGeofence?: string;   // WiFi signal matched geofence category (home/work/gym/etc)
+  wifiLost?: string;       // "true" if recently lost a known WiFi
+  wifiLostCategory?: string; // category of the lost WiFi geofence (home/work/gym/etc)
   latitude?: string;
   longitude?: string;
   stepCount?: string;
+  speed?: string;           // estimated speed in km/h
+  transportMode?: string;   // walking/running/cycling/driving/transit/stationary
 }
 
 /** Minimal geofence info for rule binding (avoids circular import) */

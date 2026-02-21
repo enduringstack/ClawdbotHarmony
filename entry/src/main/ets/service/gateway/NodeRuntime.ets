@@ -56,7 +56,7 @@ import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, C
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.42.3';
+const APP_VERSION = '2.43.0';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -990,7 +990,15 @@ export class NodeRuntime {
     this.handleA2UIAction(actionJson);
 
     if (this.nodeSession) {
-      this.nodeSession.sendNodeEvent('canvas.a2ui.action', actionJson);
+      // Workaround: Gateway doesn't handle canvas.a2ui.action node.event (Issue #19183)
+      // Send via agent.request instead, which Gateway does process
+      let message = `[A2UI Button Action] User tapped a button on the phone. Action data: ${actionJson}`;
+      let agentPayload = JSON.stringify({
+        'message': message,
+        'sessionKey': 'main',
+        'deliver': true,
+      });
+      this.nodeSession.sendNodeEvent('agent.request', agentPayload);
     }
   }
 
@@ -1668,8 +1676,15 @@ export class NodeRuntime {
     this.canvasCapability.onA2UIAction = (actionJson: string) => {
       this.log.info(TAG, `A2UI callback invoked, nodeSession=${this.nodeSession ? 'exists' : 'NULL'}`);
       if (this.nodeSession) {
-        this.log.info(TAG, `A2UI action → node event: ${actionJson.substring(0, 200)}`);
-        this.nodeSession.sendNodeEvent('canvas.a2ui.action', actionJson);
+        this.log.info(TAG, `A2UI action → agent.request: ${actionJson.substring(0, 200)}`);
+        // Workaround: Gateway doesn't handle canvas.a2ui.action node.event (Issue #19183)
+        let message = `[A2UI Button Action] User tapped a button on the phone. Action data: ${actionJson}`;
+        let agentPayload = JSON.stringify({
+          'message': message,
+          'sessionKey': 'main',
+          'deliver': true,
+        });
+        this.nodeSession.sendNodeEvent('agent.request', agentPayload);
       } else {
         this.log.error(TAG, `A2UI action DROPPED - nodeSession is null!`);
       }

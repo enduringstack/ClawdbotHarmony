@@ -60,6 +60,17 @@ const DEFAULT_TTL: Record<string, number> = {
   'longitude': 2 * 60 * 1000,       // 2 min
   'geofence': 5 * 60 * 1000,        // 5 min
 
+  // WiFi 围栏
+  'wifiSsid': 2 * 60 * 1000,       // 2 min
+  'wifiGeofence': 5 * 60 * 1000,    // 5 min
+  'wifiLost': 10 * 60 * 1000,       // 10 min
+  'wifiLostWork': 10 * 60 * 1000,   // 10 min
+  'wifiLostCategory': 10 * 60 * 1000, // 10 min
+
+  // 交通模式
+  'transportMode': 30 * 1000,       // 30 sec
+  'speed': 2 * 60 * 1000,           // 2 min
+
   // 环境
   'heartRate': 60 * 1000,           // 1 min
   'ambientLight': 30 * 1000,        // 30 sec
@@ -158,6 +169,34 @@ export class SensorDataTray {
     let steps = this.get('stepCount');
     if (steps.value !== null) {
       snap.stepCount = steps.value;
+    }
+    let wifiSsid = this.get('wifiSsid');
+    if (wifiSsid.value !== null) {
+      snap.wifiSsid = wifiSsid.value;
+    }
+    let wifiGeofence = this.get('wifiGeofence');
+    if (wifiGeofence.value !== null) {
+      snap.wifiGeofence = wifiGeofence.value;
+    }
+    let wifiLost = this.get('wifiLost');
+    if (wifiLost.value !== null) {
+      snap.wifiLost = wifiLost.value;
+    }
+    let wifiLostWork = this.get('wifiLostWork');
+    if (wifiLostWork.value !== null) {
+      snap.wifiLostWork = wifiLostWork.value;
+    }
+    let wifiLostCategory = this.get('wifiLostCategory');
+    if (wifiLostCategory.value !== null) {
+      snap.wifiLostCategory = wifiLostCategory.value;
+    }
+    let speed = this.get('speed');
+    if (speed.value !== null) {
+      snap.speed = speed.value;
+    }
+    let transportMode = this.get('transportMode');
+    if (transportMode.value !== null) {
+      snap.transportMode = transportMode.value;
     }
 
     return snap;
