@@ -56,7 +56,7 @@ import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, C
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.43.1';
+const APP_VERSION = '2.43.2';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -1005,7 +1005,9 @@ export class NodeRuntime {
 
   private handleA2UIAction(actionJson: string): void {
     try {
-      let action = JSON.parse(actionJson) as Record<string, Object>;
+      let parsed = JSON.parse(actionJson) as Record<string, Object>;
+      // WebView sends {"action":{"name":"...","context":{...}}} — unwrap
+      let action = (parsed['action'] ?? parsed) as Record<string, Object>;
       let name = action['name'] as string;
       if (name !== 'context_feedback') return;
 
