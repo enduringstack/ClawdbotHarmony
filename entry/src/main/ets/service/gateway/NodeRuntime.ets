@@ -56,7 +56,7 @@ import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, C
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.43.2';
+const APP_VERSION = '2.43.3';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -1027,7 +1027,21 @@ export class NodeRuntime {
       } else if (feedback === 'reject') {
         // Negative: decrease priority
         this.adjustRulePriority(engine, ruleId, -0.3);
-        this.sendFeedbackResponse('❌ 已记录，此规则权重已降低，会减少类似推荐');
+        this.sendFeedbackResponse('❌ 已记录，此规则权重已降低');
+        // Show follow-up: ask user what they're actually doing
+        this.showSceneCorrectionCard(ruleId);
+      } else if (feedback === 'scene_correct') {
+        // User selected their actual scene after rejecting
+        let scene = ctx['scene'] ?? '';
+        let location = ctx['location'] ?? '';
+        this.log.info(TAG, `Scene correction: ruleId=${ruleId} scene=${scene} location=${location}`);
+        this.sendFeedbackResponse(`📝 收到！你现在${location ? '在' + location : ''}${scene ? '在' + scene : ''}，我会学习这个模式`);
+        // Send to agent for learning
+        if (this.nodeSession) {
+          let message = `[场景纠正] 用户反馈规则 ${ruleId} 不准确。用户实际场景：${scene}${location ? '，位置：' + location : ''}。请记住这个反馈，用于优化未来推荐。`;
+          let agentPayload = JSON.stringify({ 'message': message, 'sessionKey': 'main', 'deliver': false });
+          this.nodeSession.sendNodeEvent('agent.request', agentPayload);
+        }
       } else if (feedback === 'dismiss') {
         this.sendFeedbackResponse('🙈 已忽略');
       }
@@ -1053,6 +1067,32 @@ export class NodeRuntime {
     } catch (err) {
       this.log.warn(TAG, `adjustRulePriority error: ${(err as Error).message}`);
     }
+  }
+
+  private showSceneCorrectionCard(ruleId: string): void {
+    let safeRuleId = ruleId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    let jsonl = `{"type":"form","id":"scene_correct_${Date.now()}","children":[` +
+      `{"type":"text","text":"你现在在哪儿，在干什么？","style":{"fontSize":16,"fontWeight":"bold"}},` +
+      `{"type":"text","text":"帮助我更好地理解你的场景","style":{"fontSize":13,"color":"#888"}},` +
+      // Location buttons
+      `{"type":"text","text":"📍 位置","style":{"fontSize":14,"fontWeight":"bold"}},` +
+      `{"type":"button","text":"🏠 在家","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"","location":"家"}}}},` +
+      `{"type":"button","text":"🏢 在公司","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"","location":"公司"}}}},` +
+      `{"type":"button","text":"🚇 在路上","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"","location":"路上"}}}},` +
+      `{"type":"button","text":"🛒 在商场","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"","location":"商场"}}}},` +
+      `{"type":"button","text":"🍜 在餐厅","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"","location":"餐厅"}}}},` +
+      // Activity buttons
+      `{"type":"text","text":"🎯 在做什么","style":{"fontSize":14,"fontWeight":"bold"}},` +
+      `{"type":"button","text":"💻 工作中","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"工作","location":""}}}},` +
+      `{"type":"button","text":"🛋️ 休息中","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"休息","location":""}}}},` +
+      `{"type":"button","text":"🏃 运动中","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"运动","location":""}}}},` +
+      `{"type":"button","text":"🍽️ 吃饭中","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"吃饭","location":""}}}},` +
+      `{"type":"button","text":"🚶 通勤中","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"通勤","location":""}}}},` +
+      `{"type":"button","text":"😴 要睡了","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"scene_correct","scene":"睡觉","location":""}}}},` +
+      `{"type":"button","text":"🙅 跳过","variant":"borderless","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"dismiss"}}}}` +
+      `]}`;
+
+    this.dispatchA2UI('push', jsonl);
   }
 
   private sendFeedbackResponse(text: string): void {
