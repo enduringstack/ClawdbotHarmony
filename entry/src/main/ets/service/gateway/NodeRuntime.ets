@@ -56,7 +56,7 @@ import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, C
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.43.3';
+const APP_VERSION = '2.43.4';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -986,21 +986,10 @@ export class NodeRuntime {
 
   /** Send A2UI action (user interaction) back to gateway. */
   sendA2UIAction(actionJson: string): void {
-    this.log.system(TAG, `sendA2UIAction called! json=${actionJson.substring(0, 200)}`);
-    // Handle context feedback locally before forwarding
+    this.log.info(TAG, `sendA2UIAction: ${actionJson.substring(0, 200)}`);
+    // Handle all A2UI actions locally (feedback, scene correction, etc.)
+    // No need to forward to Gateway — all processing is on-device
     this.handleA2UIAction(actionJson);
-
-    if (this.nodeSession) {
-      // Workaround: Gateway doesn't handle canvas.a2ui.action node.event (Issue #19183)
-      // Send via agent.request instead, which Gateway does process
-      let message = `[A2UI Button Action] User tapped a button on the phone. Action data: ${actionJson}`;
-      let agentPayload = JSON.stringify({
-        'message': message,
-        'sessionKey': 'main',
-        'deliver': true,
-      });
-      this.nodeSession.sendNodeEvent('agent.request', agentPayload);
-    }
   }
 
   private handleA2UIAction(actionJson: string): void {
@@ -1036,12 +1025,8 @@ export class NodeRuntime {
         let location = ctx['location'] ?? '';
         this.log.info(TAG, `Scene correction: ruleId=${ruleId} scene=${scene} location=${location}`);
         this.sendFeedbackResponse(`📝 收到！你现在${location ? '在' + location : ''}${scene ? '在' + scene : ''}，我会学习这个模式`);
-        // Send to agent for learning
-        if (this.nodeSession) {
-          let message = `[场景纠正] 用户反馈规则 ${ruleId} 不准确。用户实际场景：${scene}${location ? '，位置：' + location : ''}。请记住这个反馈，用于优化未来推荐。`;
-          let agentPayload = JSON.stringify({ 'message': message, 'sessionKey': 'main', 'deliver': false });
-          this.nodeSession.sendNodeEvent('agent.request', agentPayload);
-        }
+        // Record scene correction locally for future learning
+        // TODO: use this data to auto-generate/adjust rules based on actual user patterns
       } else if (feedback === 'dismiss') {
         this.sendFeedbackResponse('🙈 已忽略');
       }
@@ -1717,20 +1702,9 @@ export class NodeRuntime {
 
     // Wire up A2UI action callback
     this.canvasCapability.onA2UIAction = (actionJson: string) => {
-      this.log.info(TAG, `A2UI callback invoked, nodeSession=${this.nodeSession ? 'exists' : 'NULL'}`);
-      if (this.nodeSession) {
-        this.log.info(TAG, `A2UI action → agent.request: ${actionJson.substring(0, 200)}`);
-        // Workaround: Gateway doesn't handle canvas.a2ui.action node.event (Issue #19183)
-        let message = `[A2UI Button Action] User tapped a button on the phone. Action data: ${actionJson}`;
-        let agentPayload = JSON.stringify({
-          'message': message,
-          'sessionKey': 'main',
-          'deliver': true,
-        });
-        this.nodeSession.sendNodeEvent('agent.request', agentPayload);
-      } else {
-        this.log.error(TAG, `A2UI action DROPPED - nodeSession is null!`);
-      }
+      this.log.info(TAG, `A2UI callback (CanvasPage): ${actionJson.substring(0, 200)}`);
+      // Handle locally, same as inline A2UI
+      this.handleA2UIAction(actionJson);
     };
 
     // Create operator session (if requested)
