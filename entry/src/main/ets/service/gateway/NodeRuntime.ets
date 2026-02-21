@@ -57,7 +57,7 @@ import { FeedbackService } from '../context/FeedbackService';
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.43.7';
+const APP_VERSION = '2.43.8';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -1030,13 +1030,27 @@ export class NodeRuntime {
       } else if (feedback === 'reject') {
         // Negative: decrease priority
         let delta = -0.3;
-        this.adjustRulePriority(engine, ruleId, delta);
         fbService.onThumbsDown(ruleId);
         let displayName = ruleName.length > 0 ? ruleName : ruleId;
+        // Check current priority to determine action
+        let willDisable = false;
+        let rulesJson = engine.exportRules();
+        let allRules: ContextRule[] = JSON.parse(rulesJson) as ContextRule[];
+        for (let i = 0; i < allRules.length; i++) {
+          if (allRules[i].id === ruleId) {
+            let newP = (allRules[i].priority ?? 1.0) + delta;
+            willDisable = newP <= 0.3;
+            break;
+          }
+        }
+        this.adjustRulePriority(engine, ruleId, delta);
+        let actionText = willDisable
+          ? `🚫 此规则已自动禁用，不会再推荐`
+          : `📉 权重降低，冷却时间翻倍，会大幅减少此类推荐`;
         this.sendFeedbackResponse(
           `❌ 反馈已记录\n\n` +
           `📋 规则：${displayName}\n` +
-          `📉 权重降低 ${delta}，会减少此类推荐\n\n` +
+          `${actionText}\n\n` +
           `👇 请告诉我你现在的实际场景：`
         );
         // Show follow-up: ask user what they're actually doing
@@ -1078,8 +1092,22 @@ export class NodeRuntime {
           let currentPriority = rules[i].priority ?? 1.0;
           let newPriority = Math.max(0.1, Math.min(5.0, currentPriority + delta));
           rules[i].priority = newPriority;
+
+          // If negative feedback: extend cooldown significantly
+          if (delta < 0) {
+            // Double the cooldown each time (min 4h, max 48h)
+            let currentCooldown = rules[i].cooldownMs ?? 14400000;
+            rules[i].cooldownMs = Math.min(currentCooldown * 2, 172800000);
+          }
+
+          // Auto-disable rule if priority drops too low (user keeps rejecting)
+          if (newPriority <= 0.3) {
+            rules[i].enabled = false;
+            this.log.info(TAG, `Rule ${ruleId} AUTO-DISABLED: priority ${newPriority} <= 0.3`);
+          }
+
           let ok = await engine.addRule(rules[i]);
-          this.log.info(TAG, `Rule ${ruleId} priority: ${currentPriority} → ${newPriority}, ok=${ok}`);
+          this.log.info(TAG, `Rule ${ruleId} priority: ${currentPriority} → ${newPriority}, cooldown=${rules[i].cooldownMs}ms, enabled=${rules[i].enabled}, ok=${ok}`);
           break;
         }
       }
