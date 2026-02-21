@@ -57,7 +57,7 @@ import { FeedbackService } from '../context/FeedbackService';
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.47.0';
+const APP_VERSION = '2.48.0';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -2879,24 +2879,52 @@ export class NodeRuntime {
   }
 
   private async handleUiTap(paramsJson: string | undefined): Promise<string> {
-    // ui.tap requires system-level permissions (inputEventClient) or accessibility service
-    // to inject touch events, which are not available to regular apps.
-    // TODO: Implement when system-level API access is available.
-    // Alternative approaches:
-    //   - Use accessibility service (requires specific permissions)
-    //   - Directly invoke component onClick handlers (requires component registry)
-    //   - Use shell input tap via exec capability (requires adb/hdc access)
+    // ui.tap attempts to simulate touch events at specified coordinates.
+    // Approach: Try shell 'input tap' via ExecCapability, fall back to external execution.
     let x: number = 0;
     let y: number = 0;
+    let external: boolean = false;  // if true, return instruction for external execution
+    
     if (paramsJson) {
       try {
         let p = JSON.parse(paramsJson) as Record<string, Object>;
         if (p['x'] !== undefined) x = p['x'] as number;
         if (p['y'] !== undefined) y = p['y'] as number;
+        if (p['external'] !== undefined) external = p['external'] as boolean;
       } catch { /* ignore */ }
     }
-    this.log.warn(TAG, `ui.tap: requested at (${x}, ${y}) but not implemented — requires system permissions`);
-    return `{"ok":false,"error":"ui.tap requires system-level permissions (inputEventClient) not available to regular apps","x":${x},"y":${y}}`;
+    
+    if (x === 0 && y === 0) {
+      return '{"ok":false,"error":"Missing coordinates. Provide x and y.","hint":"Use ui.screenshot to get dimensions first"}';
+    }
+    
+    // If external mode requested, return instruction for external execution via MSI
+    if (external) {
+      let cmd = 'hdc shell input tap ' + x + ' ' + y;
+      return '{"ok":true,"mode":"external","message":"Execute on MSI: ' + cmd + '","command":"' + cmd + '","x":' + x + ',"y":' + y + '}';
+    }
+    
+    // Try local execution via shell
+    this.log.info(TAG, 'ui.tap: attempting local tap at (' + x + ', ' + y + ')');
+    try {
+      let execResult = await this.execCapability.execute('{"command":"input tap ' + x + ' ' + y + '","timeoutMs":5000}');
+      let result = JSON.parse(execResult) as Record<string, Object>;
+      if (result['ok'] === true && result['exitCode'] === 0) {
+        this.log.info(TAG, 'ui.tap: success at (' + x + ', ' + y + ')');
+        return '{"ok":true,"x":' + x + ',"y":' + y + ',"method":"shell"}';
+      } else {
+        // Local execution failed, suggest external
+        let stderr = (result['stderr'] as string) ?? '';
+        this.log.warn(TAG, 'ui.tap local failed: ' + stderr);
+        let cmd = 'hdc shell input tap ' + x + ' ' + y;
+        return '{"ok":false,"error":"Local tap failed: ' + stderr.replace(/"/g, "'") + '","hint":"Try external mode: ui.tap with {x, y, external: true}","fallback_command":"' + cmd + '","x":' + x + ',"y":' + y + '}';
+      }
+    } catch (err) {
+      let msg = (err as Error).message ?? String(err);
+      this.log.error(TAG, 'ui.tap exception: ' + msg);
+      let cmd = 'hdc shell input tap ' + x + ' ' + y;
+      return '{"ok":false,"error":"Exception: ' + msg.replace(/"/g, "'") + '","hint":"Try external mode: ui.tap with {x, y, external: true}","fallback_command":"' + cmd + '","x":' + x + ',"y":' + y + '}';
+    }
   }
 
   /**
