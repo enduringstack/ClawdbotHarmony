@@ -405,6 +405,67 @@ export interface LLMRecommendation {
   source: string;     // 'llm'
 }
 
+// ==================== 地点自动发现 ====================
+
+/** 地点访问记录 */
+export interface PlaceVisit {
+  id: string;
+  geofenceId: string;         // 关联的围栏ID
+  placeName: string;          // 地点名称
+  latitude: number;
+  longitude: number;
+  enterTime: number;          // 进入时间戳
+  exitTime?: number;          // 离开时间戳（undefined表示还在）
+  stayDurationMs: number;     // 停留时长（毫秒）
+  wifiSsid?: string;          // 当时的 WiFi SSID
+  source: 'manual' | 'auto';  // 手动添加还是自动发现
+  confirmed: boolean;         // 用户是否确认
+}
+
+/** 待确认的新地点 */
+export interface PendingPlace {
+  id: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  firstSeenTime: number;      // 首次检测到的时间
+  wifiSsid?: string;          // 检测到的 WiFi
+  suggestedName?: string;     // API 反查的建议名称
+  suggestedCategory?: string; // 建议类别
+  address?: string;           // 反查的地址
+  stayDurationMs: number;     // 已停留时长
+  notified: boolean;          // 是否已发送通知
+}
+
+/** 自动发现的地点（用户已确认） */
+export interface DiscoveredPlace extends Geofence {
+  discoverySource: 'gps_wifi' | 'gps_only' | 'wifi_only';
+  discoveredAt: number;       // 发现时间
+  confirmAt: number;          // 确认时间
+  visits: PlaceVisit[];       // 访问记录
+  totalVisits: number;        // 总访问次数
+  totalStayMs: number;        // 累计停留时间
+}
+
+/** 地点发现配置 */
+export interface PlaceDiscoveryConfig {
+  enabled: boolean;
+  minStayMinutes: number;           // 最小停留时间（分钟）触发发现
+  minGpsAccuracy: number;           // GPS 精度阈值（米）
+  gpsDriftThreshold: number;        // GPS 漂移阈值（米），小于此值视为停留
+  notificationEnabled: boolean;     // 是否发送通知
+  autoConfirmAfterVisits: number;   // N次访问后自动确认
+}
+
+export const DEFAULT_DISCOVERY_CONFIG: PlaceDiscoveryConfig = {
+  enabled: true,
+  minStayMinutes: 5,
+  minGpsAccuracy: 100,
+  gpsDriftThreshold: 50,
+  notificationEnabled: true,
+  autoConfirmAfterVisits: 3,
+};
+
 // ==================== 每日摘要 ====================
 
 /** 每日健康摘要 */

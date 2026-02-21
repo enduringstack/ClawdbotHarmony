@@ -469,6 +469,59 @@ function buildZh(): Map<string, string> {
   m.set('settings.silentMode', '静默记录');
   m.set('settings.silentModeDesc', '后台录音，自动识别说话人并转写');
 
+  // Place Discovery
+  m.set('place.discoveredTitle', '发现新地点');
+  m.set('place.confirmSave', '确认保存');
+  m.set('place.ignore', '忽略');
+  m.set('place.rename', '改名');
+  m.set('place.saveAs', '保存为');
+  m.set('place.stayedFor', '已停留');
+  m.set('place.minutes', '分钟');
+  m.set('place.clickToSave', '点击确认保存');
+  m.set('place.nearbyTitle', '附近地点');
+  m.set('place.lastVisit', '上次来过');
+  m.set('place.distance', '距离');
+  m.set('place.visits', '次访问');
+  m.set('place.noPending', '暂无待确认地点');
+  m.set('place.noDiscovered', '暂无已保存地点');
+  m.set('place.visitHistory', '访问历史');
+  m.set('place.today', '今天');
+  m.set('place.yesterday', '昨天');
+  m.set('place.thisWeek', '本周');
+  m.set('place.thisMonth', '本月');
+  m.set('place.earlier', '更早');
+
+  // Place Categories - 中文
+  m.set('place.category.home', '家');
+  m.set('place.category.work', '公司');
+  m.set('place.category.restaurant', '餐厅');
+  m.set('place.category.shopping', '购物');
+  m.set('place.category.transit', '交通');
+  m.set('place.category.gym', '健身');
+  m.set('place.category.cafe', '咖啡厅');
+  m.set('place.category.hotel', '酒店');
+  m.set('place.category.hospital', '医院');
+  m.set('place.category.school', '学校');
+  m.set('place.category.park', '公园');
+  m.set('place.category.custom', '其他');
+
+  // Time ago format
+  m.set('time.minutesAgo', '{0}分钟前');
+  m.set('time.hoursAgo', '{0}小时前');
+  m.set('time.daysAgo', '{0}天前');
+  m.set('time.justNow', '刚刚');
+
+  // Settings - Place Discovery
+  m.set('settings.placeDiscovery', '地点发现');
+  m.set('settings.placeDiscoveryDesc', '自动识别常去地点并记录');
+  m.set('settings.placeDiscoveryEnabled', '启用地点发现');
+  m.set('settings.placeDiscoveryMinStay', '最小停留时间');
+  m.set('settings.placeDiscoveryNotify', '发现新地点时通知');
+  m.set('settings.placeCategories', '地点分类管理');
+  m.set('settings.learnedSignals', '已学习信号');
+  m.set('settings.clearLearnedSignals', '清除学习信号');
+  m.set('settings.clearLearnedSignalsConfirm', '确定清除所有已学习的位置信号？需要重新学习。');
+
   return m;
 }
 
@@ -932,6 +985,59 @@ function buildEn(): Map<string, string> {
   m.set('silent.error', 'Recording error');
   m.set('settings.silentMode', 'SILENT RECORDER');
   m.set('settings.silentModeDesc', 'Background recording with speaker ID and transcription');
+
+  // Place Discovery
+  m.set('place.discoveredTitle', 'New Place Discovered');
+  m.set('place.confirmSave', 'Confirm Save');
+  m.set('place.ignore', 'Ignore');
+  m.set('place.rename', 'Rename');
+  m.set('place.saveAs', 'Save as');
+  m.set('place.stayedFor', 'Stayed for');
+  m.set('place.minutes', 'minutes');
+  m.set('place.clickToSave', 'Tap to confirm and save');
+  m.set('place.nearbyTitle', 'Nearby Place');
+  m.set('place.lastVisit', 'Last visit');
+  m.set('place.distance', 'Distance');
+  m.set('place.visits', 'visits');
+  m.set('place.noPending', 'No pending places');
+  m.set('place.noDiscovered', 'No saved places');
+  m.set('place.visitHistory', 'Visit History');
+  m.set('place.today', 'Today');
+  m.set('place.yesterday', 'Yesterday');
+  m.set('place.thisWeek', 'This week');
+  m.set('place.thisMonth', 'This month');
+  m.set('place.earlier', 'Earlier');
+
+  // Place Categories - English
+  m.set('place.category.home', 'Home');
+  m.set('place.category.work', 'Work');
+  m.set('place.category.restaurant', 'Restaurant');
+  m.set('place.category.shopping', 'Shopping');
+  m.set('place.category.transit', 'Transit');
+  m.set('place.category.gym', 'Gym');
+  m.set('place.category.cafe', 'Cafe');
+  m.set('place.category.hotel', 'Hotel');
+  m.set('place.category.hospital', 'Hospital');
+  m.set('place.category.school', 'School');
+  m.set('place.category.park', 'Park');
+  m.set('place.category.custom', 'Other');
+
+  // Time ago format
+  m.set('time.minutesAgo', '{0} min ago');
+  m.set('time.hoursAgo', '{0} hr ago');
+  m.set('time.daysAgo', '{0} days ago');
+  m.set('time.justNow', 'Just now');
+
+  // Settings - Place Discovery
+  m.set('settings.placeDiscovery', 'PLACE DISCOVERY');
+  m.set('settings.placeDiscoveryDesc', 'Auto-detect and remember frequent locations');
+  m.set('settings.placeDiscoveryEnabled', 'Enable Place Discovery');
+  m.set('settings.placeDiscoveryMinStay', 'Minimum Stay Duration');
+  m.set('settings.placeDiscoveryNotify', 'Notify on New Place');
+  m.set('settings.placeCategories', 'Manage Categories');
+  m.set('settings.learnedSignals', 'Learned Signals');
+  m.set('settings.clearLearnedSignals', 'Clear Learned Signals');
+  m.set('settings.clearLearnedSignalsConfirm', 'Clear all learned location signals? They will need to be relearned.');
 
   return m;
 }

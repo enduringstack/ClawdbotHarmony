@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "description": "地点分类配置。可运行时修改，添加自定义类别。",
+  "categories": [
+    {
+      "id": "home",
+      "icon": "🏠",
+      "color": "#4CAF50",
+      "timePatterns": {
+        "nightRatio": 0.4
+      },
+      "defaultRadius": 80
+    },
+    {
+      "id": "work",
+      "icon": "🏢",
+      "color": "#2196F3",
+      "timePatterns": {
+        "workdayRatio": 0.5,
+        "weekendRatioMax": 0.2
+      },
+      "defaultRadius": 150
+    },
+    {
+      "id": "restaurant",
+      "icon": "🍽️",
+      "color": "#FF9800",
+      "timePatterns": {
+        "lunchHours": [11, 12, 13, 14],
+        "dinnerHours": [17, 18, 19, 20]
+      },
+      "defaultRadius": 80
+    },
+    {
+      "id": "shopping",
+      "icon": "🛒",
+      "color": "#9C27B0",
+      "timePatterns": {},
+      "defaultRadius": 120
+    },
+    {
+      "id": "transit",
+      "icon": "🚇",
+      "color": "#607D8B",
+      "timePatterns": {},
+      "defaultRadius": 100
+    },
+    {
+      "id": "gym",
+      "icon": "💪",
+      "color": "#E91E63",
+      "timePatterns": {
+        "weekendRatio": 0.4,
+        "activeHours": [6, 7, 8, 17, 18, 19, 20]
+      },
+      "defaultRadius": 80
+    },
+    {
+      "id": "cafe",
+      "icon": "☕",
+      "color": "#795548",
+      "timePatterns": {
+        "activeHours": [8, 9, 10, 14, 15, 16]
+      },
+      "defaultRadius": 60
+    },
+    {
+      "id": "hotel",
+      "icon": "🏨",
+      "color": "#00BCD4",
+      "timePatterns": {},
+      "defaultRadius": 100
+    },
+    {
+      "id": "hospital",
+      "icon": "🏥",
+      "color": "#F44336",
+      "timePatterns": {},
+      "defaultRadius": 150
+    },
+    {
+      "id": "school",
+      "icon": "🎓",
+      "color": "#3F51B5",
+      "timePatterns": {
+        "workdayRatio": 0.6
+      },
+      "defaultRadius": 200
+    },
+    {
+      "id": "park",
+      "icon": "🌳",
+      "color": "#8BC34A",
+      "timePatterns": {
+        "activeHours": [6, 7, 8, 17, 18, 19]
+      },
+      "defaultRadius": 200
+    },
+    {
+      "id": "custom",
+      "icon": "📍",
+      "color": "#9E9E9E",
+      "timePatterns": {},
+      "defaultRadius": 80
+    }
+  ],
+  "stayDetection": {
+    "minStayMinutes": 5,
+    "minGpsAccuracy": 100,
+    "gpsDriftThreshold": 50,
+    "autoConfirmAfterVisits": 3,
+    "notificationEnabled": true
+  },
+  "nearbySuggestion": {
+    "radiusMeters": 500,
+    "maxResults": 3,
+    "cooldownMinutes": 30
+  }
+}
