@@ -6,6 +6,7 @@
 import { sensor } from '@kit.SensorServiceKit';
 import { batteryInfo } from '@kit.BasicServicesKit';
 import { wifiManager } from '@kit.ConnectivityKit';
+import { geoLocationManager } from '@kit.LocationKit';
 import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { LogService } from '../../common/LogService';
@@ -120,6 +121,13 @@ export class ContextAwarenessService {
   private suggestionListeners: SuggestionListener[] = [];
   private suggestionState: GeofenceSuggestionState = { blacklist: [], deferred: {}, lastShown: {} };
   private suggestionStateLoaded: boolean = false;
+  // 新地点自动发现
+  private newPlaceDetectionStart: number = 0;  // 开始检测新地点的时间戳
+  private newPlaceLastLat: number = 0;
+  private newPlaceLastLng: number = 0;
+  private newPlaceWifiSsid: string = '';
+  private static readonly NEW_PLACE_STABLE_MS = 5 * 60 * 1000;  // 5分钟稳定才算新地点
+  private static readonly NEW_PLACE_MAX_DRIFT_M = 100;  // 100米内视为同一地点
   // 数字世界感知
   private digitalWorld: DigitalWorldService = DigitalWorldService.getInstance();
   // 传感器数据托盘
@@ -480,6 +488,9 @@ export class ContextAwarenessService {
     // 监听位置变化，记录到发现服务
     this.geofenceMgr.addLocationListener((location) => {
       this.locationDiscovery.recordLocation(location);
+      // 检测新地点
+      let ssid = this.lastWifiSsid ?? '';
+      this.checkForNewPlace(location.latitude, location.longitude, ssid);
     });
 
     // 定时运行聚类发现
@@ -836,6 +847,163 @@ export class ContextAwarenessService {
     let llmAction: UserAction = { type: 'show_info', target: 'llm_suggestion', params: { 'source': 'llm', 'title': llmResult.title } };
     await this.behaviorLog.logBehavior(ctx, llmAction);
     this.log.info(TAG, `LLM fallback delivered and persisted: ${llmResult.title}`);
+  }
+
+  /**
+   * 检测新地点：GPS + WiFi 稳定 5 分钟且不在任何已知围栏内
+   */
+  private async checkForNewPlace(lat: number, lng: number, wifiSsid: string): Promise<void> {
+    // 检查是否在任何已知围栏内
+    let allGeofences = this.geofenceMgr.getAllGeofences();
+    let inKnownGeofence = false;
+    for (let i = 0; i < allGeofences.length; i++) {
+      let gf = allGeofences[i];
+      let dist = this.haversineDistance(lat, lng, gf.latitude, gf.longitude);
+      if (dist < gf.radiusMeters) {
+        inKnownGeofence = true;
+        break;
+      }
+    }
+    
+    if (inKnownGeofence) {
+      // 在已知围栏内，重置检测
+      this.newPlaceDetectionStart = 0;
+      return;
+    }
+    
+    let now = Date.now();
+    
+    // 检查位置是否稳定（与上次记录的差异 < 100m）
+    if (this.newPlaceDetectionStart > 0) {
+      let drift = this.haversineDistance(lat, lng, this.newPlaceLastLat, this.newPlaceLastLng);
+      if (drift > ContextAwarenessService.NEW_PLACE_MAX_DRIFT_M) {
+        // 位置漂移太大，重置
+        this.log.info(TAG, `New place reset: drifted ${Math.round(drift)}m`);
+        this.newPlaceDetectionStart = 0;
+        return;
+      }
+    }
+    
+    // 开始新检测或继续现有检测
+    if (this.newPlaceDetectionStart === 0) {
+      this.newPlaceDetectionStart = now;
+      this.newPlaceLastLat = lat;
+      this.newPlaceLastLng = lng;
+      this.newPlaceWifiSsid = wifiSsid;
+      this.log.info(TAG, `New place detection started at (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+      return;
+    }
+    
+    // 检查是否稳定足够时间
+    let stableMs = now - this.newPlaceDetectionStart;
+    if (stableMs < ContextAwarenessService.NEW_PLACE_STABLE_MS) {
+      this.log.debug(TAG, `New place stable for ${Math.round(stableMs / 1000)}s, need ${ContextAwarenessService.NEW_PLACE_STABLE_MS / 1000}s`);
+      return;
+    }
+    
+    // 稳定 5 分钟，检测到新地点！
+    this.log.info(TAG, `New place detected! (${lat.toFixed(4)}, ${lng.toFixed(4)}) WiFi=${wifiSsid}`);
+    this.newPlaceDetectionStart = 0;  // 重置防止重复
+    
+    // 尝试逆地理编码获取地点名
+    let placeName = await this.reverseGeocode(lat, lng);
+    
+    // 显示 A2UI 卡片让用户确认
+    this.showNewPlaceCard(lat, lng, wifiSsid, placeName);
+  }
+
+  /**
+   * 逆地理编码：坐标 → 地点名
+   */
+  private async reverseGeocode(lat: number, lng: number): Promise<string> {
+    try {
+      // 使用 HarmonyOS 逆地理编码 API
+      let request: geoLocationManager.ReverseGeoCodeRequest = {
+        latitude: lat,
+        longitude: lng,
+        maxItems: 1,
+        locale: 'zh'
+      };
+      let results = await geoLocationManager.getAddressesFromLocation(request);
+      if (results && results.length > 0) {
+        let addr = results[0];
+        // 优先使用地标名，其次街道地址
+        let name = addr.placeName ?? addr.roadName ?? '';
+        if (name.length === 0 && addr.locality) {
+          name = addr.locality;
+        }
+        if (name.length > 0) {
+          this.log.info(TAG, `Reverse geocode: ${name}`);
+          return name;
+        }
+      }
+    } catch (err) {
+      this.log.warn(TAG, `Reverse geocode failed: ${(err as Error).message}`);
+    }
+    // 失败时用坐标生成名称
+    return `新地点 (${lat.toFixed(3)}, ${lng.toFixed(3)})`;
+  }
+
+  /**
+   * 显示新地点确认卡片
+   */
+  private showNewPlaceCard(lat: number, lng: number, wifiSsid: string, placeName: string): void {
+    let escapedName = placeName.replace(/"/g, "'");
+    let escapedWifi = wifiSsid.replace(/"/g, "'");
+    
+    // 推断类别
+    let category = this.inferCategoryFromTime();
+    
+    let jsonl = '{"type":"form","id":"new_place_' + Date.now() + '","children":[' +
+      '{"type":"text","text":"📍 发现新地点","style":{"fontSize":18,"fontWeight":"bold"}},' +
+      '{"type":"text","text":"' + escapedName + '"},' +
+      '{"type":"text","text":"WiFi: ' + escapedWifi + '","style":{"fontSize":12,"color":"#666"}}},' +
+      '{"type":"row","children":[' +
+        '{"type":"button","label":"✅ 保存为 ' + category + '","action":{"event":{"name":"new_place_save","context":{"lat":' + lat + ',"lng":' + lng + ',"wifi":"' + escapedWifi + '","name":"' + escapedName + '","category":"' + category + '"}}},"style":"primary"},' +
+        '{"type":"button","label":"✏️ 改名","action":{"event":{"name":"new_place_rename","context":{"lat":' + lat + ',"lng":' + lng + '}}}},"style":"secondary"},' +
+        '{"type":"button","label":"❌ 忽略","action":{"event":{"name":"new_place_ignore","context":{}}}},"style":"secondary"}' +
+      ']}]}';
+    
+    // TODO: Wire up A2UI dispatch through NodeRuntime
+    // this.dispatchA2UI('push', jsonl);
+    this.log.info(TAG, `New place card would be shown: ${placeName}`);
+  }
+
+  /**
+   * 根据当前时间推断地点类别
+   */
+  private inferCategoryFromTime(): string {
+    let hour = new Date().getHours();
+    let dayOfWeek = new Date().getDay();
+    let isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    
+    if (!isWeekend && hour >= 9 && hour < 18) {
+      return 'work';
+    }
+    if (hour >= 22 || hour < 6) {
+      return 'home';
+    }
+    if (hour >= 11 && hour < 14) {
+      return 'restaurant';
+    }
+    if (isWeekend && hour >= 8 && hour < 20) {
+      return 'gym';
+    }
+    return 'other';
+  }
+
+  /**
+   * 计算两点距离（米）
+   */
+  private haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    let R = 6371000; // 地球半径（米）
+    let dLat = (lat2 - lat1) * Math.PI / 180;
+    let dLng = (lng2 - lng1) * Math.PI / 180;
+    let a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   }
 
   
@@ -1303,18 +1471,6 @@ export class ContextAwarenessService {
     }).catch((err: Error) => {
       this.log.warn(TAG, `Failed to save suggestion state: ${err.message}`);
     });
-  }
-
-
-  private haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    let R = 6371000;
-    let dLat = (lat2 - lat1) * Math.PI / 180;
-    let dLng = (lng2 - lng1) * Math.PI / 180;
-    let a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
   }
 
 

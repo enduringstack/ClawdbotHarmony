@@ -55,9 +55,10 @@ import { ContextAwarenessService, ContextRecommendation } from '../context/Conte
 import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, ContextAction, MatchResult, GeofenceBinding } from '../context/ContextEngine';
 import { FeedbackService } from '../context/FeedbackService';
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
+import { Geofence, GeofenceCategory } from '../context/ContextModels';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.48.0';
+const APP_VERSION = '2.49.0';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -1009,7 +1010,8 @@ export class NodeRuntime {
       // WebView sends {"action":{"name":"...","context":{...}}} — unwrap
       let action = (parsed['action'] ?? parsed) as Record<string, Object>;
       let name = action['name'] as string;
-      if (name !== 'context_feedback' && name !== 'view_snapshot') return;
+      if (name !== 'context_feedback' && name !== 'view_snapshot' && 
+          name !== 'new_place_save' && name !== 'new_place_rename' && name !== 'new_place_ignore') return;
 
       let ctx = action['context'] as Record<string, string>;
       if (!ctx) return;
@@ -1104,8 +1106,49 @@ export class NodeRuntime {
         // Dismiss is a mild negative signal, don't record as thumbs_down
         this.sendFeedbackResponse('🙈 已忽略，不会影响未来推荐');
       }
+      // Handle new place detection events
+      else if (name === 'new_place_save') {
+        let lat = parseFloat(ctx['lat'] ?? '0');
+        let lng = parseFloat(ctx['lng'] ?? '0');
+        let wifi = ctx['wifi'] ?? '';
+        let placeName = ctx['name'] ?? '新地点';
+        let category = ctx['category'] ?? 'other';
+        this.saveNewPlace(lat, lng, wifi, placeName, category);
+      } else if (name === 'new_place_rename') {
+        // TODO: Show rename dialog
+        this.sendFeedbackResponse('✏️ 重命名功能开发中，暂时保存为新地点');
+        let lat = parseFloat(ctx['lat'] ?? '0');
+        let lng = parseFloat(ctx['lng'] ?? '0');
+        this.saveNewPlace(lat, lng, '', '新地点', 'other');
+      } else if (name === 'new_place_ignore') {
+        this.sendFeedbackResponse('👌 已忽略此地点');
+      }
     } catch (err) {
       this.log.warn(TAG, `handleA2UIAction error: ${(err as Error).message}`);
+    }
+  }
+
+  private saveNewPlace(lat: number, lng: number, wifi: string, name: string, category: string): void {
+    try {
+      let cas = ContextAwarenessService.getInstance();
+      let meta: Record<string, string> | undefined = undefined;
+      if (wifi) {
+        meta = { 'wifi': wifi } as Record<string, string>;
+      }
+      let gf: Geofence = {
+        id: 'place_' + Date.now(),
+        name: name,
+        latitude: lat,
+        longitude: lng,
+        radiusMeters: 100,
+        category: category as GeofenceCategory,
+        metadata: meta
+      };
+      cas.addGeofence(gf);
+      this.log.info(TAG, `Saved new place: ${name} at (${lat}, ${lng})`);
+      this.sendFeedbackResponse(`✅ 已保存地点: ${name}`);
+    } catch (err) {
+      this.log.warn(TAG, `saveNewPlace error: ${(err as Error).message}`);
     }
   }
 

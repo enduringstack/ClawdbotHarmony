@@ -8,9 +8,25 @@ export interface ChangelogEntry {
   fixes: string[];
 }
 
-export const APP_VERSION: string = '2.48.0';
+export const APP_VERSION: string = '2.49.0';
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.49.0',
+    date: '2026-02-21',
+    features: [
+      '新地点发现保存功能: A2UI卡片确认后自动创建围栏',
+      'saveNewPlace方法: 保存用户确认的新地点到地理围栏',
+      'WearablePlugin增强: 添加设备连接状态和错误信息到快照',
+    ],
+    fixes: [
+      '修复 ContextAwarenessService 编译错误 (gf.radius -> gf.radiusMeters)',
+      '修复 dispatchA2UI 方法不存在 (临时注释,待后续完善)',
+      '修复 haversineDistance 重复定义 (删除冗余方法)',
+      '修复 NodeRuntime.saveNewPlace 方法缺失 (新增方法)',
+      '改进 WearablePlugin 心率传感器订阅日志和错误处理',
+    ],
+  },
   {
     version: '2.38.0',
     date: '2026-02-20',
@@ -468,4 +484,4 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export const LATEST_VERSION: string = '2.38.0';
+export const LATEST_VERSION: string = '2.49.0';

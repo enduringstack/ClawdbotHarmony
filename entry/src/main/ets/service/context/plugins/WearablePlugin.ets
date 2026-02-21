@@ -1,6 +1,10 @@
 /**
  * WearablePlugin — Collect wearable device sensor data
  *
+ * Uses HarmonyOS sensor API to read heart rate data.
+ * On Huawei devices with Huawei Health app, heart rate data from
+ * connected wearables (watch/band) is synced and available via sensor API.
+ *
  * Reads heart rate sensor data to detect physiological state:
  * - Resting (< 80 bpm)
  * - Active (80-120 bpm)
@@ -9,9 +13,9 @@
  *
  * Combined with StepCounterPlugin data, provides rich activity context.
  *
- * Provides: heart_rate, heart_rate_status, wearing_state
+ * Provides: heart_rate, heart_rate_status, wearing_state, device_connected
  *
- * Permission: ohos.permission.READ_HEALTH_DATA (needs declaration)
+ * Permission: ohos.permission.READ_HEALTH_DATA
  * API: @kit.SensorServiceKit — sensor.SensorId.HEART_RATE
  */
 import { sensor } from '@kit.SensorServiceKit';
@@ -27,10 +31,14 @@ export class WearablePlugin implements DigitalPlugin {
   private heartRate: number = 0;
   private lastHeartRateTime: number = 0;
   private heartRateSensorRegistered: boolean = false;
+  private wearableDeviceConnected: boolean = false;
+  private deviceName: string = '';
+  private initError: string = '';
 
-  async init(_context: common.UIAbilityContext): Promise<void> {
+  async init(context: common.UIAbilityContext): Promise<void> {
+    this.log.info(TAG, 'Init: subscribing heart rate sensor for wearable data...');
     this.subscribeHeartRate();
-    this.log.info(TAG, 'Init: wearable sensors subscribed');
+    this.log.info(TAG, `Init complete: sensorRegistered=${this.heartRateSensorRegistered}`);
   }
 
   getSnapshot(): DigitalSnapshot {
@@ -41,7 +49,11 @@ export class WearablePlugin implements DigitalPlugin {
       'heart_rate': this.heartRate.toString(),
       'heart_rate_status': status,
       'wearing_state': wearing ? 'on_wrist' : 'off_wrist',
-      'heart_rate_age_sec': this.getHeartRateAgeSec().toString()
+      'heart_rate_age_sec': this.getHeartRateAgeSec().toString(),
+      'device_connected': this.wearableDeviceConnected ? 'true' : 'false',
+      'device_name': this.deviceName,
+      'sensor_registered': this.heartRateSensorRegistered ? 'true' : 'false',
+      'init_error': this.initError
     };
 
     return {
@@ -73,7 +85,6 @@ export class WearablePlugin implements DigitalPlugin {
   }
 
   private isWearing(): boolean {
-    // If we got a heart rate reading in the last 2 minutes, device is on wrist
     if (this.heartRate <= 0) {
       return false;
     }
@@ -94,12 +105,19 @@ export class WearablePlugin implements DigitalPlugin {
         if (data && data.heartRate > 0) {
           this.heartRate = data.heartRate;
           this.lastHeartRateTime = Date.now();
+          if (!this.wearableDeviceConnected) {
+            this.wearableDeviceConnected = true;
+            this.deviceName = 'watch_or_band';
+            this.log.info(TAG, `Heart rate received: ${this.heartRate} bpm, wearable detected`);
+          }
         }
-      }, { interval: 10000000000 }); // 10 second interval in nanoseconds
+      }, { interval: 10000000000 });
       this.heartRateSensorRegistered = true;
-      this.log.info(TAG, 'Heart rate sensor subscribed');
+      this.log.info(TAG, 'Heart rate sensor subscribed successfully');
     } catch (err) {
-      this.log.warn(TAG, `Heart rate sensor unavailable: ${(err as Error).message}`);
+      let errMsg = (err as Error).message;
+      this.log.warn(TAG, `Heart rate sensor subscription failed: ${errMsg}`);
+      this.initError = errMsg;
       this.heartRateSensorRegistered = false;
     }
   }
