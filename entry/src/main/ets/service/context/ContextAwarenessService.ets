@@ -7,7 +7,6 @@ import { sensor } from '@kit.SensorServiceKit';
 import { batteryInfo } from '@kit.BasicServicesKit';
 import { wifiManager } from '@kit.ConnectivityKit';
 import { geoLocationManager } from '@kit.LocationKit';
-import { radio } from '@kit.TelephonyKit';
 import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { LogService } from '../../common/LogService';
@@ -754,25 +753,13 @@ export class ContextAwarenessService {
   /**
    * 获取当前CellID (用于低功耗位置变化检测)
    * 格式: mcc_mnc_lac_cellid
+   * Note: 当前 HarmonyOS radio API 不直接提供 CellID
+   * TODO: 研究 NetworkState 或其他 API
    */
   private async getCurrentCellId(): Promise<string> {
-    try {
-      // 使用 radio API 获取信号信息
-      let signalInfoList = await radio.getSignalInformationList();
-      if (signalInfoList && signalInfoList.length > 0) {
-        // 取第一个活跃的基站信息
-        let info = signalInfoList[0];
-        if (info) {
-          let mcc = info.mcc ?? '0';
-          let mnc = info.mnc ?? '0';
-          let lac = info.lac ?? info.tac ?? '0';
-          let cellId = info.cellId ?? info.nci ?? '0';
-          return `${mcc}_${mnc}_${lac}_${cellId}`;
-        }
-      }
-    } catch (err) {
-      this.log.debug(TAG, `CellID fetch error: ${(err as Error).message}`);
-    }
+    // HarmonyOS SignalInformation 只包含 signalType 和 signalLevel
+    // 实际的 CellID 需要其他 API (如 NetworkState)
+    // 暂时返回空，保持 CellID 功能的占位
     return '';
   }
 
