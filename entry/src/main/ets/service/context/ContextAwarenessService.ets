@@ -113,8 +113,8 @@ export class ContextAwarenessService {
   private isPickupState: boolean = false;
   private lastStableGravityAngle: number = 0;
   private pickupConfirmed: boolean = false;
-  private static readonly PICKUP_PULSE_THRESHOLD = 12;
-  private static readonly PICKUP_ANGLE_CHANGE_THRESHOLD = 30;
+  private static readonly PICKUP_PULSE_THRESHOLD = 10.5;
+  private static readonly PICKUP_ANGLE_CHANGE_THRESHOLD = 20;
   private static readonly PICKUP_MAX_DURATION_MS = 3000;
   private static readonly MOTION_MIN_DURATION_MS = 10000;
   private motionStartTime: number = 0;
@@ -567,13 +567,14 @@ export class ContextAwarenessService {
     if (isPickup || this.pickupConfirmed) {
       this.tray.put('motionState', 'pickup', 0.85, 'accelerometer');
       this.tray.put('isPickup', 'true', 0.9, 'accelerometer');
-      
+
       if (this.lastMotionState !== 'pickup') {
         this.log.info(TAG, `Motion state: ${this.lastMotionState} -> pickup (brief glance)`);
         this.engine.pushEvent('motion_pickup');
         this.lastMotionState = 'pickup';
       }
       this.pickupConfirmed = false;
+      this.adjustLocationInterval('pickup');
       return;
     }
     
@@ -746,19 +747,19 @@ export class ContextAwarenessService {
 
   /**
    * 根据运动状态调整所有传感器采样间隔 (多级采集)
-   * pickup 状态不触发 GPS 频率调整
+   * pickup 状态将 GPS 降到静止频率以节省功耗
    */
   private adjustLocationInterval(state: MotionState): void {
-    if (state === 'pickup') {
-      this.log.debug(TAG, 'Pickup state: skip GPS interval adjustment');
-      return;
-    }
-    
     let newGpsInterval: number;
     let newWifiInterval: number;
     let newAccelInterval: number;
-    
-    switch (state) {
+
+    if (state === 'pickup') {
+      // Pickup: slow GPS (user just picked up phone), keep WiFi, responsive accel
+      newGpsInterval = ContextAwarenessService.GPS_STATIONARY;
+      newWifiInterval = this.wifiIntervalMs;
+      newAccelInterval = ContextAwarenessService.ACCEL_WALKING;
+    } else switch (state) {
       case 'stationary':
         newGpsInterval = ContextAwarenessService.GPS_STATIONARY;
         newWifiInterval = ContextAwarenessService.WIFI_STATIONARY;
@@ -1006,14 +1007,10 @@ export class ContextAwarenessService {
 
   /**
    * 获取当前CellID (用于低功耗位置变化检测)
-   * 格式: mcc_mnc_lac_cellid
-   * Note: 当前 HarmonyOS radio API 不直接提供 CellID
-   * TODO: 研究 NetworkState 或其他 API
+   * Note: GET_TELEPHONY_STATE is a system_basic permission unavailable to consumer apps.
+   * Returns empty string — checkCellIdChanged() uses WiFi SSID as fallback.
    */
   private async getCurrentCellId(): Promise<string> {
-    // HarmonyOS SignalInformation 只包含 signalType 和 signalLevel
-    // 实际的 CellID 需要其他 API (如 NetworkState)
-    // 暂时返回空，保持 CellID 功能的占位
     return '';
   }
 
@@ -1024,19 +1021,22 @@ export class ContextAwarenessService {
   private async checkCellIdChanged(): Promise<boolean> {
     let currentCellId = await this.getCurrentCellId();
     if (currentCellId.length === 0) {
-      // 无法获取CellID，保守起见请求GPS
-      return true;
+      // CellID unavailable — use WiFi SSID as fallback stationarity signal
+      if (this.lastWifiSsid.length > 0 && this.lastLocation) {
+        return false; // WiFi connected + have cached location → likely stationary
+      }
+      return true; // No WiFi → conservative, request GPS
     }
-    
+
     this.tray.put('cellId', currentCellId, 0.9, 'cellular');
-    
+
     if (currentCellId !== this.lastCellId) {
       this.log.info(TAG, `CellID changed: ${this.lastCellId} -> ${currentCellId}`);
       this.lastCellId = currentCellId;
       this.lastCellIdTime = Date.now();
       return true;
     }
-    
+
     // CellID没变，可能还在同一位置
     return false;
   }

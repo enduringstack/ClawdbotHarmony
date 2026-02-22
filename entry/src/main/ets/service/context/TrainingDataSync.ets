@@ -7,6 +7,7 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { http } from '@kit.NetworkKit';
+import { util } from '@kit.ArkTS';
 import { LogService } from '../../common/LogService';
 import { ContextSnapshot } from './ContextEngine';
 import trainingSyncNative from 'libtraining_sync.so';
@@ -162,7 +163,13 @@ export class TrainingDataSync {
       
       let savedData = await this.prefs.get('data', '') as string;
       if (savedData.length > 0) {
-        trainingSyncNative.deserialize(savedData);
+        try {
+          trainingSyncNative.deserialize(savedData);
+        } catch (deserializeErr) {
+          this.log.error(TAG, `Deserialize failed, clearing corrupted data: ${(deserializeErr as Error).message}`);
+          await this.prefs.delete('data');
+          await this.prefs.flush();
+        }
       }
       
       this.log.info(TAG, `Init: endpoint=${endpoint}, native=loaded, enabled=${this.syncEnabled}`);
@@ -290,15 +297,14 @@ export class TrainingDataSync {
       return false;
     }
     
-    let pendingJson = trainingSyncNative.exportPending();
-    let data: SyncDataResponse = JSON.parse(pendingJson) as SyncDataResponse;
-    
-    if (!data.records || data.records.length === 0) {
+    let stats:SyncStatsInfo = trainingSyncNative.getStats();
+    if (stats.pending === 0) {
       this.log.debug(TAG, 'No records to sync');
       return true;
     }
     
-    this.log.info(TAG, `Syncing ${data.records.length} records to ${this.syncEndpoint}`);
+    let pendingJson:string = trainingSyncNative.exportPending();
+    this.log.info(TAG, `Syncing ${stats.pending} records to ${this.syncEndpoint}`);
     
     try {
       let request: http.HttpRequest = http.createHttp();
@@ -313,28 +319,25 @@ export class TrainingDataSync {
       let response = await request.request(this.syncEndpoint + '/training/upload', options);
       
       if (response.responseCode === 200 || response.responseCode === 201) {
-        let ids: string[] = [];
-        for (let i = 0; i < data.records.length; i++) {
-          ids.push(data.records[i].id);
-        }
-        trainingSyncNative.markSynced(ids);
+        trainingSyncNative.markSynced([]);
         trainingSyncNative.cleanupSynced();
         this.persist();
         
-        this.log.info(TAG, `Sync successful: ${data.records.length} records`);
+        this.log.info(TAG, `Sync successful: ${stats.pending} records`);
         return true;
       } else {
         this.log.error(TAG, `Sync failed: HTTP ${response.responseCode}`);
         return false;
       }
     } catch (err) {
-      this.log.error(TAG, `Sync error: ${(err as Error).message}`);
+      let errorMsg = (err instanceof Error) ? err.message : String(err);
+      this.log.error(TAG, `Sync error: ${errorMsg}`);
       return false;
     }
   }
   
   getStats(): StatsResult {
-    let stats = trainingSyncNative.getStats();
+    let stats: SyncStatsInfo = trainingSyncNative.getStats();
     let result: StatsResult = {
       pending: stats.pending,
       synced: stats.synced,
@@ -358,7 +361,7 @@ export class TrainingDataSync {
   
   private persist(): void {
     if (this.prefs) {
-      let data = trainingSyncNative.serialize();
+      let data: string = trainingSyncNative.serialize();
       this.prefs.put('data', data);
       this.prefs.flush();
     }

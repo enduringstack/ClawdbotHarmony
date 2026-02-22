@@ -1,23 +1,22 @@
 /**
- * WearablePlugin — Collect wearable device sensor data
+ * WearablePlugin — Collect wearable device health data
  *
- * Uses HarmonyOS sensor API to read heart rate data.
- * On Huawei devices with Huawei Health app, heart rate data from
- * connected wearables (watch/band) is synced and available via sensor API.
+ * Uses HarmonyOS Health Kit to read heart rate and step count data
+ * synced from connected wearables (Huawei Watch/Band) via "运动健康" app.
  *
- * Reads heart rate sensor data to detect physiological state:
+ * Falls back to sensor API if Health Kit is unavailable.
+ *
+ * Reads heart rate data to detect physiological state:
  * - Resting (< 80 bpm)
  * - Active (80-120 bpm)
  * - Exercise (> 120 bpm)
- * - Stressed (elevated but not exercising)
  *
- * Combined with StepCounterPlugin data, provides rich activity context.
- *
- * Provides: heart_rate, heart_rate_status, wearing_state, device_connected
+ * Provides: heart_rate, heart_rate_status, wearing_state, device_connected, step_count
  *
  * Permission: ohos.permission.READ_HEALTH_DATA
- * API: @kit.SensorServiceKit — sensor.SensorId.HEART_RATE
+ * API: @kit.HealthServiceKit — healthStore
  */
+import { healthStore } from '@kit.HealthServiceKit';
 import { sensor } from '@kit.SensorServiceKit';
 import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { LogService } from '../../../common/LogService';
@@ -30,26 +29,40 @@ export class WearablePlugin implements DigitalPlugin {
   private log: LogService = LogService.getInstance();
   private heartRate: number = 0;
   private lastHeartRateTime: number = 0;
-  private heartRateSensorRegistered: boolean = false;
+  private stepCount: number = 0;
+  private lastStepCountTime: number = 0;
   private wearableDeviceConnected: boolean = false;
   private deviceName: string = '';
   private initError: string = '';
   private context: common.UIAbilityContext | undefined;
+  private useHealthKit: boolean = false;
+  private healthKitTimer: number = -1;
+  private static readonly HEALTH_KIT_POLL_MS = 30 * 1000; // 30s polling
 
   async init(context: common.UIAbilityContext): Promise<void> {
     this.context = context;
     this.log.info(TAG, 'Init: requesting health data permission...');
-    
-    // 先请求权限
+
     let granted = await this.requestHealthPermission();
-    if (granted) {
-      this.subscribeHeartRate();
-    } else {
+    if (!granted) {
       this.initError = 'Health data permission denied';
       this.log.warn(TAG, 'Health data permission not granted');
+      return;
     }
-    
-    this.log.info(TAG, `Init complete: sensorRegistered=${this.heartRateSensorRegistered}`);
+
+    // Try Health Kit first (reads wearable data from 运动健康 app)
+    let healthKitAvailable = await this.tryInitHealthKit();
+    if (healthKitAvailable) {
+      this.useHealthKit = true;
+      this.startHealthKitPolling();
+      this.log.info(TAG, 'Using Health Kit for wearable data');
+    } else {
+      // Fallback to sensor API (phone's own heart rate sensor)
+      this.log.info(TAG, 'Health Kit unavailable, falling back to sensor API');
+      this.subscribeHeartRateSensor();
+    }
+
+    this.log.info(TAG, `Init complete: healthKit=${this.useHealthKit}`);
   }
 
   getSnapshot(): DigitalSnapshot {
@@ -63,7 +76,8 @@ export class WearablePlugin implements DigitalPlugin {
       'heart_rate_age_sec': this.getHeartRateAgeSec().toString(),
       'device_connected': this.wearableDeviceConnected ? 'true' : 'false',
       'device_name': this.deviceName,
-      'sensor_registered': this.heartRateSensorRegistered ? 'true' : 'false',
+      'step_count': this.stepCount.toString(),
+      'data_source': this.useHealthKit ? 'health_kit' : 'sensor',
       'init_error': this.initError
     };
 
@@ -75,7 +89,11 @@ export class WearablePlugin implements DigitalPlugin {
   }
 
   destroy(): void {
-    this.unsubscribeAll();
+    if (this.healthKitTimer !== -1) {
+      clearInterval(this.healthKitTimer);
+      this.healthKitTimer = -1;
+    }
+    this.unsubscribeSensor();
     this.log.info(TAG, 'Destroyed');
   }
 
@@ -115,7 +133,7 @@ export class WearablePlugin implements DigitalPlugin {
       this.log.warn(TAG, 'No context available for permission request');
       return false;
     }
-    
+
     try {
       let atManager = abilityAccessCtrl.createAtManager();
       let result = await atManager.requestPermissionsFromUser(this.context, ['ohos.permission.READ_HEALTH_DATA']);
@@ -128,7 +146,88 @@ export class WearablePlugin implements DigitalPlugin {
     }
   }
 
-  private subscribeHeartRate(): void {
+  /**
+   * Try to initialize Health Kit. Returns true if available.
+   */
+  private async tryInitHealthKit(): Promise<boolean> {
+    try {
+      let endTime = Date.now();
+      let startTime = endTime - 60 * 1000;
+      await healthStore.readData({
+        samplePointDataType: healthStore.healthDataTypes.HEART_RATE,
+        startTime: startTime,
+        endTime: endTime
+      });
+      return true;
+    } catch (err) {
+      this.log.warn(TAG, `Health Kit init check failed: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Poll Health Kit for latest heart rate and step count data.
+   */
+  private startHealthKitPolling(): void {
+    this.readHealthKitData();
+
+    this.healthKitTimer = setInterval(() => {
+      this.readHealthKitData();
+    }, WearablePlugin.HEALTH_KIT_POLL_MS);
+  }
+
+  private async readHealthKitData(): Promise<void> {
+    let endTime = Date.now();
+    let startTime = endTime - 5 * 60 * 1000; // last 5 minutes
+
+    // Read heart rate
+    try {
+      let samples = await healthStore.readData({
+        samplePointDataType: healthStore.healthDataTypes.HEART_RATE,
+        startTime: startTime,
+        endTime: endTime
+      });
+      if (samples && samples.length > 0) {
+        let latest = samples[samples.length - 1];
+        let hr = latest.fields?.['heartRate'] as number;
+        if (hr && hr > 0) {
+          this.heartRate = hr;
+          this.lastHeartRateTime = latest.endTime ?? Date.now();
+          if (!this.wearableDeviceConnected) {
+            this.wearableDeviceConnected = true;
+            this.deviceName = 'health_kit_wearable';
+            this.log.info(TAG, `Health Kit heart rate: ${this.heartRate} bpm, wearable detected`);
+          }
+        }
+      }
+    } catch (err) {
+      this.log.debug(TAG, `Health Kit HR read: ${(err as Error).message}`);
+    }
+
+    // Read step count (from DAILY_ACTIVITIES)
+    try {
+      let samples = await healthStore.readData({
+        samplePointDataType: healthStore.healthDataTypes.DAILY_ACTIVITIES,
+        startTime: startTime,
+        endTime: endTime
+      });
+      if (samples && samples.length > 0) {
+        let latest = samples[samples.length - 1];
+        let steps = latest.fields?.['steps'] as number;
+        if (steps && steps > 0) {
+          this.stepCount = steps;
+          this.lastStepCountTime = latest.endTime ?? Date.now();
+        }
+      }
+    } catch (err) {
+      this.log.debug(TAG, `Health Kit steps read: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Fallback: subscribe to phone's built-in heart rate sensor.
+   */
+  private subscribeHeartRateSensor(): void {
     try {
       sensor.on(sensor.SensorId.HEART_RATE, (data: sensor.HeartRateResponse) => {
         if (data && data.heartRate > 0) {
@@ -136,29 +235,24 @@ export class WearablePlugin implements DigitalPlugin {
           this.lastHeartRateTime = Date.now();
           if (!this.wearableDeviceConnected) {
             this.wearableDeviceConnected = true;
-            this.deviceName = 'watch_or_band';
-            this.log.info(TAG, `Heart rate received: ${this.heartRate} bpm, wearable detected`);
+            this.deviceName = 'phone_sensor';
+            this.log.info(TAG, `Sensor heart rate: ${this.heartRate} bpm`);
           }
         }
       }, { interval: 10000000000 });
-      this.heartRateSensorRegistered = true;
-      this.log.info(TAG, 'Heart rate sensor subscribed successfully');
+      this.log.info(TAG, 'Heart rate sensor subscribed (fallback)');
     } catch (err) {
       let errMsg = (err as Error).message;
       this.log.warn(TAG, `Heart rate sensor subscription failed: ${errMsg}`);
       this.initError = errMsg;
-      this.heartRateSensorRegistered = false;
     }
   }
 
-  private unsubscribeAll(): void {
-    if (this.heartRateSensorRegistered) {
-      try {
-        sensor.off(sensor.SensorId.HEART_RATE);
-        this.heartRateSensorRegistered = false;
-      } catch {
-        // ignore
-      }
+  private unsubscribeSensor(): void {
+    try {
+      sensor.off(sensor.SensorId.HEART_RATE);
+    } catch {
+      // ignore
     }
   }
 }

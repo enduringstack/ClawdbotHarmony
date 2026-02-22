@@ -286,97 +286,211 @@ std::string TrainingDataSync::serialize() const {
 
 bool TrainingDataSync::deserialize(const std::string& json) {
     std::lock_guard<std::mutex> lock(mutex_);
-    
+
     records_.clear();
-    
-    size_t pos = 0;
-    
-    auto findKey = [&](const std::string& key) -> size_t {
-        std::string search = "\"" + key + "\":";
-        size_t idx = json.find(search, pos);
-        return idx;
-    };
-    
-    auto extractString = [&](size_t start) -> std::string {
-        size_t quoteStart = json.find('"', start);
+
+    // Helper lambdas that take the string to search in as parameter
+    auto extractString = [](const std::string& s, size_t start) -> std::string {
+        size_t quoteStart = s.find('"', start);
         if (quoteStart == std::string::npos) return "";
-        size_t quoteEnd = json.find('"', quoteStart + 1);
+        size_t quoteEnd = s.find('"', quoteStart + 1);
         if (quoteEnd == std::string::npos) return "";
-        return json.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+        return s.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
     };
-    
-    auto extractNumber = [&](size_t start) -> double {
-        size_t colon = json.find(':', start);
+
+    auto extractNumber = [](const std::string& s, size_t start) -> double {
+        size_t colon = s.find(':', start);
         if (colon == std::string::npos) return 0;
-        size_t end = json.find_first_of(",}]", colon + 1);
+        size_t end = s.find_first_of(",}]", colon + 1);
         if (end == std::string::npos) return 0;
-        std::string numStr = json.substr(colon + 1, end - colon - 1);
-        return std::stod(numStr);
+        std::string numStr = s.substr(colon + 1, end - colon - 1);
+        try {
+            return std::stod(numStr);
+        } catch (...) {
+            return 0;
+        }
     };
-    
-    auto extractBool = [&](size_t start) -> bool {
-        size_t colon = json.find(':', start);
+
+    auto extractBool = [](const std::string& s, size_t start) -> bool {
+        size_t colon = s.find(':', start);
         if (colon == std::string::npos) return false;
-        return json.find("true", colon) < json.find_first_of(",}]", colon);
+        return s.find("true", colon) < s.find_first_of(",}]", colon);
     };
-    
-    size_t deviceIdPos = findKey("deviceId");
+
+    // Find matching brace to handle nested objects
+    auto findMatchingBrace = [](const std::string& s, size_t openPos) -> size_t {
+        int depth = 1;
+        for (size_t i = openPos + 1; i < s.size(); i++) {
+            if (s[i] == '{') depth++;
+            else if (s[i] == '}') {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+        return std::string::npos;
+    };
+
+    // Parse an object like {"key1":"val1","key2":"val2"} into a map
+    auto parseStringMap = [&](const std::string& s, size_t objStart) -> std::map<std::string, std::string> {
+        std::map<std::string, std::string> result;
+        size_t braceStart = s.find('{', objStart);
+        if (braceStart == std::string::npos) return result;
+        size_t braceEnd = findMatchingBrace(s, braceStart);
+        if (braceEnd == std::string::npos) return result;
+        std::string obj = s.substr(braceStart, braceEnd - braceStart + 1);
+
+        size_t pos = 1;
+        while (pos < obj.size()) {
+            size_t keyStart = obj.find('"', pos);
+            if (keyStart == std::string::npos) break;
+            size_t keyEnd = obj.find('"', keyStart + 1);
+            if (keyEnd == std::string::npos) break;
+            std::string key = obj.substr(keyStart + 1, keyEnd - keyStart - 1);
+
+            size_t valStart = obj.find('"', keyEnd + 2);
+            if (valStart == std::string::npos) break;
+            size_t valEnd = obj.find('"', valStart + 1);
+            if (valEnd == std::string::npos) break;
+            result[key] = obj.substr(valStart + 1, valEnd - valStart - 1);
+
+            pos = valEnd + 1;
+        }
+        return result;
+    };
+
+    auto parseNumericMap = [&](const std::string& s, size_t objStart) -> std::map<std::string, double> {
+        std::map<std::string, double> result;
+        size_t braceStart = s.find('{', objStart);
+        if (braceStart == std::string::npos) return result;
+        size_t braceEnd = findMatchingBrace(s, braceStart);
+        if (braceEnd == std::string::npos) return result;
+        std::string obj = s.substr(braceStart, braceEnd - braceStart + 1);
+
+        size_t pos = 1;
+        while (pos < obj.size()) {
+            size_t keyStart = obj.find('"', pos);
+            if (keyStart == std::string::npos) break;
+            size_t keyEnd = obj.find('"', keyStart + 1);
+            if (keyEnd == std::string::npos) break;
+            std::string key = obj.substr(keyStart + 1, keyEnd - keyStart - 1);
+
+            size_t colon = obj.find(':', keyEnd);
+            if (colon == std::string::npos) break;
+            size_t end = obj.find_first_of(",}", colon + 1);
+            if (end == std::string::npos) break;
+            std::string numStr = obj.substr(colon + 1, end - colon - 1);
+            try {
+                result[key] = std::stod(numStr);
+            } catch (...) {
+                result[key] = 0;
+            }
+            pos = end + 1;
+        }
+        return result;
+    };
+
+    auto parseBoolMap = [&](const std::string& s, size_t objStart) -> std::map<std::string, bool> {
+        std::map<std::string, bool> result;
+        size_t braceStart = s.find('{', objStart);
+        if (braceStart == std::string::npos) return result;
+        size_t braceEnd = findMatchingBrace(s, braceStart);
+        if (braceEnd == std::string::npos) return result;
+        std::string obj = s.substr(braceStart, braceEnd - braceStart + 1);
+
+        size_t pos = 1;
+        while (pos < obj.size()) {
+            size_t keyStart = obj.find('"', pos);
+            if (keyStart == std::string::npos) break;
+            size_t keyEnd = obj.find('"', keyStart + 1);
+            if (keyEnd == std::string::npos) break;
+            std::string key = obj.substr(keyStart + 1, keyEnd - keyStart - 1);
+
+            size_t colon = obj.find(':', keyEnd);
+            if (colon == std::string::npos) break;
+            size_t end = obj.find_first_of(",}", colon + 1);
+            if (end == std::string::npos) break;
+            std::string val = obj.substr(colon + 1, end - colon - 1);
+            result[key] = (val == "true");
+            pos = end + 1;
+        }
+        return result;
+    };
+
+    // Parse top-level fields
+    size_t deviceIdPos = json.find("\"deviceId\":");
     if (deviceIdPos != std::string::npos) {
-        deviceId_ = extractString(deviceIdPos);
+        deviceId_ = extractString(json, deviceIdPos);
     }
-    
-    size_t lastSyncPos = findKey("lastSyncTime");
+
+    size_t lastSyncPos = json.find("\"lastSyncTime\":");
     if (lastSyncPos != std::string::npos) {
-        lastSyncTime_ = static_cast<int64_t>(extractNumber(lastSyncPos));
+        lastSyncTime_ = static_cast<int64_t>(extractNumber(json, lastSyncPos));
     }
-    
-    size_t maxRecordsPos = findKey("maxRecords");
+
+    size_t maxRecordsPos = json.find("\"maxRecords\":");
     if (maxRecordsPos != std::string::npos) {
-        maxRecords_ = static_cast<int>(extractNumber(maxRecordsPos));
+        maxRecords_ = static_cast<int>(extractNumber(json, maxRecordsPos));
     }
-    
+
+    // Parse records array
     size_t recordsStart = json.find("\"records\":[");
     if (recordsStart == std::string::npos) return true;
-    
-    size_t recordsEnd = json.find("]", recordsStart);
-    if (recordsEnd == std::string::npos) return true;
-    
-    std::string recordsJson = json.substr(recordsStart, recordsEnd - recordsStart + 1);
-    
-    size_t recordStart = 0;
-    while ((recordStart = recordsJson.find("{", recordStart)) != std::string::npos) {
-        size_t recordEnd = recordsJson.find("}", recordStart);
+
+    size_t arrayStart = json.find('[', recordsStart);
+    if (arrayStart == std::string::npos) return true;
+
+    size_t searchPos = arrayStart + 1;
+    while (searchPos < json.size()) {
+        size_t recordStart = json.find('{', searchPos);
+        if (recordStart == std::string::npos) break;
+
+        size_t recordEnd = findMatchingBrace(json, recordStart);
         if (recordEnd == std::string::npos) break;
-        
-        std::string recordJson = recordsJson.substr(recordStart, recordEnd - recordStart + 1);
-        
+
+        std::string rec = json.substr(recordStart, recordEnd - recordStart + 1);
+
         TrainingRecord record;
-        
-        size_t idPos = recordJson.find("\"id\":");
+
+        size_t idPos = rec.find("\"id\":");
         if (idPos != std::string::npos) {
-            record.id = extractString(idPos);
+            record.id = extractString(rec, idPos);
         }
-        
-        size_t typePos = recordJson.find("\"type\":");
+
+        size_t typePos = rec.find("\"type\":");
         if (typePos != std::string::npos) {
-            int typeVal = static_cast<int>(extractNumber(typePos));
+            int typeVal = static_cast<int>(extractNumber(rec, typePos));
             record.type = static_cast<TrainingDataType>(typeVal);
         }
-        
-        size_t tsPos = recordJson.find("\"timestamp\":");
+
+        size_t tsPos = rec.find("\"timestamp\":");
         if (tsPos != std::string::npos) {
-            record.timestamp = static_cast<int64_t>(extractNumber(tsPos));
+            record.timestamp = static_cast<int64_t>(extractNumber(rec, tsPos));
         }
-        
-        size_t syncedPos = recordJson.find("\"synced\":");
+
+        size_t syncedPos = rec.find("\"synced\":");
         if (syncedPos != std::string::npos) {
-            record.synced = extractBool(syncedPos);
+            record.synced = extractBool(rec, syncedPos);
         }
-        
+
+        size_t strDataPos = rec.find("\"stringData\":");
+        if (strDataPos != std::string::npos) {
+            record.stringData = parseStringMap(rec, strDataPos);
+        }
+
+        size_t numDataPos = rec.find("\"numericData\":");
+        if (numDataPos != std::string::npos) {
+            record.numericData = parseNumericMap(rec, numDataPos);
+        }
+
+        size_t boolDataPos = rec.find("\"boolData\":");
+        if (boolDataPos != std::string::npos) {
+            record.boolData = parseBoolMap(rec, boolDataPos);
+        }
+
         records_.push_back(record);
-        recordStart = recordEnd + 1;
+        searchPos = recordEnd + 1;
     }
-    
+
     return true;
 }
 

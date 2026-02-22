@@ -2343,6 +2343,7 @@ Respond ONLY with the JSON array.`;
         this.gwAssistantMsgId = msg.id;
       }
       let msg = this.messages[idx];
+      msg.timestamp = Date.now();
       msg.a2uiContent = msg.a2uiContent.length > 0 ? msg.a2uiContent + '\n' + content : content;
       if (this.a2uiInjectFn) {
         this.a2uiInjectFn(content);
