@@ -612,11 +612,13 @@ export class ContextAwarenessService {
       wifiManager.getLinkedInfo().then((info) => {
         let ssid = info.ssid ?? '';
         this.tray.put('wifiSSID', ssid, 0.9, 'wifi');
+        
+        // 始终更新 lastWifiSsid
         if (ssid !== this.lastWifiSsid) {
           this.log.info(TAG, `WiFi: ${this.lastWifiSsid} -> ${ssid}`);
           this.engine.pushEvent('wifi_change');
-          this.lastWifiSsid = ssid;
         }
+        this.lastWifiSsid = ssid;
       }).catch(() => {});
     } catch {
       // ignore
@@ -647,6 +649,9 @@ export class ContextAwarenessService {
    */
   private fetchSingleLocation(): void {
     try {
+      // 先获取WiFi信息
+      this.refreshWifiSync();
+      
       let request: geoLocationManager.CurrentLocationRequest = {
         priority: geoLocationManager.LocationRequestPriority.FIRST_FIX,
         scenario: geoLocationManager.LocationRequestScenario.UNSET,
@@ -662,6 +667,25 @@ export class ContextAwarenessService {
       });
     } catch (err) {
       this.log.warn(TAG, `Location request error: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * 同步获取WiFi信息
+   */
+  private refreshWifiSync(): void {
+    try {
+      wifiManager.getLinkedInfo().then((info) => {
+        let ssid = info.ssid ?? '';
+        this.tray.put('wifiSSID', ssid, 0.9, 'wifi');
+        if (ssid !== this.lastWifiSsid) {
+          this.log.info(TAG, `WiFi: ${this.lastWifiSsid} -> ${ssid}`);
+          this.engine.pushEvent('wifi_change');
+        }
+        this.lastWifiSsid = ssid;
+      }).catch(() => {});
+    } catch {
+      // ignore
     }
   }
 
@@ -691,9 +715,9 @@ export class ContextAwarenessService {
     this.geofenceMgr.updateLocation(locState);
     this.lastLocation = locState;
     
-    this.log.debug(TAG, `Location update: (${lat.toFixed(4)}, ${lng.toFixed(4)}) speed=${speed.toFixed(1)}m/s`);
+    this.log.debug(TAG, `Location update: (${lat.toFixed(4)}, ${lng.toFixed(4)}) speed=${speed.toFixed(1)}m/s wifi=${this.lastWifiSsid}`);
     
-    // 检查新地点（停留5分钟+WiFi）
+    // 检查新地点（停留5分钟+WiFi）- 异步执行
     this.checkForNewPlaceSmart(lat, lng);
   }
 
@@ -1171,12 +1195,15 @@ export class ContextAwarenessService {
    */
   private learnPlaceSignals(lat: number, lng: number): void {
     let allGeofences = this.geofenceMgr.getAllGeofences();
+    this.log.debug(TAG, `learnPlaceSignals: checking ${allGeofences.length} geofences, wifi=${this.lastWifiSsid}`);
     
     for (let i = 0; i < allGeofences.length; i++) {
       let gf = allGeofences[i];
       let dist = this.haversineDistance(lat, lng, gf.latitude, gf.longitude);
       
       if (dist < gf.radiusMeters) {
+        this.log.info(TAG, `Inside geofence: ${gf.name}, dist=${Math.round(dist)}m, wifi=${this.lastWifiSsid}`);
+        
         // 在此围栏内，学习信号
         let signals = gf.learnedSignals ?? {
           wifiSSIDs: [],
@@ -1196,6 +1223,8 @@ export class ContextAwarenessService {
             this.notifyGeofenceFeatureLearned(gf.name, 'WiFi', this.lastWifiSsid);
             updated = true;
           }
+        } else {
+          this.log.debug(TAG, `No WiFi to learn for ${gf.name}`);
         }
         
         // 更新访问统计
