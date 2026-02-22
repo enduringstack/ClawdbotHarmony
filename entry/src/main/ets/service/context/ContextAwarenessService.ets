@@ -701,12 +701,13 @@ export class ContextAwarenessService {
       
       // 记录状态转换到训练数据
       let snapshot = this.augmentSnapshot(this.tray.getSnapshot());
-      this.trainingSync.recordStateTransition(
-        this.activityState,
-        newActivityState,
-        duration,
-        snapshot
-      );
+      this.trainingSync.recordStateTransition({
+        prevState: this.activityState,
+        newState: newActivityState,
+        duration: duration,
+        context: snapshot,
+        timestamp: now
+      });
       
       this.prevActivityState = this.activityState;
       this.activityState = newActivityState;

@@ -199,11 +199,11 @@ export class TrainingDataSync {
       motionState: snapshot.motionState,
       prevMotionState: snapshot.prevMotionState || '',
       prevActivityState: snapshot.prevActivityState || '',
-      activityDuration: snapshot.activityDuration || 0,
+      activityDuration: parseInt(snapshot.activityDuration || '0') || 0,
       geofence: snapshot.geofence || '',
       wifiSsid: snapshot.wifiSsid || '',
-      batteryLevel: snapshot.batteryLevel,
-      isCharging: snapshot.isCharging
+      batteryLevel: parseInt(snapshot.batteryLevel || '0') || 0,
+      isCharging: snapshot.isCharging === 'true'
     };
     
     this.native.recordRuleMatch(record);
@@ -219,10 +219,10 @@ export class TrainingDataSync {
       originalValue: data.originalValue || '',
       adjustedValue: data.adjustedValue || '',
       timeOfDay: data.context.timeOfDay,
-      hour: data.context.hour,
+      hour: parseInt(data.context.hour || '0') || 0,
       motionState: data.context.motionState,
       prevActivityState: data.context.prevActivityState || '',
-      activityDuration: data.context.activityDuration || 0,
+      activityDuration: parseInt(data.context.activityDuration || '0') || 0,
       geofence: data.context.geofence || ''
     };
     
@@ -238,7 +238,7 @@ export class TrainingDataSync {
       newState: data.newState,
       duration: data.duration,
       timeOfDay: data.context.timeOfDay,
-      hour: data.context.hour,
+      hour: parseInt(data.context.hour || '0') || 0,
       geofence: data.context.geofence || '',
       wifiSsid: data.context.wifiSsid || ''
     };

@@ -2,27 +2,27 @@ Building...
 > hvigor [32mUP-TO-DATE :entry:default@PreBuild...  [39m
 > hvigor [32mFinished :entry:default@CreateModuleInfo... after 3 ms [39m
 > hvigor [32mUP-TO-DATE :entry:default@GenerateMetadata...  [39m
-> hvigor [32mFinished :entry:default@ConfigureCmake... after 74 ms [39m
+> hvigor [32mFinished :entry:default@ConfigureCmake... after 127 ms [39m
 > hvigor [32mUP-TO-DATE :entry:default@MergeProfile...  [39m
 > hvigor [32mUP-TO-DATE :entry:default@CreateBuildProfile...  [39m
-> hvigor [32mFinished :entry:default@PreCheckSyscap... after 2 ms [39m
+> hvigor [32mFinished :entry:default@PreCheckSyscap... after 1 ms [39m
 > hvigor [32mFinished :entry:default@ProcessIntegratedHsp... after 3 ms [39m
-> hvigor [32mFinished :entry:default@BuildNativeWithCmake... after 67 ms [39m
+> hvigor [32mFinished :entry:default@BuildNativeWithCmake... after 77 ms [39m
 > hvigor [32mUP-TO-DATE :entry:default@MakePackInfo...  [39m
 > hvigor [32mFinished :entry:default@SyscapTransform... after 30 ms [39m
 > hvigor [32mUP-TO-DATE :entry:default@GeneratePkgContextInfo...  [39m
 > hvigor [32mUP-TO-DATE :entry:default@ProcessProfile...  [39m
 > hvigor [32mUP-TO-DATE :entry:default@ProcessRouterMap...  [39m
 > hvigor [32mUP-TO-DATE :entry:default@ProcessShareConfig...  [39m
-> hvigor [32mFinished :entry:default@ProcessStartupConfig... after 8 ms [39m
+> hvigor [32mFinished :entry:default@ProcessStartupConfig... after 9 ms [39m
 > hvigor [32mUP-TO-DATE :entry:default@ProcessResource...  [39m
 > hvigor [32mUP-TO-DATE :entry:default@GenerateLoaderJson...  [39m
 > hvigor [32mUP-TO-DATE :entry:default@CompileResource...  [39m
-> hvigor [32mFinished :entry:default@BuildJS... after 24 ms [39m
-> hvigor [32mFinished :entry:default@BuildNativeWithNinja... after 3 s 743 ms [39m
-> hvigor [32mFinished :entry:default@ProcessLibs... after 304 ms [39m
-> hvigor [32mFinished :entry:default@DoNativeStrip... after 288 ms [39m
-> hvigor [32mFinished :entry:default@CacheNativeLibs... after 28 ms [39m
+> hvigor [32mFinished :entry:default@BuildJS... after 9 ms [39m
+> hvigor [32mFinished :entry:default@BuildNativeWithNinja... after 238 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessLibs...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@DoNativeStrip...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@CacheNativeLibs...  [39m
 > hvigor [91mERROR: Failed :entry:default@CompileArkTS... [39m
 > hvigor [33mWARN: 
 [33m1 WARN: [33m[33mArkTS:WARN: For details about ArkTS syntax errors, see FAQs[39m[39m
@@ -479,16 +479,16 @@ Building...
 [33m152 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/AIService.ets:2222:20
  Function may throw exceptions. Special handling is required.
 [39m[39m
-[33m153 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:161:7
+[33m153 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:162:7
  Function may throw exceptions. Special handling is required.
 [39m[39m
-[33m154 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:162:7
+[33m154 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:163:7
  Function may throw exceptions. Special handling is required.
 [39m[39m
-[33m155 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:352:7
+[33m155 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:353:7
  Function may throw exceptions. Special handling is required.
 [39m[39m
-[33m156 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:353:7
+[33m156 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:354:7
  Function may throw exceptions. Special handling is required.
 [39m[39m
 [33m157 WARN: [33m[33mArkTS:WARN File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/gateway/NodeRuntime.ets:472:13
@@ -1501,144 +1501,75 @@ Building...
 [39m[39m[39m
 > hvigor [91mERROR: Could not resolve "../native/training_sync" from "entry/src/main/ets/service/context/TrainingDataSync.ets"
 [31m1 ERROR: [31m10605040 ArkTS Compiler Error
-Error Message: Object literals cannot be used as type declarations (arkts-no-obj-literals-as-types) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:95:16
+Error Message: Object literals cannot be used as type declarations (arkts-no-obj-literals-as-types) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:96:16
 [39m
 [39m
-[31m2 ERROR: [31m10605008 ArkTS Compiler Error
-Error Message: Use explicit types instead of "any", "unknown" (arkts-no-any-unknown) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:140:11
+[31m2 ERROR: [31m10605038 ArkTS Compiler Error
+Error Message: Object literal must correspond to some explicitly declared class or interface (arkts-no-untyped-obj-literals) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:142:24
 [39m
 [39m
-[31m3 ERROR: [31m10605038 ArkTS Compiler Error
-Error Message: Object literal must correspond to some explicitly declared class or interface (arkts-no-untyped-obj-literals) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:141:24
+[31m3 ERROR: [31m10605008 ArkTS Compiler Error
+Error Message: Use explicit types instead of "any", "unknown" (arkts-no-any-unknown) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:280:9
 [39m
 [39m
-[31m4 ERROR: [31m10605008 ArkTS Compiler Error
-Error Message: Use explicit types instead of "any", "unknown" (arkts-no-any-unknown) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:279:9
+[31m4 ERROR: [31m10605040 ArkTS Compiler Error
+Error Message: Object literals cannot be used as type declarations (arkts-no-obj-literals-as-types) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:322:15
 [39m
 [39m
-[31m5 ERROR: [31m10605040 ArkTS Compiler Error
-Error Message: Object literals cannot be used as type declarations (arkts-no-obj-literals-as-types) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:321:15
+[31m5 ERROR: [31m10605038 ArkTS Compiler Error
+Error Message: Object literal must correspond to some explicitly declared class or interface (arkts-no-untyped-obj-literals) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:324:14
 [39m
 [39m
 [31m6 ERROR: [31m10605038 ArkTS Compiler Error
-Error Message: Object literal must correspond to some explicitly declared class or interface (arkts-no-untyped-obj-literals) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:323:14
+Error Message: Object literal must correspond to some explicitly declared class or interface (arkts-no-untyped-obj-literals) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:327:12
 [39m
 [39m
-[31m7 ERROR: [31m10605038 ArkTS Compiler Error
-Error Message: Object literal must correspond to some explicitly declared class or interface (arkts-no-untyped-obj-literals) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:326:12
+[31m7 ERROR: [31m10605030 ArkTS Compiler Error
+Error Message: Structural typing is not supported (arkts-no-structural-typing) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:708:9
 [39m
 [39m
-[31m8 ERROR: [31m10605008 ArkTS Compiler Error
-Error Message: Use explicit types instead of "any", "unknown" (arkts-no-any-unknown) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:641:9
+[31m8 ERROR: [31m10505001 ArkTS Compiler Error
+Error Message: Cannot find module '../native/training_sync' or its corresponding type declarations. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:139:34
 [39m
 [39m
-[31m9 ERROR: [31m10605030 ArkTS Compiler Error
-Error Message: Structural typing is not supported (arkts-no-structural-typing) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:707:9
+[31m9 ERROR: [31m10505001 ArkTS Compiler Error
+Error Message: Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:198:7
 [39m
 [39m
-[31m10 ERROR: [31m10605008 ArkTS Compiler Error
-Error Message: Use explicit types instead of "any", "unknown" (arkts-no-any-unknown) At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:721:14
+[31m10 ERROR: [31m10505001 ArkTS Compiler Error
+Error Message: Type 'string | number' is not assignable to type 'number'.
+  Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:202:7
 [39m
 [39m
 [31m11 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Module '"@kit.ArkData"' has no exported member 'common'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:7:10
+Error Message: Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:205:7
 [39m
 [39m
 [31m12 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Cannot find module '../native/training_sync' or its corresponding type declarations. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:138:34
+Error Message: Type 'string' is not assignable to type 'boolean'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:206:7
 [39m
 [39m
 [31m13 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:197:7
+Error Message: Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:222:7
 [39m
 [39m
 [31m14 ERROR: [31m10505001 ArkTS Compiler Error
 Error Message: Type 'string | number' is not assignable to type 'number'.
-  Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:201:7
+  Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:225:7
 [39m
 [39m
 [31m15 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:204:7
+Error Message: Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:241:7
 [39m
 [39m
 [31m16 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Type 'string' is not assignable to type 'boolean'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:205:7
+Error Message: Expected 1 arguments, but got 4. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:706:9
 [39m
 [39m
-[31m17 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:221:7
-[39m
-[39m
-[31m18 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Type 'string | number' is not assignable to type 'number'.
-  Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:224:7
-[39m
-[39m
-[31m19 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Type 'string' is not assignable to type 'number'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:240:7
-[39m
-[39m
-[31m20 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'activityState' does not exist on type 'ContextAwarenessService'. Did you mean 'prevActivityState'? At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:641:33
-[39m
-[39m
-[31m21 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'activityState' does not exist on type 'ContextAwarenessService'. Did you mean 'prevActivityState'? At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:656:23
-[39m
-[39m
-[31m22 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'activityState' does not exist on type 'ContextAwarenessService'. Did you mean 'prevActivityState'? At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:665:37
-[39m
-[39m
-[31m23 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'activityState' does not exist on type 'ContextAwarenessService'. Did you mean 'prevActivityState'? At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:695:35
-[39m
-[39m
-[31m24 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'activityState' does not exist on type 'ContextAwarenessService'. Did you mean 'prevActivityState'? At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:696:44
-[39m
-[39m
-[31m25 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'activityState' does not exist on type 'ContextAwarenessService'. Did you mean 'prevActivityState'? At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:704:14
-[39m
-[39m
-[31m26 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Expected 1 arguments, but got 4. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:705:9
-[39m
-[39m
-[31m27 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'activityState' does not exist on type 'ContextAwarenessService'. Did you mean 'prevActivityState'? At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:710:37
-[39m
-[39m
-[31m28 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'activityState' does not exist on type 'ContextAwarenessService'. Did you mean 'prevActivityState'? At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:711:12
-[39m
-[39m
-[31m29 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Type 'Record<string, string>' must have a '[Symbol.iterator]()' method that returns an iterator. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:721:22
-[39m
-[39m
-[31m30 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'detectSleepingState' does not exist on type 'ContextAwarenessService'. At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:1325:24
-[39m
-[39m
-[31m31 ERROR: [31m10505001 ArkTS Compiler Error
-Error Message: Property 'activityState' does not exist on type 'ContextAwarenessService'. Did you mean 'prevActivityState'? At File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/ContextAwarenessService.ets:1330:27
-[39m
-[39m
-[31m32 ERROR: [31mArkTS:ERROR File: C:/Users/Liuho/ClawdBotHarmony/entry/src/main/ets/service/context/TrainingDataSync.ets:7:10
- ERROR Code: 10311006 ArkTS: ERROR
-Error Message: 'common' is not exported from Kit '@kit.ArkData'.
-
-* Try the following: 
-  > Please make sure the Kit apis are consistent with SDK and there's no local modification on Kit apis.
-  > For more details on Kit apis, please refer to https://developer.huawei.com/consumer/cn/doc/harmonyos-references-V5/development-intro-api-V5.
-[39m
-[39m
-[31mCOMPILE RESULT:FAIL {ERROR:33 WARN:492}[39m
+[31mCOMPILE RESULT:FAIL {ERROR:17 WARN:492}[39m
 
 [31m* Try:
 > Run with --stacktrace option to get the stack trace.
 > Run with --debug option to get more log output.
 [39m
-> hvigor [91mERROR: BUILD FAILED in 52 s 263 ms [39m
+> hvigor [91mERROR: BUILD FAILED in 47 s 39 ms [39m
