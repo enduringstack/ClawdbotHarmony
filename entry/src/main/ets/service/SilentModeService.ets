@@ -3,7 +3,7 @@ import { audio } from '@kit.AudioKit';
 import { abilityAccessCtrl, common, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { preferences } from '@kit.ArkData';
-import { SilentConversationRecord, SilentConversationEntry, SettingsData } from '../model/Models';
+import { SilentConversationRecord, SilentConversationEntry, SilentConversationEntryEx, SettingsData } from '../model/Models';
 import { Constants } from '../common/Constants';
 import { LogService } from '../common/LogService';
 import { VoiceprintService } from './VoiceprintService';
@@ -12,6 +12,8 @@ import { AIService } from './AIService';
 import { ConversationStore } from './ConversationStore';
 import { VadService } from './VadService';
 import { Monitor } from './ModuleMonitor';
+import { SilentModeExtractor } from './SilentModeExtractor';
+import { EmotionAnalyzer } from './EmotionAnalyzer';
 
 type StateListener = (state: string) => void;
 
@@ -555,21 +557,37 @@ export class SilentModeService {
 
       let record = this.currentRecord;
       if (text.trim().length > 0 && record) {
-        let entry: SilentConversationEntry = {
+        let extractor = SilentModeExtractor.getInstance();
+        let extracted = extractor.extract(text.trim());
+        let hasImportantInfo = extractor.hasImportantInfo(extracted);
+        if (hasImportantInfo) {
+          this.log.info(this.TAG, `Extracted: ${extractor.formatForDisplay(extracted)}`);
+        }
+
+        let emotion: import('../model/Models').EmotionAnalysis | undefined;
+        try {
+          let emotionAnalyzer = EmotionAnalyzer.getInstance();
+          emotion = emotionAnalyzer.analyzeFromFloat32(float32);
+          this.log.debug(this.TAG, `Emotion: ${emotionAnalyzer.getEmotionLabel(emotion.emotion)} (stress: ${emotionAnalyzer.getStressLabel(emotion.stressLevel)})`);
+        } catch (err) {
+          this.log.warn(this.TAG, `Emotion analysis error: ${err}`);
+        }
+
+        let entry: SilentConversationEntryEx = {
           timestamp: Date.now(),
           speaker: speaker,
           text: text.trim(),
           confidence: confidence,
-          embedding: embeddingArray.length > 0 ? embeddingArray : undefined
+          embedding: embeddingArray.length > 0 ? embeddingArray : undefined,
+          extracted: hasImportantInfo ? extracted : undefined,
+          emotion: emotion
         };
         record.entries.push(entry);
 
-        // Update participants
         if (!record.participants.includes(speaker)) {
           record.participants.push(speaker);
         }
 
-        // Persist
         await ConversationStore.getInstance().saveRecord(record);
         this.log.info(this.TAG, `Entry: [${speaker}] ${text.trim().substring(0, 50)}`);
       }

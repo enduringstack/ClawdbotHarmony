@@ -345,3 +345,78 @@ export class SilentConversationItem {
     this.entryCount = record.entries.length;
   }
 }
+
+// ==================== Silent Mode Info Extraction ====================
+
+export interface TimeInfo {
+  raw: string;
+  type: string;
+  normalized: string;
+}
+
+export interface LocationInfo {
+  raw: string;
+  normalized: string;
+  confidence: number;
+  type: string;
+}
+
+export interface PersonInfo {
+  raw: string;
+  normalized: string;
+  confidence: number;
+  role?: string;
+}
+
+export interface EventInfo {
+  type: string;
+  keyword: string;
+  confidence: number;
+  context: string;
+}
+
+export interface PlanInfo {
+  type: string;
+  content: string;
+  confidence: number;
+  raw: string;
+}
+
+export interface ExtractedInfo {
+  times: TimeInfo[];
+  locations: LocationInfo[];
+  persons: PersonInfo[];
+  events: EventInfo[];
+  plans: PlanInfo[];
+}
+
+// ==================== Emotion Analysis ====================
+
+export type EmotionType = 'neutral' | 'happy' | 'sad' | 'angry' | 'anxious' | 'stressed' | 'calm' | 'excited';
+
+export interface AudioFeatures {
+  rms: number;
+  zeroCrossingRate: number;
+  spectralCentroid: number;
+  pitch: number;
+  pitchStd: number;
+  duration: number;
+}
+
+export interface EmotionAnalysis {
+  timestamp: number;
+  emotion: EmotionType;
+  confidence: number;
+  features: AudioFeatures;
+  stressLevel: number;
+  isSinging: boolean;
+  pitchVariation: number;
+  energyLevel: number;
+  speakingRate: number;
+}
+
+// Extended entry with extraction and emotion data
+export interface SilentConversationEntryEx extends SilentConversationEntry {
+  extracted?: ExtractedInfo;
+  emotion?: EmotionAnalysis;
+}

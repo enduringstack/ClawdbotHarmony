@@ -67,6 +67,14 @@ interface AccelerometerData {
   x: number;
   y: number;
   z: number;
+  timestamp: number;
+}
+
+/** 加速度历史采样点 */
+interface AccelSample {
+  magnitude: number;
+  gravityAngle: number;  // 重力方向与Z轴夹角
+  timestamp: number;
 }
 
 export class ContextAwarenessService {
@@ -87,8 +95,22 @@ export class ContextAwarenessService {
   private lastMotionState: MotionState = 'unknown';
   
   // 传感器数据
-  private accelerometerData: AccelerometerData = { x: 0, y: 0, z: 0 } as AccelerometerData;
+  private accelerometerData: AccelerometerData = { x: 0, y: 0, z: 0, timestamp: 0 } as AccelerometerData;
   private stepCount: number = 0;
+  
+  // 拿起手机检测
+  private accelHistory: AccelSample[] = [];
+  private static readonly ACCEL_HISTORY_SIZE = 30;
+  private pickupStartTime: number = 0;
+  private isPickupState: boolean = false;
+  private lastStableGravityAngle: number = 0;
+  private pickupConfirmed: boolean = false;
+  private static readonly PICKUP_PULSE_THRESHOLD = 12;
+  private static readonly PICKUP_ANGLE_CHANGE_THRESHOLD = 30;
+  private static readonly PICKUP_MAX_DURATION_MS = 3000;
+  private static readonly MOTION_MIN_DURATION_MS = 10000;
+  private motionStartTime: number = 0;
+  private motionStepCountStart: number = 0;
   
   // WiFi 状态跟踪
   private lastWifiSsid: string = '';
@@ -421,17 +443,16 @@ export class ContextAwarenessService {
 
   private startMotionSensors(): void {
     try {
-      // 加速度计 - 用于运动状态检测
       sensor.on(sensor.SensorId.ACCELEROMETER, (data: sensor.AccelerometerResponse) => {
-        this.accelerometerData = { x: data.x, y: data.y, z: data.z } as AccelerometerData;
+        this.accelerometerData = { x: data.x, y: data.y, z: data.z, timestamp: Date.now() };
+        this.recordAccelSample();
         this.updateMotionState();
-      }, { interval: 1000000000 });  // 1秒采样
+      }, { interval: 1000000000 });
       
-      // 计步器
       sensor.on(sensor.SensorId.PEDOMETER, (data: sensor.PedometerResponse) => {
         this.stepCount = data.steps;
         this.tray.put('stepCount', data.steps.toString(), 1.0, 'pedometer');
-      }, { interval: 5000000000 });  // 5秒采样
+      }, { interval: 5000000000 });
       
       this.log.info(TAG, 'Motion sensors started');
     } catch (err) {
@@ -446,6 +467,75 @@ export class ContextAwarenessService {
     } catch {
       // ignore
     }
+}
+  
+  private recordAccelSample(): void {
+    let x = this.accelerometerData.x;
+    let y = this.accelerometerData.y;
+    let z = this.accelerometerData.z;
+    let magnitude = Math.sqrt(x * x + y * y + z * z);
+    let gravityAngle = Math.acos(z / magnitude) * 180 / Math.PI;
+    
+    this.accelHistory.push({
+      magnitude: magnitude,
+      gravityAngle: gravityAngle,
+      timestamp: this.accelerometerData.timestamp
+    });
+    
+    if (this.accelHistory.length > ContextAwarenessService.ACCEL_HISTORY_SIZE) {
+      this.accelHistory.shift();
+    }
+  }
+  
+  private detectPickup(): boolean {
+    if (this.accelHistory.length < 3) return false;
+    
+    let now = Date.now();
+    let recent = this.accelHistory.slice(-5);
+    let current = recent[recent.length - 1];
+    let prev = recent.length > 1 ? recent[recent.length - 2] : current;
+    
+    let hasPulse = current.magnitude > ContextAwarenessService.PICKUP_PULSE_THRESHOLD;
+    let angleChange = Math.abs(current.gravityAngle - this.lastStableGravityAngle);
+    let hasAngleChange = angleChange > ContextAwarenessService.PICKUP_ANGLE_CHANGE_THRESHOLD;
+    
+    if (hasPulse && hasAngleChange && !this.isPickupState) {
+      this.pickupStartTime = now;
+      this.isPickupState = true;
+      this.pickupConfirmed = false;
+      this.log.debug(TAG, `Pickup detected: mag=${current.magnitude.toFixed(1)}, angle=${angleChange.toFixed(1)}`);
+    }
+    
+    if (this.isPickupState) {
+      let pickupDuration = now - this.pickupStartTime;
+      
+      let stillMoving = current.magnitude > 10.5;
+      let stepsIncreased = this.stepCount > this.motionStepCountStart + 5;
+      let gpsMoving = (this.lastLocation?.speed ?? 0) > 0.5;
+      
+      if (pickupDuration > ContextAwarenessService.MOTION_MIN_DURATION_MS && (stillMoving || stepsIncreased || gpsMoving)) {
+        this.log.info(TAG, `Pickup -> Motion: duration=${pickupDuration}ms, steps=+${this.stepCount - this.motionStepCountStart}`);
+        this.isPickupState = false;
+        this.pickupConfirmed = false;
+        return false;
+      }
+      
+      if (pickupDuration < ContextAwarenessService.PICKUP_MAX_DURATION_MS) {
+        return true;
+      }
+      
+      if (!stillMoving && pickupDuration >= ContextAwarenessService.PICKUP_MAX_DURATION_MS) {
+        this.log.info(TAG, `Pickup confirmed: brief glance, duration=${pickupDuration}ms`);
+        this.pickupConfirmed = true;
+        this.isPickupState = false;
+        return true;
+      }
+      
+      this.isPickupState = false;
+      return false;
+    }
+    
+    return false;
   }
   
   /**
@@ -457,22 +547,42 @@ export class ContextAwarenessService {
     let y = this.accelerometerData.y;
     let z = this.accelerometerData.z;
     let magnitude = Math.sqrt(x * x + y * y + z * z);
-    let gpsSpeed = this.lastLocation?.speed ?? 0;  // m/s
+    let gpsSpeed = this.lastLocation?.speed ?? 0;
+    
+    let isPickup = this.detectPickup();
+    
+    if (isPickup || this.pickupConfirmed) {
+      this.tray.put('motionState', 'pickup', 0.85, 'accelerometer');
+      this.tray.put('isPickup', 'true', 0.9, 'accelerometer');
+      
+      if (this.lastMotionState !== 'pickup') {
+        this.log.info(TAG, `Motion state: ${this.lastMotionState} -> pickup (brief glance)`);
+        this.engine.pushEvent('motion_pickup');
+        this.lastMotionState = 'pickup';
+      }
+      this.pickupConfirmed = false;
+      return;
+    }
+    
+    this.tray.put('isPickup', 'false', 0.9, 'accelerometer');
+    
+    if (this.accelHistory.length >= 3) {
+      let recent = this.accelHistory.slice(-3);
+      let avgMag = recent.reduce((sum, s) => sum + s.magnitude, 0) / recent.length;
+      if (avgMag < 10.3) {
+        this.lastStableGravityAngle = recent[recent.length - 1].gravityAngle;
+      }
+    }
     
     let newState: MotionState;
     
-    // 优先使用GPS速度判断（解决开车/高铁匀速问题）
     if (gpsSpeed > 20) {
-      // > 72 km/h: 高铁/高速公路
       newState = 'driving';
     } else if (gpsSpeed > 5) {
-      // > 18 km/h: 驾驶/骑行
       newState = 'driving';
     } else if (gpsSpeed > 1.5) {
-      // > 5.4 km/h: 跑步/快走
       newState = magnitude > 12 ? 'running' : 'walking';
     } else {
-      // GPS速度慢或无，用加速度判断
       if (magnitude < 10.5) {
         newState = 'stationary';
       } else if (magnitude < 12) {
@@ -484,11 +594,19 @@ export class ContextAwarenessService {
       }
     }
     
-    // 更新数据托盘
+    if (newState !== 'stationary') {
+      if (this.motionStartTime === 0) {
+        this.motionStartTime = Date.now();
+        this.motionStepCountStart = this.stepCount;
+      }
+    } else {
+      this.motionStartTime = 0;
+      this.motionStepCountStart = 0;
+    }
+    
     this.tray.put('motionState', newState, 0.9, 'accelerometer');
     this.tray.put('gpsSpeed', gpsSpeed.toFixed(2), 0.85, 'gps');
 
-    // 运动状态变化时调整GPS采样频率
     if (newState !== this.lastMotionState) {
       this.log.info(TAG, `Motion state: ${this.lastMotionState} -> ${newState}, gpsSpeed=${gpsSpeed.toFixed(1)}m/s`);
       this.engine.pushEvent('motion_' + newState);
@@ -499,8 +617,14 @@ export class ContextAwarenessService {
 
   /**
    * 根据运动状态调整所有传感器采样间隔 (多级采集)
+   * pickup 状态不触发 GPS 频率调整
    */
   private adjustLocationInterval(state: MotionState): void {
+    if (state === 'pickup') {
+      this.log.debug(TAG, 'Pickup state: skip GPS interval adjustment');
+      return;
+    }
+    
     let newGpsInterval: number;
     let newWifiInterval: number;
     let newAccelInterval: number;
@@ -638,7 +762,8 @@ export class ContextAwarenessService {
     }
     try {
       sensor.on(sensor.SensorId.ACCELEROMETER, (data: sensor.AccelerometerResponse) => {
-        this.accelerometerData = { x: data.x, y: data.y, z: data.z } as AccelerometerData;
+        this.accelerometerData = { x: data.x, y: data.y, z: data.z, timestamp: Date.now() };
+        this.recordAccelSample();
         this.updateMotionState();
       }, { interval: this.accelIntervalNs });
     } catch (err) {

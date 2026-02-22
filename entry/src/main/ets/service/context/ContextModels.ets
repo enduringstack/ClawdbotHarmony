@@ -65,6 +65,7 @@ export type MotionState =
   | 'cycling'      // 骑车
   | 'driving'      // 开车
   | 'transit'      // 公共交通
+  | 'pickup'       // 拿起手机（看一眼）
   | 'unknown';
 
 // ==================== 环境特征 ====================

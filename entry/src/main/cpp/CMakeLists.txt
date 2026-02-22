@@ -25,3 +25,15 @@ add_subdirectory(dbscan_cluster)
 
 # location_fusion module - multi-source location fusion
 add_subdirectory(location_fusion)
+
+# motion_detector module - motion state detection + sampling strategy
+add_subdirectory(motion_detector)
+
+# place_learner module - place signal learning
+add_subdirectory(place_learner)
+
+# sleep_pattern module - sleep time learning
+add_subdirectory(sleep_pattern)
+
+# feedback_learner module - user feedback learning
+add_subdirectory(feedback_learner)

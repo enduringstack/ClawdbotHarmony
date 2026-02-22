@@ -166,10 +166,6 @@ public:
         }
         return result;
     }
-            }
-        }
-        return result;
-    }
     
     /**
      * 获取地点的学习信号
