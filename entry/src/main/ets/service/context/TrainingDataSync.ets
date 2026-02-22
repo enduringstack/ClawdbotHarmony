@@ -9,6 +9,7 @@ import { common } from '@kit.AbilityKit';
 import { http } from '@kit.NetworkKit';
 import { LogService } from '../../common/LogService';
 import { ContextSnapshot } from './ContextEngine';
+import trainingSyncNative from 'libtraining_sync.so';
 
 const TAG = 'TrainingDataSync';
 
@@ -91,30 +92,11 @@ export interface StateTransitionData {
   timestamp: number;
 }
 
-// C++ NAPI 接口
-interface TrainingSyncNative {
-  init(config: { deviceId: string }): void;
-  recordRuleMatch(data: RuleMatchRecord): void;
-  recordFeedback(data: UserFeedbackRecord): void;
-  recordStateTransition(data: StateTransitionRecord): void;
-  recordGeofenceFeature(data: GeofenceFeatureRecord): void;
-  exportPending(): string;
-  markSynced(ids: string[]): void;
-  cleanupSynced(): void;
-  getStats(): SyncStatsInfo;
-  serialize(): string;
-  deserialize(json: string): boolean;
-  clear(): void;
-  setMaxRecords(max: number): void;
-  getDeviceId(): string;
-}
-
 export class TrainingDataSync {
   private static instance: TrainingDataSync;
   private log: LogService = LogService.getInstance();
   
   private context: common.UIAbilityContext | undefined;
-  private native: TrainingSyncNative | undefined;
   private syncEndpoint: string = '';
   private syncEnabled: boolean = false;
   private prefs: preferences.Preferences | undefined;
@@ -136,17 +118,15 @@ export class TrainingDataSync {
     this.syncEndpoint = endpoint;
     
     try {
-      this.native = await import('../native/training_sync') as TrainingSyncNative;
-      
       let deviceId = context.applicationInfo?.name || 'clawdbot_device';
-      this.native.init({ deviceId: deviceId });
+      trainingSyncNative.init({ deviceId: deviceId });
       
       this.prefs = await preferences.getPreferences(context, 'training_data_sync');
       this.syncEnabled = await this.prefs.get('sync_enabled', false) as boolean;
       
       let savedData = await this.prefs.get('data', '') as string;
       if (savedData.length > 0) {
-        this.native.deserialize(savedData);
+        trainingSyncNative.deserialize(savedData);
       }
       
       this.log.info(TAG, `Init: endpoint=${endpoint}, native=loaded, enabled=${this.syncEnabled}`);
@@ -188,14 +168,12 @@ export class TrainingDataSync {
   }
   
   recordRuleMatch(snapshot: ContextSnapshot, ruleId: string, action: string, confidence: number): void {
-    if (!this.native) return;
-    
     let record: RuleMatchRecord = {
       ruleId: ruleId,
       action: action,
       confidence: confidence,
       timeOfDay: snapshot.timeOfDay,
-      hour: snapshot.hour,
+      hour: parseInt(snapshot.hour || '0') || 0,
       motionState: snapshot.motionState,
       prevMotionState: snapshot.prevMotionState || '',
       prevActivityState: snapshot.prevActivityState || '',
@@ -206,12 +184,12 @@ export class TrainingDataSync {
       isCharging: snapshot.isCharging === 'true'
     };
     
-    this.native.recordRuleMatch(record);
+    trainingSyncNative.recordRuleMatch(record);
     this.persist();
   }
   
   recordFeedback(data: FeedbackData): void {
-    if (!this.native) return;
+    
     
     let record: UserFeedbackRecord = {
       ruleId: data.ruleId,
@@ -226,12 +204,12 @@ export class TrainingDataSync {
       geofence: data.context.geofence || ''
     };
     
-    this.native.recordFeedback(record);
+    trainingSyncNative.recordFeedback(record);
     this.persist();
   }
   
   recordStateTransition(data: StateTransitionData): void {
-    if (!this.native) return;
+    
     
     let record: StateTransitionRecord = {
       prevState: data.prevState,
@@ -243,7 +221,7 @@ export class TrainingDataSync {
       wifiSsid: data.context.wifiSsid || ''
     };
     
-    this.native.recordStateTransition(record);
+    trainingSyncNative.recordStateTransition(record);
     this.persist();
   }
   
@@ -255,7 +233,7 @@ export class TrainingDataSync {
     hour: number,
     duration: number
   ): void {
-    if (!this.native) return;
+    
     
     let record: GeofenceFeatureRecord = {
       geofenceId: geofenceId,
@@ -266,17 +244,17 @@ export class TrainingDataSync {
       duration: duration
     };
     
-    this.native.recordGeofenceFeature(record);
+    trainingSyncNative.recordGeofenceFeature(record);
     this.persist();
   }
   
   async sync(): Promise<boolean> {
-    if (!this.syncEnabled || !this.syncEndpoint || !this.native) {
+    if (!this.syncEnabled || !this.syncEndpoint) {
       this.log.debug(TAG, 'Sync skipped: disabled or no endpoint');
       return false;
     }
     
-    let pendingJson = this.native.exportPending();
+    let pendingJson = trainingSyncNative.exportPending();
     let data = JSON.parse(pendingJson);
     
     if (!data.records || data.records.length === 0) {
@@ -303,8 +281,8 @@ export class TrainingDataSync {
         for (let i = 0; i < data.records.length; i++) {
           ids.push(data.records[i].id);
         }
-        this.native.markSynced(ids);
-        this.native.cleanupSynced();
+        trainingSyncNative.markSynced(ids);
+        trainingSyncNative.cleanupSynced();
         this.persist();
         
         this.log.info(TAG, `Sync successful: ${data.records.length} records`);
@@ -320,10 +298,10 @@ export class TrainingDataSync {
   }
   
   getStats(): { pending: number; synced: number; lastSync: number } {
-    if (!this.native) {
+    if (!trainingSyncNative) {
       return { pending: 0, synced: 0, lastSync: 0 };
     }
-    let stats = this.native.getStats();
+    let stats = trainingSyncNative.getStats();
     return {
       pending: stats.pending,
       synced: stats.synced,
@@ -332,24 +310,24 @@ export class TrainingDataSync {
   }
   
   exportData(): string {
-    if (!this.native) return '{}';
-    return this.native.serialize();
+    if (!trainingSyncNative) return '{}';
+    return trainingSyncNative.serialize();
   }
   
   clear(): void {
-    if (!this.native) return;
-    this.native.clear();
+    
+    trainingSyncNative.clear();
     this.persist();
   }
   
   setMaxRecords(max: number): void {
-    if (!this.native) return;
-    this.native.setMaxRecords(max);
+    
+    trainingSyncNative.setMaxRecords(max);
   }
   
   private persist(): void {
-    if (this.native && this.prefs) {
-      let data = this.native.serialize();
+    if (this.prefs) {
+      let data = trainingSyncNative.serialize();
       this.prefs.put('data', data);
       this.prefs.flush();
     }
