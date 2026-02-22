@@ -196,8 +196,13 @@ export class ContextAwarenessService {
     }
     
     try {
-      // 启动位置监控
-      await this.geofenceMgr.startMonitoring();
+      // 请求位置权限并启动位置监控
+      let locationGranted = await this.requestLocationPermission();
+      if (locationGranted) {
+        await this.geofenceMgr.startMonitoring();
+      } else {
+        this.log.warn(TAG, 'Location permission denied, geofence monitoring disabled');
+      }
       
       // 请求运动传感器权限并启动
       await this.requestMotionPermission();
@@ -210,7 +215,9 @@ export class ContextAwarenessService {
       this.startPeriodicEvaluation();
 
       // 启动位置自动发现（定时聚类）
-      this.startLocationDiscovery();
+      if (locationGranted) {
+        this.startLocationDiscovery();
+      }
 
       // 启动数字世界感知
       this.digitalWorld.start();
@@ -392,6 +399,21 @@ export class ContextAwarenessService {
       return granted;
     } catch (err) {
       this.log.warn(TAG, `Motion permission request failed: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
+  private async requestLocationPermission(): Promise<boolean> {
+    try {
+      let atManager = abilityAccessCtrl.createAtManager();
+      let result = await atManager.requestPermissionsFromUser(this.context as common.UIAbilityContext,
+        ['ohos.permission.APPROXIMATELY_LOCATION', 'ohos.permission.LOCATION']);
+      let approxGranted = result.authResults[0] === 0;
+      let preciseGranted = result.authResults.length > 1 && result.authResults[1] === 0;
+      this.log.info(TAG, `Location permission: approx=${approxGranted ? 'granted' : 'denied'}, precise=${preciseGranted ? 'granted' : 'denied'}`);
+      return approxGranted || preciseGranted;
+    } catch (err) {
+      this.log.warn(TAG, `Location permission request failed: ${(err as Error).message}`);
       return false;
     }
   }

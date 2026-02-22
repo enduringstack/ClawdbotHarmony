@@ -1,17 +1,27 @@
 [
   {
+    "version": "2.51.0",
+    "date": "2026-02-22",
+    "features": [
+      "位置权限主动申请: 启动情景智能时弹出权限对话框",
+      "A2UI本地分发: ContextAwarenessService可直接分发UI卡片",
+      "情景智能多语言支持: 新地点发现/围栏建议/反馈按钮支持中英文"
+    ],
+    "fixes": [
+      "修复位置发现不工作问题 (缺少位置权限导致GPS数据为0)",
+      "修复新地点发现卡片不显示 (实现本地A2UI监听机制)"
+    ]
+  },
+  {
     "version": "2.49.0",
     "date": "2026-02-21",
     "features": [
       "新地点发现保存功能: A2UI卡片确认后自动创建围栏",
       "saveNewPlace方法: 保存用户确认的新地点到地理围栏",
-      "WearablePlugin增强: 添加设备连接状态和错误信息到快照",
-      "A2UI本地分发: ContextAwarenessService可直接分发UI卡片",
-      "情景智能多语言支持: 新地点发现/围栏建议/反馈按钮支持中英文"
+      "WearablePlugin增强: 添加设备连接状态和错误信息到快照"
     ],
     "fixes": [
       "修复 ContextAwarenessService 编译错误 (gf.radius -> gf.radiusMeters)",
-      "修复 dispatchA2UI 方法不存在 (实现本地A2UI监听机制)",
       "修复 haversineDistance 重复定义 (删除冗余方法)",
       "修复 NodeRuntime.saveNewPlace 方法缺失 (新增方法)",
       "改进 WearablePlugin 心率传感器订阅日志和错误处理"
