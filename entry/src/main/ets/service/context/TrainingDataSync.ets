@@ -92,6 +92,42 @@ export interface StateTransitionData {
   timestamp: number;
 }
 
+/** 同步数据记录 (JSON解析用) */
+interface SyncRecord {
+  id: string;
+  type: string;
+  timestamp: number;
+  data: Record<string, string | number | boolean>;
+}
+
+/** 同步数据响应 (JSON解析用) */
+interface SyncDataResponse {
+  deviceId: string;
+  timestamp: number;
+  records: SyncRecord[];
+}
+
+/** HTTP 请求头 */
+interface HttpHeader {
+  'Content-Type': string;
+}
+
+/** HTTP 请求选项 */
+interface HttpRequestOptions {
+  method: http.RequestMethod;
+  header: HttpHeader;
+  extraData: string;
+  connectTimeout: number;
+  readTimeout: number;
+}
+
+/** 统计返回类型 */
+interface StatsResult {
+  pending: number;
+  synced: number;
+  lastSync: number;
+}
+
 export class TrainingDataSync {
   private static instance: TrainingDataSync;
   private log: LogService = LogService.getInstance();
@@ -255,7 +291,7 @@ export class TrainingDataSync {
     }
     
     let pendingJson = trainingSyncNative.exportPending();
-    let data = JSON.parse(pendingJson);
+    let data: SyncDataResponse = JSON.parse(pendingJson) as SyncDataResponse;
     
     if (!data.records || data.records.length === 0) {
       this.log.debug(TAG, 'No records to sync');
@@ -266,15 +302,15 @@ export class TrainingDataSync {
     
     try {
       let request: http.HttpRequest = http.createHttp();
-      let response = await request.request(this.syncEndpoint + '/training/upload', {
+      let header: HttpHeader = { 'Content-Type': 'application/json' };
+      let options: HttpRequestOptions = {
         method: http.RequestMethod.POST,
-        header: {
-          'Content-Type': 'application/json'
-        },
+        header: header,
         extraData: pendingJson,
         connectTimeout: 30000,
         readTimeout: 30000
-      });
+      };
+      let response = await request.request(this.syncEndpoint + '/training/upload', options);
       
       if (response.responseCode === 200 || response.responseCode === 201) {
         let ids: string[] = [];
@@ -297,31 +333,26 @@ export class TrainingDataSync {
     }
   }
   
-  getStats(): { pending: number; synced: number; lastSync: number } {
-    if (!trainingSyncNative) {
-      return { pending: 0, synced: 0, lastSync: 0 };
-    }
+  getStats(): StatsResult {
     let stats = trainingSyncNative.getStats();
-    return {
+    let result: StatsResult = {
       pending: stats.pending,
       synced: stats.synced,
       lastSync: stats.lastSync
     };
+    return result;
   }
   
   exportData(): string {
-    if (!trainingSyncNative) return '{}';
     return trainingSyncNative.serialize();
   }
   
   clear(): void {
-    
     trainingSyncNative.clear();
     this.persist();
   }
   
   setMaxRecords(max: number): void {
-    
     trainingSyncNative.setMaxRecords(max);
   }
   
