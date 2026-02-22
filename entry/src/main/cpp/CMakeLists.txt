@@ -37,3 +37,6 @@ add_subdirectory(sleep_pattern)
 
 # feedback_learner module - user feedback learning
 add_subdirectory(feedback_learner)
+
+# training_sync module - training data synchronization
+add_subdirectory(training_sync)

@@ -1,0 +1,16 @@
+[Unit]
+Description=ClawdBot Training Data Server
+After=network.target
+
+[Service]
+Type=simple
+User=hongjie
+WorkingDirectory=/mnt/c/Users/Liuho/ClawdBotHarmony/server
+ExecStart=/usr/bin/node /mnt/c/Users/Liuho/ClawdBotHarmony/server/training-server.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

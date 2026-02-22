@@ -36,6 +36,7 @@ import {
   GeofenceCategory,
 } from './ContextModels';
 import { LLMFallbackService } from './LLMFallbackService';
+import { TrainingDataSync } from './TrainingDataSync';
 
 const TAG = 'ContextService';
 
@@ -93,6 +94,12 @@ export class ContextAwarenessService {
   private currentContext: EnvironmentContext | undefined;
   private lastLocation: LocationState | undefined;
   private lastMotionState: MotionState = 'unknown';
+  
+  // 状态历史 (用于规则判断)
+  private prevMotionState: MotionState = 'unknown';
+  private prevActivityState: string = 'unknown';  // 'sitting', 'sleeping', 'walking', 'active'
+  private activityStateTimestamp: number = 0;     // 状态开始时间
+  private activityStateDuration: number = 0;      // 持续时间(ms)
   
   // 传感器数据
   private accelerometerData: AccelerometerData = { x: 0, y: 0, z: 0, timestamp: 0 } as AccelerometerData;
@@ -188,6 +195,8 @@ export class ContextAwarenessService {
   private digitalWorld: DigitalWorldService = DigitalWorldService.getInstance();
   // 传感器数据托盘
   private tray: SensorDataTray = DataTray;
+  // 训练数据同步
+  private trainingSync: TrainingDataSync = TrainingDataSync.getInstance();
 
   private constructor() {
     this.geofenceMgr = GeofenceManager.getInstance();
@@ -232,6 +241,9 @@ export class ContextAwarenessService {
     // (calendar events, screen state, audio scene, etc.) that enriches the ContextSnapshot.
     // Currently initialized and polled independently; data is merged in buildSnapshot().
     await this.digitalWorld.init(context);
+
+    // 初始化训练数据同步 (服务端与 Gateway 同机，端口 18790)
+    await this.trainingSync.init(context, 'http://192.168.1.76:18790');
 
     // 监听地理围栏事件
     this.geofenceMgr.addListener((event) => this.onGeofenceEvent(event));
@@ -609,10 +621,109 @@ export class ContextAwarenessService {
 
     if (newState !== this.lastMotionState) {
       this.log.info(TAG, `Motion state: ${this.lastMotionState} -> ${newState}, gpsSpeed=${gpsSpeed.toFixed(1)}m/s`);
+      
+      // 更新状态历史
+      this.updateActivityState(newState);
+      
       this.engine.pushEvent('motion_' + newState);
+      this.prevMotionState = this.lastMotionState;
       this.lastMotionState = newState;
       this.adjustLocationInterval(newState);
     }
+  }
+  
+  /**
+   * 更新活动状态 (状态机)
+   * 
+   * 活动状态: 'sleeping', 'sitting', 'standing', 'walking', 'active', 'driving'
+   */
+  private updateActivityState(motionState: MotionState): void {
+    let newActivityState = this.activityState;
+    let now = Date.now();
+    
+    // 根据运动状态推断活动状态
+    switch (motionState) {
+      case 'stationary':
+        // 静止状态需要根据上下文判断是睡觉还是坐着
+        let hour = new Date().getHours();
+        let geofence = this.tray.get('geofence')?.value;
+        
+        // 夜间在家 → 睡觉
+        if ((hour >= 22 || hour < 6) && geofence === 'home') {
+          newActivityState = 'sleeping';
+        } 
+        // 之前在睡觉 → 继续睡觉
+        else if (this.activityState === 'sleeping') {
+          // 检查心率判断是否醒来
+          let heartRate = this.getHeartRateFromWearable();
+          if (heartRate > 0 && heartRate < 60) {
+            newActivityState = 'sleeping';
+          } else if (heartRate >= 60) {
+            newActivityState = 'sitting';  // 醒来但还躺着/坐着
+          } else {
+            // 没有心率数据，保持之前状态
+            newActivityState = this.activityState;
+          }
+        }
+        // 其他情况 → 坐着
+        else {
+          newActivityState = 'sitting';
+        }
+        break;
+        
+      case 'walking':
+        newActivityState = 'walking';
+        break;
+        
+      case 'running':
+        newActivityState = 'active';
+        break;
+        
+      case 'driving':
+        newActivityState = 'driving';
+        break;
+        
+      case 'pickup':
+        // 拿起手机不改变活动状态
+        return;
+        
+      default:
+        newActivityState = 'unknown';
+    }
+    
+    // 状态变化时记录
+    if (newActivityState !== this.activityState) {
+      this.log.info(TAG, `Activity: ${this.activityState} -> ${newActivityState}`);
+      
+      // 计算上一个状态的持续时间
+      let duration = this.activityStateTimestamp > 0 ? now - this.activityStateTimestamp : 0;
+      
+      // 记录状态转换到训练数据
+      let snapshot = this.augmentSnapshot(this.tray.getSnapshot());
+      this.trainingSync.recordStateTransition(
+        this.activityState,
+        newActivityState,
+        duration,
+        snapshot
+      );
+      
+      this.prevActivityState = this.activityState;
+      this.activityState = newActivityState;
+      this.activityStateTimestamp = now;
+    }
+  }
+  
+  /**
+   * 从穿戴设备获取心率
+   */
+  private getHeartRateFromWearable(): number {
+    let digitalData = this.digitalWorld.getDigitalData();
+    for (let snap of digitalData) {
+      if (snap.pluginName === 'wearable' && snap.data['heart_rate']) {
+        return parseInt(snap.data['heart_rate']) || 0;
+      }
+    }
+    return 0;
   }
 
   /**
@@ -1192,6 +1303,12 @@ export class ContextAwarenessService {
     let hour = now.getHours();
     let dayOfWeek = now.getDay();
 
+    // 计算活动持续时间
+    let activityDuration = 0;
+    if (this.activityStateTimestamp > 0) {
+      activityDuration = Math.floor((Date.now() - this.activityStateTimestamp) / 1000);
+    }
+
     let snapshot: ContextSnapshot = {
       timeOfDay: ctx.timeOfDay,
       hour: hour.toString(),
@@ -1204,7 +1321,13 @@ export class ContextAwarenessService {
       geofence: ctx.currentGeofence?.id,
       latitude: ctx.location?.latitude?.toString(),
       longitude: ctx.location?.longitude?.toString(),
-      stepCount: ctx.stepCount?.toString()
+      stepCount: ctx.stepCount?.toString(),
+      isSleeping: this.detectSleepingState(ctx, hour),
+      // 状态历史
+      prevMotionState: this.prevMotionState,
+      prevActivityState: this.prevActivityState,
+      activityDuration: activityDuration.toString(),
+      activityState: this.activityState
     };
 
     // Merge digital world plugin data into snapshot for rule evaluation
@@ -1244,6 +1367,9 @@ export class ContextAwarenessService {
 
       this.notifyRecommendation(rec);
       this.setOnCooldown(top.ruleId);
+      
+      // 记录训练数据
+      this.trainingSync.recordRuleMatch(snapshot, top.ruleId, top.action.type || 'suggestion', top.confidence);
       return;
     }
 

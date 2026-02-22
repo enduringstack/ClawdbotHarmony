@@ -113,6 +113,13 @@ export interface ContextSnapshot {
   stepCount?: string;
   speed?: string;           // estimated speed in km/h
   transportMode?: string;   // walking/running/cycling/driving/transit/stationary
+  isSleeping?: string;      // "true" if user is likely sleeping
+  heartRate?: string;       // heart rate from wearable
+  // 状态历史 (用于状态机判断)
+  prevMotionState?: string;     // 上一个运动状态
+  prevActivityState?: string;   // 上一个活动状态: 'sitting', 'sleeping', 'standing', 'active'
+  activityDuration?: string;    // 当前活动持续时间(秒)
+  activityState?: string;       // 当前活动状态
 }
 
 /** Minimal geofence info for rule binding (avoids circular import) */

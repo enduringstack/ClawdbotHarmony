@@ -15,6 +15,7 @@
 | **sampling_strategy** | cpp/motion_detector/ | 多级采集策略 |
 | **place_learner** | cpp/place_learner/ | 地点信号学习 |
 | **new_place_detector** | cpp/place_learner/ | 新地点检测 |
+| **training_sync** | cpp/training_sync/ | 训练数据同步 |
 
 ### ArkTS 层 (UI + 平台API)
 | 模块 | 功能 |
@@ -280,16 +281,17 @@ HarmonyOS `sensor.SensorId.HEART_RATE` 只能读取手机本身的传感器，**
 
 ### 高优先级
 
-#### 1. C++ 模块 NAPI 绑定 ⏳
+#### 1. C++ 模块 NAPI 绑定
 以下 C++ 模块已设计但未完成 NAPI 绑定：
 
 | 模块 | 文件 | 功能 | 状态 |
 |------|------|------|------|
-| motion_detector | cpp/motion_detector/ | 运动状态检测 | ⏳ 待绑定 |
-| sampling_strategy | cpp/motion_detector/ | 多级采集策略 | ⏳ 待绑定 |
-| place_signal_learner | cpp/place_learner/ | 地点信号学习 (WiFi/蓝牙/CellID) | ⏳ 待绑定 |
-| sleep_pattern | cpp/sleep_pattern/ | 睡眠时间学习 | ⏳ 待绑定 |
-| feedback_learner | cpp/feedback_learner/ | 用户反馈学习 | ⏳ 待绑定 |
+| motion_detector | cpp/motion_detector/ | 运动状态检测 | ✅ 已完成 |
+| sampling_strategy | cpp/motion_detector/ | 多级采集策略 | ✅ 已完成 |
+| place_signal_learner | cpp/place_learner/ | 地点信号学习 (WiFi/蓝牙/CellID) | ✅ 已完成 |
+| sleep_pattern | cpp/sleep_pattern/ | 睡眠时间学习 | ✅ 已完成 |
+| feedback_learner | cpp/feedback_learner/ | 用户反馈学习 | ✅ 已完成 |
+| training_sync | cpp/training_sync/ | 训练数据同步 | ✅ 已完成 |
 
 #### 2. 穿戴设备数据获取 ⏳
 - [x] 添加 READ_HEALTH_DATA 权限申请
@@ -380,7 +382,294 @@ HarmonyOS `sensor.SensorId.HEART_RATE` 只能读取手机本身的传感器，**
 
 ---
 
-## 9. 反馈学习系统设计
+## 9. 训练数据同步系统设计 (C++)
+
+### 9.1 架构概览
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    ArkTS 层 (薄封装)                      │
+│  TrainingDataSync.ets                                   │
+│  - 初始化配置 (endpoint, deviceId)                       │
+│  - 调用 NAPI 接口                                        │
+│  - HTTP 上传 (HarmonyOS 网络 API)                        │
+└─────────────────────┬───────────────────────────────────┘
+                      │ NAPI
+┌─────────────────────┴───────────────────────────────────┐
+│                    C++ 核心层                             │
+│  training_sync.cpp                                      │
+│  - 训练数据收集与缓冲                                     │
+│  - 数据序列化 (JSON)                                     │
+│  - 批量管理、TTL清理                                     │
+│  - 统计信息                                              │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 9.2 C++ 数据结构
+
+```cpp
+// 训练数据类型
+enum class TrainingDataType {
+    RULE_MATCH,          // 规则匹配记录
+    USER_FEEDBACK,       // 用户反馈
+    STATE_TRANSITION,    // 状态转换
+    GEOFENCE_FEATURE     // 围栏特征
+};
+
+// 训练记录
+struct TrainingRecord {
+    std::string id;
+    TrainingDataType type;
+    int64_t timestamp;
+    std::map<std::string, std::string> stringData;
+    std::map<std::string, double> numericData;
+    std::map<std::string, bool> boolData;
+    bool synced;
+};
+
+// 规则匹配数据
+struct RuleMatchData {
+    std::string ruleId;
+    std::string action;
+    double confidence;
+    std::string timeOfDay;
+    int hour;
+    std::string motionState;
+    std::string prevMotionState;
+    std::string prevActivityState;
+    int64_t activityDuration;
+    std::string geofence;
+    std::string wifiSsid;
+    int batteryLevel;
+    bool isCharging;
+};
+
+// 用户反馈数据
+struct UserFeedbackData {
+    std::string ruleId;
+    std::string feedbackType;  // accept/reject/adjust/dismiss
+    std::string originalValue;
+    std::string adjustedValue;
+    std::string timeOfDay;
+    int hour;
+    std::string motionState;
+    std::string geofence;
+};
+
+// 状态转换数据
+struct StateTransitionData {
+    std::string prevState;
+    std::string newState;
+    int64_t duration;
+    std::string timeOfDay;
+    int hour;
+    std::string geofence;
+    std::string wifiSsid;
+};
+
+// 同步统计
+struct SyncStats {
+    int pendingCount;
+    int syncedCount;
+    int64_t lastSyncTime;
+    int64_t totalBytes;
+};
+```
+
+### 9.3 C++ 类设计
+
+```cpp
+class TrainingDataSync {
+public:
+    static TrainingDataSync& getInstance();
+    
+    // 初始化
+    void init(const std::string& deviceId);
+    
+    // 记录数据
+    void recordRuleMatch(const RuleMatchData& data);
+    void recordFeedback(const UserFeedbackData& data);
+    void recordStateTransition(const StateTransitionData& data);
+    
+    // 批量操作
+    std::string exportPendingAsJson();  // 导出待同步数据为JSON
+    void markAsSynced(const std::vector<std::string>& ids);
+    void cleanupSynced();
+    
+    // 统计
+    SyncStats getStats() const;
+    
+    // 持久化 (供 NAPI 调用)
+    std::string serialize() const;
+    void deserialize(const std::string& json);
+    
+private:
+    std::string deviceId_;
+    std::vector<TrainingRecord> records_;
+    int64_t lastSyncTime_;
+    
+    static constexpr int MAX_RECORDS = 200;
+    static constexpr int SYNC_INTERVAL_MS = 3600000;  // 1小时
+    
+    std::string generateId(const std::string& prefix);
+    void pruneIfNeeded();
+};
+```
+
+### 9.4 NAPI 接口设计
+
+```typescript
+// training_sync_napi.cpp 导出接口
+interface TrainingSyncNapi {
+    // 初始化
+    init(deviceId: string): void;
+    
+    // 记录数据
+    recordRuleMatch(data: {
+        ruleId: string;
+        action: string;
+        confidence: number;
+        timeOfDay: string;
+        hour: number;
+        motionState: string;
+        prevMotionState: string;
+        prevActivityState: string;
+        activityDuration: number;
+        geofence: string;
+        wifiSsid: string;
+        batteryLevel: number;
+        isCharging: boolean;
+    }): void;
+    
+    recordFeedback(data: {
+        ruleId: string;
+        feedbackType: string;
+        originalValue: string;
+        adjustedValue: string;
+        timeOfDay: string;
+        hour: number;
+        motionState: string;
+        geofence: string;
+    }): void;
+    
+    recordStateTransition(data: {
+        prevState: string;
+        newState: string;
+        duration: number;
+        timeOfDay: string;
+        hour: number;
+        geofence: string;
+        wifiSsid: string;
+    }): void;
+    
+    // 导出与标记
+    exportPending(): string;  // 返回JSON字符串
+    markSynced(ids: string[]): void;
+    
+    // 持久化
+    serialize(): string;
+    deserialize(json: string): void;
+    
+    // 统计
+    getStats(): { pending: number; synced: number; lastSync: number };
+}
+```
+
+### 9.5 数据流程
+
+```
+1. 数据产生
+   ContextAwarenessService → C++ TrainingDataSync.recordRuleMatch()
+                           → C++ TrainingDataSync.recordFeedback()
+                           → C++ TrainingDataSync.recordStateTransition()
+
+2. 持久化 (每次记录后)
+   C++ → serialize() → ArkTS → preferences.put()
+
+3. 同步触发 (定时/手动)
+   ArkTS → C++ exportPending() → JSON
+   ArkTS → HTTP POST to server
+   ArkTS → C++ markSynced(ids)
+   ArkTS → C++ serialize() → preferences.put()
+
+4. 启动恢复
+   ArkTS → preferences.get() → C++ deserialize()
+```
+
+### 9.6 服务端接口
+
+**服务端位置**: `server/training-server.js`
+
+与 OpenClaw Gateway 运行在同一台机器上：
+- Gateway 端口: 18789
+- 训练数据服务端口: 18790
+
+**API 接口**:
+
+```
+POST /training/upload
+Content-Type: application/json
+
+{
+    "deviceId": "device_xxx",
+    "timestamp": 1708123456789,
+    "records": [
+        {
+            "id": "rm_xxx",
+            "type": "rule_match",
+            "timestamp": 1708123456000,
+            "data": {
+                "ruleId": "bedtime_reminder",
+                "action": "suggestion",
+                "confidence": 0.85,
+                ...
+            }
+        }
+    ]
+}
+
+Response:
+{
+    "success": true,
+    "receivedCount": 10,
+    "serverTime": 1708123457000,
+    "file": "device_xxx_2026-02-22.jsonl"
+}
+
+GET /training/stats  - 查看数据统计
+GET /health          - 健康检查
+```
+
+**启动服务**:
+```bash
+node server/training-server.js
+```
+
+**数据存储**:
+- 目录: `server/training-data/`
+- 格式: JSONL (每行一条记录)
+- 文件名: `{deviceId}_{date}.jsonl`
+
+### 9.7 隐私与安全
+
+1. **数据脱敏**: 敏感字段 (wifiSsid, geofence名) 可配置是否上传
+2. **本地优先**: 默认只存本地，用户授权后才开启同步
+3. **HTTPS**: 上传使用加密通道
+4. **数据保留**: 服务端数据聚合后删除原始记录
+
+### 9.8 文件结构
+
+```
+entry/src/main/cpp/training_sync/
+├── training_sync.cpp          # 核心实现
+├── training_sync.h            # 头文件
+├── training_sync_napi.cpp     # NAPI 绑定
+└── CMakeLists.txt             # 构建配置
+```
+
+---
+
+## 10. 反馈学习系统设计
 
 ### 9.1 数据结构
 ```cpp

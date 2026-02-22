@@ -89,6 +89,11 @@
         "key": "timeOfDay",
         "op": "in",
         "value": "morning,afternoon"
+      },
+      {
+        "key": "isSleeping",
+        "op": "neq",
+        "value": "true"
       }
     ],
     "action": {
