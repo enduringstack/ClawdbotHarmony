@@ -134,9 +134,9 @@
     "name": "睡前提醒",
     "conditions": [
       {
-        "key": "hour",
-        "op": "gte",
-        "value": "22"
+        "key": "timeOfDay",
+        "op": "eq",
+        "value": "night"
       },
       {
         "key": "motionState",

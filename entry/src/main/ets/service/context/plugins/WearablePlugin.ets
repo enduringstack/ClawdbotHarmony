@@ -19,7 +19,7 @@
  * API: @kit.SensorServiceKit — sensor.SensorId.HEART_RATE
  */
 import { sensor } from '@kit.SensorServiceKit';
-import { common } from '@kit.AbilityKit';
+import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { LogService } from '../../../common/LogService';
 import { DigitalPlugin, DigitalSnapshot } from './DigitalPluginInterface';
 
@@ -34,10 +34,21 @@ export class WearablePlugin implements DigitalPlugin {
   private wearableDeviceConnected: boolean = false;
   private deviceName: string = '';
   private initError: string = '';
+  private context: common.UIAbilityContext | undefined;
 
   async init(context: common.UIAbilityContext): Promise<void> {
-    this.log.info(TAG, 'Init: subscribing heart rate sensor for wearable data...');
-    this.subscribeHeartRate();
+    this.context = context;
+    this.log.info(TAG, 'Init: requesting health data permission...');
+    
+    // 先请求权限
+    let granted = await this.requestHealthPermission();
+    if (granted) {
+      this.subscribeHeartRate();
+    } else {
+      this.initError = 'Health data permission denied';
+      this.log.warn(TAG, 'Health data permission not granted');
+    }
+    
     this.log.info(TAG, `Init complete: sensorRegistered=${this.heartRateSensorRegistered}`);
   }
 
@@ -97,6 +108,24 @@ export class WearablePlugin implements DigitalPlugin {
       return 9999;
     }
     return Math.floor((Date.now() - this.lastHeartRateTime) / 1000);
+  }
+
+  private async requestHealthPermission(): Promise<boolean> {
+    if (!this.context) {
+      this.log.warn(TAG, 'No context available for permission request');
+      return false;
+    }
+    
+    try {
+      let atManager = abilityAccessCtrl.createAtManager();
+      let result = await atManager.requestPermissionsFromUser(this.context, ['ohos.permission.READ_HEALTH_DATA']);
+      let granted = result.authResults[0] === 0;
+      this.log.info(TAG, `READ_HEALTH_DATA permission: ${granted ? 'granted' : 'denied'}`);
+      return granted;
+    } catch (err) {
+      this.log.error(TAG, `Permission request error: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   private subscribeHeartRate(): void {

@@ -114,6 +114,14 @@
           "when": "inuse"
         }
       },
+      {
+        "name": "ohos.permission.READ_HEALTH_DATA",
+        "reason": "$string:health_reason",
+        "usedScene": {
+          "abilities": ["EntryAbility"],
+          "when": "inuse"
+        }
+      },
       // {
       //   "name": "ohos.permission.READ_WRITE_DOWNLOAD_DIRECTORY",
       //   "reason": "$string:file_reason",
@@ -160,14 +168,6 @@
       {
         "name": "ohos.permission.WRITE_CALENDAR",
         "reason": "$string:calendar_reason",
-        "usedScene": {
-          "abilities": ["EntryAbility"],
-          "when": "inuse"
-        }
-      },
-      {
-        "name": "ohos.permission.READ_HEALTH_DATA",
-        "reason": "$string:health_reason",
         "usedScene": {
           "abilities": ["EntryAbility"],
           "when": "inuse"

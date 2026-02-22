@@ -507,3 +507,32 @@ export interface DailySummary {
   // 建议
   suggestions: string[];
 }
+
+// ==================== 睡眠时间学习 ====================
+
+/** 睡眠时间学习 */
+export interface SleepPattern {
+  typicalBedtime: number;         // 典型入睡时间 (小时, 0-23.99)
+  typicalWakeTime: number;        // 典型起床时间 (小时, 0-23.99)
+  sleepDurationHours: number;     // 平均睡眠时长
+  weekdays: SleepDayPattern;      // 工作日
+  weekends: SleepDayPattern;      // 周末
+  lastUpdated: number;            // 最后更新时间
+  confidence: number;             // 置信度 0-1
+}
+
+/** 单日睡眠模式 */
+export interface SleepDayPattern {
+  bedtime: number;                // 入睡时间
+  wakeTime: number;               // 起床时间
+  sampleCount: number;            // 样本数量
+}
+
+/** 单次睡眠记录 */
+export interface SleepRecord {
+  date: string;                   // "YYYY-MM-DD"
+  bedtime?: number;               // 入睡时间戳
+  wakeTime?: number;              // 起床时间戳
+  durationMs?: number;            // 睡眠时长
+  source: 'wearable' | 'inferred' | 'manual';  // 来源
+}
