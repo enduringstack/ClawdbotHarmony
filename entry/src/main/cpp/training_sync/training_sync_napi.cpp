@@ -332,7 +332,7 @@ static napi_value InitModule(napi_env env, napi_value exports) {
 }
 
 static napi_module addon = {
-    .nm_version = 1,
+    .nm_version = NAPI_MODULE_VERSION,
     .nm_flags = 0,
     .nm_filename = nullptr,
     .nm_register_func = InitModule,
@@ -341,8 +341,8 @@ static napi_module addon = {
     .reserved = {0},
 };
 
-extern "C" __attribute__((constructor)) void RegisterModule(void) {
-    napi_register_module_v1(&addon);
-}
-
 EXTERN_C_END
+
+extern "C" __attribute__((constructor)) void RegisterTrainingSyncModule(void) {
+    napi_module_register(&addon);
+}

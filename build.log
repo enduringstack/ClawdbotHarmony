@@ -1,0 +1,45 @@
+Building...
+> hvigor [32mUP-TO-DATE :entry:default@PreBuild...  [39m
+> hvigor [32mFinished :entry:default@CreateModuleInfo... after 3 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@GenerateMetadata...  [39m
+> hvigor [32mFinished :entry:default@ConfigureCmake... after 102 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@MergeProfile...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@CreateBuildProfile...  [39m
+> hvigor [32mFinished :entry:default@PreCheckSyscap... after 1 ms [39m
+> hvigor [32mFinished :entry:default@ProcessIntegratedHsp... after 3 ms [39m
+> hvigor [32mFinished :entry:default@BuildNativeWithCmake... after 66 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@MakePackInfo...  [39m
+> hvigor [32mFinished :entry:default@SyscapTransform... after 30 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@GeneratePkgContextInfo...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessProfile...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessRouterMap...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessShareConfig...  [39m
+> hvigor [32mFinished :entry:default@ProcessStartupConfig... after 8 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessResource...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@GenerateLoaderJson...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@CompileResource...  [39m
+> hvigor [32mFinished :entry:default@BuildJS... after 8 ms [39m
+> hvigor [91mERROR: Failed :entry:default@BuildNativeWithNinja... [39m
+> hvigor [91mERROR: Exceptions happened while executing C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\native\build-tools\cmake\bin\ninja.exe -C C:\Users\Liuho\ClawdBotHarmony\entry\.cxx\default\default\release\arm64-v8a.
+[32mninja: Entering directory `C:\Users\Liuho\ClawdBotHarmony\entry\.cxx\default\default\release\arm64-v8a'[32m[39m
+[32m[1/2] Building CXX object training_sync/CMakeFiles/training_sync.dir/training_sync_napi.cpp.o[32m[39m
+[31mFAILED: training_sync/CMakeFiles/training_sync.dir/training_sync_napi.cpp.o [31m[39m
+[32mC:\PROGRA~1\Huawei\DEVECO~1\sdk\default\OPENHA~1\native\llvm\bin\CLANG_~1.EXE --target=aarch64-linux-ohos --gcc-toolchain="C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native/llvm" --sysroot="C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native/sysroot" -Dtraining_sync_EXPORTS -I"C:/Program Files/Huawei/DevEco Studio/sdk/default/hms/native/sysroot/usr/include" -IC:/Users/Liuho/ClawdBotHarmony/entry/src/main/cpp/training_sync -IC:/Users/Liuho/ClawdBotHarmony/entry/src/main/cpp -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -fno-addrsig -Wa,--noexecstack -Wformat -Werror=format-security  -std=c++17 -D__MUSL__ -O2 -DNDEBUG  -fPIC -MD -MT training_sync/CMakeFiles/training_sync.dir/training_sync_napi.cpp.o -MF training_sync\CMakeFiles\training_sync.dir\training_sync_napi.cpp.o.d -o training_sync/CMakeFiles/training_sync.dir/training_sync_napi.cpp.o -c C:/Users/Liuho/ClawdBotHarmony/entry/src/main/cpp/training_sync/training_sync_napi.cpp[32m[39m
+[33mclang++: warning: argument unused during compilation: '--gcc-toolchain=C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native/llvm' [-Wunused-command-line-argument][33m[39m
+[32m[32m[39m
+[31mC:/Users/Liuho/ClawdBotHarmony/entry/src/main/cpp/training_sync/training_sync_napi.cpp:345:5: error: use of undeclared identifier 'napi_register_module_v1'[31m[39m
+[31m[31m[39m
+[31m    napi_register_module_v1(&addon);[31m[39m
+[31m[31m[39m
+[31m    ^[31m[39m
+[31m[31m[39m
+[33m1 error generated.[33m[39m
+[32m[32m[39m
+[31mninja: build stopped: subcommand failed.[31m[39m
+undefined
+
+[31m* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --debug option to get more log output.
+[39m
+> hvigor [91mERROR: BUILD FAILED in 14 s 562 ms [39m
