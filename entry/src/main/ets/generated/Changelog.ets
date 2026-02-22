@@ -8,7 +8,7 @@ export interface ChangelogEntry {
   fixes: string[];
 }
 
-export const APP_VERSION: string = '2.50.0';
+export const APP_VERSION: string = '2.51.0';
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
@@ -18,10 +18,12 @@ export const CHANGELOG: ChangelogEntry[] = [
       '新地点发现保存功能: A2UI卡片确认后自动创建围栏',
       'saveNewPlace方法: 保存用户确认的新地点到地理围栏',
       'WearablePlugin增强: 添加设备连接状态和错误信息到快照',
+      'A2UI本地分发: ContextAwarenessService可直接分发UI卡片',
+      '情景智能多语言支持: 新地点发现/围栏建议/反馈按钮支持中英文',
     ],
     fixes: [
       '修复 ContextAwarenessService 编译错误 (gf.radius -> gf.radiusMeters)',
-      '修复 dispatchA2UI 方法不存在 (临时注释,待后续完善)',
+      '修复 dispatchA2UI 方法不存在 (实现本地A2UI监听机制)',
       '修复 haversineDistance 重复定义 (删除冗余方法)',
       '修复 NodeRuntime.saveNewPlace 方法缺失 (新增方法)',
       '改进 WearablePlugin 心率传感器订阅日志和错误处理',

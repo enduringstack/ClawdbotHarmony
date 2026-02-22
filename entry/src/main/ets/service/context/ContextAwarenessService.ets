@@ -11,6 +11,7 @@ import { common, abilityAccessCtrl } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { LogService } from '../../common/LogService';
 import { Constants } from '../../common/Constants';
+import { I18n } from '../../common/I18n';
 import { GeofenceManager, GeofenceEvent } from './GeofenceManager';
 import { BehaviorLogger } from './BehaviorLogger';
 import { ContextEngineService, ContextSnapshot, ContextRule as EngineRule, ContextCondition as EngineCondition, ContextAction as EngineAction, MatchResult, GeofenceBinding } from './ContextEngine';
@@ -121,6 +122,8 @@ export class ContextAwarenessService {
   private suggestionListeners: SuggestionListener[] = [];
   private suggestionState: GeofenceSuggestionState = { blacklist: [], deferred: {}, lastShown: {} };
   private suggestionStateLoaded: boolean = false;
+  // A2UI 监听器 (本地UI分发)
+  private a2uiListeners: ((type: string, content: string) => void)[] = [];
   // 新地点自动发现
   private newPlaceDetectionStart: number = 0;  // 开始检测新地点的时间戳
   private newPlaceLastLat: number = 0;
@@ -487,6 +490,7 @@ export class ContextAwarenessService {
 
     // 监听位置变化，记录到发现服务
     this.geofenceMgr.addLocationListener((location) => {
+      this.log.info(TAG, `Location update: (${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)})`);
       this.locationDiscovery.recordLocation(location);
       // 检测新地点
       let ssid = this.lastWifiSsid ?? '';
@@ -954,19 +958,24 @@ export class ContextAwarenessService {
     // 推断类别
     let category = this.inferCategoryFromTime();
     
+    let titleText = I18n.t('context.newPlace.title');
+    let wifiLabel = I18n.t('context.newPlace.wifi');
+    let saveAsLabel = I18n.t('context.newPlace.saveAs');
+    let renameLabel = I18n.t('context.newPlace.rename');
+    let ignoreLabel = I18n.t('context.newPlace.ignore');
+    
     let jsonl = '{"type":"form","id":"new_place_' + Date.now() + '","children":[' +
-      '{"type":"text","text":"📍 发现新地点","style":{"fontSize":18,"fontWeight":"bold"}},' +
+      '{"type":"text","text":"📍 ' + titleText + '","style":{"fontSize":18,"fontWeight":"bold"}},' +
       '{"type":"text","text":"' + escapedName + '"},' +
-      '{"type":"text","text":"WiFi: ' + escapedWifi + '","style":{"fontSize":12,"color":"#666"}}},' +
+      '{"type":"text","text":"' + wifiLabel + ': ' + escapedWifi + '","style":{"fontSize":12,"color":"#666"}}},' +
       '{"type":"row","children":[' +
-        '{"type":"button","label":"✅ 保存为 ' + category + '","action":{"event":{"name":"new_place_save","context":{"lat":' + lat + ',"lng":' + lng + ',"wifi":"' + escapedWifi + '","name":"' + escapedName + '","category":"' + category + '"}}},"style":"primary"},' +
-        '{"type":"button","label":"✏️ 改名","action":{"event":{"name":"new_place_rename","context":{"lat":' + lat + ',"lng":' + lng + '}}}},"style":"secondary"},' +
-        '{"type":"button","label":"❌ 忽略","action":{"event":{"name":"new_place_ignore","context":{}}}},"style":"secondary"}' +
+        '{"type":"button","label":"✅ ' + saveAsLabel + ' ' + category + '","action":{"event":{"name":"new_place_save","context":{"lat":' + lat + ',"lng":' + lng + ',"wifi":"' + escapedWifi + '","name":"' + escapedName + '","category":"' + category + '"}}},"style":"primary"},' +
+        '{"type":"button","label":"✏️ ' + renameLabel + '","action":{"event":{"name":"new_place_rename","context":{"lat":' + lat + ',"lng":' + lng + '}}}},"style":"secondary"},' +
+        '{"type":"button","label":"❌ ' + ignoreLabel + '","action":{"event":{"name":"new_place_ignore","context":{}}}},"style":"secondary"}' +
       ']}]}';
     
-    // TODO: Wire up A2UI dispatch through NodeRuntime
-    // this.dispatchA2UI('push', jsonl);
-    this.log.info(TAG, `New place card would be shown: ${placeName}`);
+    this.dispatchA2UI('push', jsonl);
+    this.log.info(TAG, `New place card shown: ${placeName}`);
   }
 
   /**
@@ -1267,6 +1276,28 @@ export class ContextAwarenessService {
         this.recommendationListeners[i](rec);
       } catch (err) {
         this.log.warn(TAG, 'Listener error: ' + (err as Error).message);
+      }
+    }
+  }
+  
+  // ==================== A2UI 本地分发 ====================
+  
+  addA2UIListener(listener: (type: string, content: string) => void): void {
+    this.a2uiListeners.push(listener);
+  }
+  
+  removeA2UIListener(listener: (type: string, content: string) => void): void {
+    let idx = this.a2uiListeners.indexOf(listener);
+    if (idx >= 0) this.a2uiListeners.splice(idx, 1);
+  }
+  
+  dispatchA2UI(type: string, content: string): void {
+    this.log.info(TAG, `dispatchA2UI: type=${type} contentLen=${content.length} listeners=${this.a2uiListeners.length}`);
+    for (let i = 0; i < this.a2uiListeners.length; i++) {
+      try {
+        this.a2uiListeners[i](type, content);
+      } catch (err) {
+        this.log.warn(TAG, 'A2UI listener error: ' + (err as Error).message);
       }
     }
   }

@@ -46,6 +46,7 @@ import { http } from '@kit.NetworkKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { LogService } from '../../common/LogService';
 import { Constants } from '../../common/Constants';
+import { I18n } from '../../common/I18n';
 import { NotificationHelper } from '../NotificationHelper';
 import { ExperienceStorage } from '../ExperienceStorage';
 import { ExperiencePack, Experience, Skill, Memory, ShareLevel, generateId } from '../../model/ExperiencePack';
@@ -58,7 +59,7 @@ import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 import { Geofence, GeofenceCategory } from '../context/ContextModels';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.50.0';
+const APP_VERSION = '2.51.0';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
@@ -406,15 +407,17 @@ export class NodeRuntime {
 
           // Also send system notification if in background
           if (!this._isInForeground) {
-            NotificationHelper.getInstance().send('💡 情景智能', rec.reason).catch(() => { /* ignore */ });
+            NotificationHelper.getInstance().send('💡 ' + I18n.t('context.notification.title'), rec.reason).catch(() => { /* ignore */ });
           }
         });
 
         // Listen for geofence suggestions from location discovery
         cas.addSuggestionListener((suggestions: GeofenceSuggestion[]) => {
+          let discoveredText = I18n.t('context.suggestion.discovered');
+          let goToSettingsText = I18n.t('context.suggestion.goToSettings');
           for (let i = 0; i < suggestions.length; i++) {
             let s = suggestions[i];
-            let text = `📍 发现你经常去这里：${s.name}\n${s.reason}\n前往"情景智能设置"查看并添加围栏`;
+            let text = `📍 ${discoveredText}：${s.name}\n${s.reason}\n${goToSettingsText}`;
             this.log.info(TAG, `围栏建议: ${s.name}`);
             let event: GatewayChatEvent = {
               runId: `suggest-${Date.now()}-${i}`,
@@ -432,9 +435,15 @@ export class NodeRuntime {
           if (!this._isInForeground && suggestions.length > 0) {
             let first = suggestions[0];
             NotificationHelper.getInstance()
-              .send('📍 发现常去地点', `${first.name} — ${first.reason}`)
+              .send('📍 ' + I18n.t('context.notification.discoveredPlace'), `${first.name} — ${first.reason}`)
               .catch(() => { /* ignore */ });
           }
+        });
+
+        // Listen for A2UI events from ContextAwarenessService (new place discovery, etc.)
+        cas.addA2UIListener((type: string, content: string) => {
+          this.log.info(TAG, `ContextA2UI: type=${type} contentLen=${content.length}`);
+          this.dispatchA2UI(type, content);
         });
       } else {
         this.log.warn(TAG, '情景智能启动失败');
@@ -2979,16 +2988,24 @@ export class NodeRuntime {
     let safeReason = reason.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     let safeRuleId = ruleId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     let safeRuleName = ruleName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    
+    // Get localized strings
+    let titleText = I18n.t('context.notification.recommendation');
+    let confidenceText = I18n.t('context.confidence');
+    let usefulText = I18n.t('context.feedback.useful');
+    let inaccurateText = I18n.t('context.feedback.inaccurate');
+    let dismissText = I18n.t('context.feedback.dismiss');
+    let detailsText = I18n.t('context.feedback.viewDetails');
 
     // Use simplified A2UI format: {"type":"form","children":[...]}
     let jsonl = `{"type":"form","id":"ctx_rec_${Date.now()}","children":[` +
-      `{"type":"text","text":"💡 情景智能推荐","style":{"fontSize":20,"fontWeight":"bold"}},` +
+      `{"type":"text","text":"💡 ${titleText}","style":{"fontSize":20,"fontWeight":"bold"}},` +
       `{"type":"text","text":"${safeReason}","style":{"fontSize":15}},` +
-      `{"type":"text","text":"📋 ${safeRuleName}  |  置信度: ${confidence}%","style":{"fontSize":12,"color":"#888"}},` +
-      `{"type":"button","text":"✅ 有用","variant":"primary","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","ruleName":"${safeRuleName}","feedback":"accept"}}}},` +
-      `{"type":"button","text":"❌ 不准","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","ruleName":"${safeRuleName}","feedback":"reject"}}}},` +
-      `{"type":"button","text":"🙈 忽略","variant":"borderless","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","ruleName":"${safeRuleName}","feedback":"dismiss"}}}},` +
-      `{"type":"button","text":"🔍 查看详情","variant":"borderless","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"view_snapshot"}}}}` +
+      `{"type":"text","text":"📋 ${safeRuleName}  |  ${confidenceText}: ${confidence}%","style":{"fontSize":12,"color":"#888"}},` +
+      `{"type":"button","text":"✅ ${usefulText}","variant":"primary","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","ruleName":"${safeRuleName}","feedback":"accept"}}}},` +
+      `{"type":"button","text":"❌ ${inaccurateText}","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","ruleName":"${safeRuleName}","feedback":"reject"}}}},` +
+      `{"type":"button","text":"🙈 ${dismissText}","variant":"borderless","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","ruleName":"${safeRuleName}","feedback":"dismiss"}}}},` +
+      `{"type":"button","text":"🔍 ${detailsText}","variant":"borderless","action":{"event":{"name":"context_feedback","context":{"ruleId":"${safeRuleId}","feedback":"view_snapshot"}}}}` +
       `]}`;
 
     return jsonl;

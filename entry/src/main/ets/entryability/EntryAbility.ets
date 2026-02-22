@@ -3,12 +3,22 @@ import { window } from '@kit.ArkUI';
 import { NodeRuntime } from '../service/gateway/NodeRuntime';
 import { LocalEmbedding } from '../service/embedding/LocalEmbedding';
 import { LogService } from '../common/LogService';
+import { ContextAwarenessService } from '../service/context/ContextAwarenessService';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     console.info('[ClawdBot] EntryAbility onCreate');
     // Initialize LogService with app context for preferences persistence
     LogService.getInstance().initContext(this.context);
+    // Initialize and start ContextAwarenessService
+    ContextAwarenessService.getInstance().init(this.context).then(() => {
+      console.info('[ClawdBot] ContextAwarenessService initialized');
+      return ContextAwarenessService.getInstance().start();
+    }).then((started: boolean) => {
+      console.info('[ClawdBot] ContextAwarenessService started: ' + started);
+    }).catch((err: Error) => {
+      console.error('[ClawdBot] ContextAwarenessService init/start failed: ' + err.message);
+    });
     // Initialize AppStorage keys for share data (must exist before @StorageLink binds)
     AppStorage.setOrCreate<number>('share_timestamp', 0);
     AppStorage.setOrCreate<string>('share_text', '');

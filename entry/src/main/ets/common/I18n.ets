@@ -522,6 +522,28 @@ function buildZh(): Map<string, string> {
   m.set('settings.clearLearnedSignals', '清除学习信号');
   m.set('settings.clearLearnedSignalsConfirm', '确定清除所有已学习的位置信号？需要重新学习。');
 
+  // Context Awareness - New Place Discovery
+  m.set('context.newPlace.title', '发现新地点');
+  m.set('context.newPlace.wifi', 'WiFi');
+  m.set('context.newPlace.saveAs', '保存为');
+  m.set('context.newPlace.rename', '改名');
+  m.set('context.newPlace.ignore', '忽略');
+  m.set('context.newPlace.defaultName', '新地点');
+
+  // Context Awareness - Suggestions
+  m.set('context.suggestion.discovered', '发现你经常去这里');
+  m.set('context.suggestion.goToSettings', '前往"情景智能设置"查看并添加围栏');
+
+  // Context Awareness - Notifications
+  m.set('context.notification.title', '情景智能');
+  m.set('context.notification.discoveredPlace', '发现常去地点');
+  m.set('context.notification.recommendation', '情景智能推荐');
+  m.set('context.confidence', '置信度');
+  m.set('context.feedback.useful', '有用');
+  m.set('context.feedback.inaccurate', '不准');
+  m.set('context.feedback.dismiss', '忽略');
+  m.set('context.feedback.viewDetails', '查看详情');
+
   return m;
 }
 
@@ -1038,6 +1060,28 @@ function buildEn(): Map<string, string> {
   m.set('settings.learnedSignals', 'Learned Signals');
   m.set('settings.clearLearnedSignals', 'Clear Learned Signals');
   m.set('settings.clearLearnedSignalsConfirm', 'Clear all learned location signals? They will need to be relearned.');
+
+  // Context Awareness - New Place Discovery
+  m.set('context.newPlace.title', 'New Place Discovered');
+  m.set('context.newPlace.wifi', 'WiFi');
+  m.set('context.newPlace.saveAs', 'Save as');
+  m.set('context.newPlace.rename', 'Rename');
+  m.set('context.newPlace.ignore', 'Ignore');
+  m.set('context.newPlace.defaultName', 'New Place');
+
+  // Context Awareness - Suggestions
+  m.set('context.suggestion.discovered', 'You frequently visit this place');
+  m.set('context.suggestion.goToSettings', 'Go to Context Settings to add geofence');
+
+  // Context Awareness - Notifications
+  m.set('context.notification.title', 'Context Intelligence');
+  m.set('context.notification.discoveredPlace', 'Discovered Frequent Location');
+  m.set('context.notification.recommendation', 'Context Recommendation');
+  m.set('context.confidence', 'Confidence');
+  m.set('context.feedback.useful', 'Useful');
+  m.set('context.feedback.inaccurate', 'Inaccurate');
+  m.set('context.feedback.dismiss', 'Dismiss');
+  m.set('context.feedback.viewDetails', 'View Details');
 
   return m;
 }
