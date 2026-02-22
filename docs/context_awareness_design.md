@@ -279,16 +279,176 @@ HarmonyOS `sensor.SensorId.HEART_RATE` 只能读取手机本身的传感器，**
 ## 8. 待办事项
 
 ### 高优先级
-1. [ ] 修复规则匹配问题 - 检查snapshot字段与规则条件
-2. [ ] 验证穿戴设备心率数据获取
-3. [ ] 实现拿起手机检测（区分运动）
-4. [ ] 静默模式关键信息提取
+
+#### 1. C++ 模块 NAPI 绑定 ⏳
+以下 C++ 模块已设计但未完成 NAPI 绑定：
+
+| 模块 | 文件 | 功能 | 状态 |
+|------|------|------|------|
+| motion_detector | cpp/motion_detector/ | 运动状态检测 | ⏳ 待绑定 |
+| sampling_strategy | cpp/motion_detector/ | 多级采集策略 | ⏳ 待绑定 |
+| place_signal_learner | cpp/place_learner/ | 地点信号学习 (WiFi/蓝牙/CellID) | ⏳ 待绑定 |
+| sleep_pattern | cpp/sleep_pattern/ | 睡眠时间学习 | ⏳ 待绑定 |
+| feedback_learner | cpp/feedback_learner/ | 用户反馈学习 | ⏳ 待绑定 |
+
+#### 2. 穿戴设备数据获取 ⏳
+- [x] 添加 READ_HEALTH_DATA 权限申请
+- [ ] 验证心率传感器是否能获取手表数据
+- [ ] 如果不能，研究 Health Kit API
+
+#### 3. 规则匹配问题 🔴
+- [ ] 调试为何 `No engine matches` 但规则存在
+- [ ] 检查 snapshot 字段与规则条件的匹配
+- [ ] 确保 `timeOfDay`, `isWeekend` 正确计算
+
+#### 4. 反馈学习系统集成 ⏳
+- [ ] 在 A2UI 卡片添加反馈按钮（有用/不准/调整）
+- [ ] 记录反馈上下文（时间、地点、WiFi、场景）
+- [ ] 支持用户输入调整值（如希望的提醒时间）
+- [ ] 基于反馈调整规则参数
+
+**示例场景**：
+```
+睡前提醒在 21:00 触发
+用户反馈"不准"，并提供调整值 "22:00"
+系统记录：规则=bedtime, 原始=21:00, 调整=22:00
+下次推荐时间调整为 22:00
+```
+
+---
 
 ### 中优先级
-5. [ ] App使用记录学习与推荐
-6. [ ] 静默模式情绪/唱歌检测
-7. [ ] 前置摄像头姿态检测优化
+
+#### 5. CellID 获取 (低功耗位置变化检测) ❓
+**问题**: HarmonyOS `radio.getSignalInformation()` 只返回 `signalType`/`signalLevel`，不提供 CellID
+
+**备选方案**:
+- 研究 `telephony.radio.getNetworkState()`
+- 研究 `telephony.call` 相关 API
+- 或者放弃 CellID，完全依赖 WiFi + 加速度计
+
+#### 6. App 使用记录学习 ❌
+**问题**: `ohos.permission.LOOK_AT_SCREEN_DATA` 在当前 SDK 不存在
+
+**备选方案**:
+- 使用 `ForegroundAppPlugin` 的前台 App 检测（受限）
+- 记录当前 App 使用时间
+- 学习用户在不同地点/时间的 App 使用习惯
+
+#### 7. 静默模式增强 ⏳
+- [ ] 关键信息提取
+  - 时间: "明天下午3点", "下周一"
+  - 地点: "星巴克", "公司楼下"
+  - 人物: "老王", "张总"
+  - 事件: "开会", "吃饭"
+  - 计划: "打算去买电脑"
+- [ ] 情绪/心情检测
+  - 语调分析
+  - 唱歌检测
+  - 压力水平
+
+#### 8. 拿起手机检测 ⏳
+**问题**: 当前"拿起手机"会触发运动状态变化，导致不必要的 GPS 请求
+
+**需要实现**:
+```
+拿起手机特征：
+- 加速度计：短暂脉冲 + 重力方向变化
+- 陀螺仪：快速旋转
+- 持续时间：< 3秒
+
+运动特征：
+- 加速度计：持续变化
+- 步数增加
+- GPS 位移
+- 持续时间：> 10秒
+```
+
+---
 
 ### 低优先级
-8. [ ] 设计文档持续更新
-9. [ ] 单元测试补充
+
+#### 9. 设计文档完善
+- [ ] 添加架构图
+- [ ] 添加数据流图
+- [ ] 添加 API 文档
+
+#### 10. 单元测试
+- [ ] C++ 模块单元测试
+- [ ] 规则引擎测试
+- [ ] 睡眠模式学习测试
+
+---
+
+## 9. 反馈学习系统设计
+
+### 9.1 数据结构
+```cpp
+struct FeedbackRecord {
+    std::string id;
+    FeedbackType type;           // USEFUL/INACCURATE/DISMISS/ADJUST
+    FeedbackContext context;     // 反馈时的上下文
+    AdjustmentValue adjustment;  // 用户调整值
+    int64_t timestamp;
+};
+
+struct FeedbackContext {
+    std::string ruleId;
+    std::string ruleName;
+    int64_t feedbackTime;
+    int hour;
+    int minute;
+    std::string timeOfDay;
+    bool isWeekend;
+    double latitude;
+    double longitude;
+    std::string geofence;
+    std::string wifiSsid;
+    std::string motionState;
+};
+
+struct AdjustmentValue {
+    std::string key;             // "hour", "minute"
+    double originalValue;
+    double adjustedValue;
+    std::string unit;
+};
+```
+
+### 9.2 学习规则偏好
+```cpp
+struct RulePreference {
+    std::string ruleId;
+    double preferredHour;        // 用户偏好的小时
+    double preferredMinute;      // 用户偏好的分钟
+    double hourAdjustment;       // 小时调整量
+    double confidence;           // 置信度
+    int usefulCount;             // 有用次数
+    int inaccurateCount;         // 不准次数
+    int adjustCount;             // 调整次数
+};
+```
+
+### 9.3 使用场景
+1. **睡前提醒调整**: 用户反馈 21:00 太早，调整为 22:00
+2. **久坐提醒频率**: 用户反馈太频繁，降低提醒频率
+3. **通勤时间**: 用户反馈通勤时间不准确，调整触发时间
+
+### 9.4 UI 交互
+```
+┌─────────────────────────────────┐
+│ 💡 情景智能推荐                  │
+│ 夜深了，早点休息 🌙              │
+│ 规则: 睡前提醒 | 置信度: 65%     │
+├─────────────────────────────────┤
+│ [✅ 有用] [❌ 不准] [⏰ 调整时间] │
+└─────────────────────────────────┘
+
+点击"调整时间"后：
+┌─────────────────────────────────┐
+│ 调整提醒时间                     │
+│ 当前: 21:00                     │
+│ 调整为: [ 22 ] : [ 00 ]         │
+│         [确认] [取消]           │
+└─────────────────────────────────┘
+```
