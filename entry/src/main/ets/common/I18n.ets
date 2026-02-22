@@ -550,6 +550,13 @@ function buildZh(): Map<string, string> {
   m.set('context.discovery.noResult', '暂未发现新地点，继续积累位置数据');
   m.set('context.discovery.notEnoughData', '位置数据不足 (需要至少10个点)');
 
+  // Context Awareness - Geofence Feature Learning
+  m.set('context.geofence.learned', '地点特征已学习');
+  m.set('context.geofence.newWifi', '关联WiFi');
+  m.set('context.geofence.newBt', '关联蓝牙');
+  m.set('context.geofence.saved', '已保存地点');
+  m.set('context.geofence.category', '类型');
+
   return m;
 }
 
@@ -1094,6 +1101,13 @@ function buildEn(): Map<string, string> {
   m.set('context.discovery.found', 'Found {0} frequent locations');
   m.set('context.discovery.noResult', 'No new locations found, keep collecting data');
   m.set('context.discovery.notEnoughData', 'Not enough location data (need at least 10 points)');
+
+  // Context Awareness - Geofence Feature Learning
+  m.set('context.geofence.learned', 'Place feature learned');
+  m.set('context.geofence.newWifi', 'Linked WiFi');
+  m.set('context.geofence.newBt', 'Linked Bluetooth');
+  m.set('context.geofence.saved', 'Place saved');
+  m.set('context.geofence.category', 'Category');
 
   return m;
 }

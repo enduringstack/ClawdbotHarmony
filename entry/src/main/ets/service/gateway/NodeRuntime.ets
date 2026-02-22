@@ -56,7 +56,7 @@ import { ContextAwarenessService, ContextRecommendation } from '../context/Conte
 import { ContextEngineService, ContextSnapshot, ContextRule, ContextCondition, ContextAction, MatchResult, GeofenceBinding } from '../context/ContextEngine';
 import { FeedbackService } from '../context/FeedbackService';
 import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
-import { Geofence, GeofenceCategory } from '../context/ContextModels';
+import { Geofence, GeofenceCategory, LearnedPlaceSignals } from '../context/ContextModels';
 
 const TAG = 'NodeRuntime';
 const APP_VERSION = '2.51.0';
@@ -1140,10 +1140,13 @@ export class NodeRuntime {
   private saveNewPlace(lat: number, lng: number, wifi: string, name: string, category: string): void {
     try {
       let cas = ContextAwarenessService.getInstance();
-      let meta: Record<string, string> | undefined = undefined;
-      if (wifi) {
-        meta = { 'wifi': wifi } as Record<string, string>;
-      }
+      let learnedSignals: LearnedPlaceSignals = {
+        wifiSSIDs: wifi ? [wifi] : [],
+        bluetoothDevices: [],
+        typicalTimes: [],
+        lastSeen: Date.now(),
+        visitCount: 1
+      };
       let gf: Geofence = {
         id: 'place_' + Date.now(),
         name: name,
@@ -1151,11 +1154,29 @@ export class NodeRuntime {
         longitude: lng,
         radiusMeters: 100,
         category: category as GeofenceCategory,
-        metadata: meta
+        metadata: wifi ? { 'wifi': wifi } as Record<string, string> : undefined,
+        learnedSignals: learnedSignals
       };
       cas.addGeofence(gf);
       this.log.info(TAG, `Saved new place: ${name} at (${lat}, ${lng})`);
-      this.sendFeedbackResponse(`✅ 已保存地点: ${name}`);
+      
+      // Show confirmation card in chat
+      let savedText = I18n.t('context.geofence.saved');
+      let categoryText = I18n.t('context.geofence.category');
+      let wifiText = I18n.t('context.geofence.newWifi');
+      
+      let detailParts: string[] = [];
+      detailParts.push(`${categoryText}: ${category}`);
+      if (wifi) {
+        detailParts.push(`${wifiText}: ${wifi}`);
+      }
+      
+      let jsonl = '{"type":"form","id":"place_saved_' + Date.now() + '","children":[' +
+        '{"type":"text","text":"✅ ' + savedText + '","style":{"fontSize":16,"fontWeight":"bold"}},' +
+        '{"type":"text","text":"' + name + '","style":{"fontSize":14}},' +
+        '{"type":"text","text":"' + detailParts.join(' | ') + '","style":{"fontSize":12,"color":"#666"}}' +
+        ']}';
+      this.dispatchA2UI('push', jsonl);
     } catch (err) {
       this.log.warn(TAG, `saveNewPlace error: ${(err as Error).message}`);
     }

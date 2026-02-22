@@ -1193,6 +1193,7 @@ export class ContextAwarenessService {
           if (!signals.wifiSSIDs!.includes(this.lastWifiSsid)) {
             signals.wifiSSIDs!.push(this.lastWifiSsid);
             this.log.info(TAG, `Learned WiFi for ${gf.name}: ${this.lastWifiSsid}`);
+            this.notifyGeofenceFeatureLearned(gf.name, 'WiFi', this.lastWifiSsid);
             updated = true;
           }
         }
@@ -1222,6 +1223,22 @@ export class ContextAwarenessService {
         break;
       }
     }
+  }
+
+  /**
+   * 通知围栏学习到新特征
+   */
+  private notifyGeofenceFeatureLearned(geofenceName: string, featureType: string, featureValue: string): void {
+    let titleText = I18n.t('context.geofence.learned');
+    let wifiLabelText = I18n.t('context.geofence.newWifi');
+    
+    let jsonl = '{"type":"form","id":"gf_learn_' + Date.now() + '","children":[' +
+      '{"type":"text","text":"🔗 ' + titleText + '","style":{"fontSize":16,"fontWeight":"bold"}},' +
+      '{"type":"text","text":"' + geofenceName + '"},' +
+      '{"type":"text","text":"' + wifiLabelText + ': ' + featureValue + '","style":{"fontSize":12,"color":"#666"}}' +
+      ']}';
+    
+    this.dispatchA2UI('push', jsonl);
   }
 
   /**
