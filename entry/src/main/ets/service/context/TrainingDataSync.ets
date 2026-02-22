@@ -4,7 +4,8 @@
  * 封装 C++ training_sync 模块
  * 负责网络上传（HarmonyOS HTTP API）
  */
-import { common, preferences } from '@kit.ArkData';
+import { preferences } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
 import { http } from '@kit.NetworkKit';
 import { LogService } from '../../common/LogService';
 import { ContextSnapshot } from './ContextEngine';

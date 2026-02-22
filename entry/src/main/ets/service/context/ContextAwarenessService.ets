@@ -98,6 +98,7 @@ export class ContextAwarenessService {
   // 状态历史 (用于规则判断)
   private prevMotionState: MotionState = 'unknown';
   private prevActivityState: string = 'unknown';  // 'sitting', 'sleeping', 'walking', 'active'
+  private activityState: string = 'unknown';      // 当前活动状态
   private activityStateTimestamp: number = 0;     // 状态开始时间
   private activityStateDuration: number = 0;      // 持续时间(ms)
   
@@ -718,12 +719,28 @@ export class ContextAwarenessService {
    */
   private getHeartRateFromWearable(): number {
     let digitalData = this.digitalWorld.getDigitalData();
-    for (let snap of digitalData) {
-      if (snap.pluginName === 'wearable' && snap.data['heart_rate']) {
-        return parseInt(snap.data['heart_rate']) || 0;
-      }
+    if (digitalData['heart_rate']) {
+      return parseInt(digitalData['heart_rate']) || 0;
     }
     return 0;
+  }
+
+  /**
+   * 检测是否在睡觉
+   */
+  private detectSleepingState(ctx: EnvironmentContext, hour: number): string {
+    // 夜间时段 (22:00 - 06:00)
+    if (hour >= 22 || hour < 6) {
+      // 在家 + 静止 = 睡觉
+      if (ctx.currentGeofence?.id === 'home' && ctx.motionState === 'stationary') {
+        return 'true';
+      }
+    }
+    // 检查活动状态
+    if (this.activityState === 'sleeping') {
+      return 'true';
+    }
+    return 'false';
   }
 
   /**
