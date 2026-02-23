@@ -8,9 +8,21 @@ export interface ChangelogEntry {
   fixes: string[];
 }
 
-export const APP_VERSION: string = '2.53.0';
+export const APP_VERSION: string = '2.54.0';
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.54.0',
+    date: '2026-02-23',
+    features: [
+      '位置信号学习增强: 合并即时学习的WiFi到信号摘要，无需等待3次观测',
+      '步数备用计数: CAS自有计步器作为StepCounterPlugin的备用数据源',
+    ],
+    fixes: [
+      '修复拿起手机后误判为walking触发GPS的问题 (添加8秒冷却期+恢复拿起前状态)',
+      '修复今日步数显示为0的问题 (添加CAS计步备用+改进诊断日志)',
+    ],
+  },
   {
     version: '2.53.0',
     date: '2026-02-23',
@@ -511,4 +523,4 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export const LATEST_VERSION: string = '2.53.0';
+export const LATEST_VERSION: string = '2.54.0';

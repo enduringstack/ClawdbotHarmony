@@ -107,6 +107,8 @@ export class ContextAwarenessService {
   // 传感器数据
   private accelerometerData: AccelerometerData = { x: 0, y: 0, z: 0, timestamp: 0 } as AccelerometerData;
   private stepCount: number = 0;
+  private stepCountBaseline: number = -1;   // 今日步数基线（CAS自有计步备用）
+  private stepCountBaselineDate: string = '';
   
   // 拿起手机检测
   private accelHistory: AccelSample[] = [];
@@ -115,6 +117,9 @@ export class ContextAwarenessService {
   private isPickupState: boolean = false;
   private lastStableGravityAngle: number = 90;  // 90° = held in hand; avoid false pickup at startup (0° = flat would trigger immediately)
   private pickupConfirmed: boolean = false;
+  private stateBeforePickup: MotionState = 'stationary';
+  private postPickupCooldownUntil: number = 0;
+  private static readonly POST_PICKUP_COOLDOWN_MS = 8000;  // 拿起后8秒冷却，防止手持抖动误判walking
   private static readonly PICKUP_PULSE_THRESHOLD = 10.5;
   private static readonly PICKUP_ANGLE_CHANGE_THRESHOLD = 20;
   private static readonly PICKUP_MAX_DURATION_MS = 3000;
@@ -488,7 +493,16 @@ export class ContextAwarenessService {
       }, { interval: 1000000000 });
       
       sensor.on(sensor.SensorId.PEDOMETER, (data: sensor.PedometerResponse) => {
-        this.stepCount = data.steps;  // 仅内部使用（pickup检测），显示由 StepCounterPlugin 负责
+        this.stepCount = data.steps;
+        // 维护CAS自有的今日步数基线（作为StepCounterPlugin的备用）
+        let today = new Date();
+        let todayStr = today.getFullYear() + '-' + (today.getMonth() + 1).toString().padStart(2, '0') + '-' + today.getDate().toString().padStart(2, '0');
+        if (this.stepCountBaselineDate !== todayStr) {
+          this.stepCountBaseline = data.steps;
+          this.stepCountBaselineDate = todayStr;
+        } else if (this.stepCountBaseline < 0) {
+          this.stepCountBaseline = data.steps;
+        }
       }, { interval: 5000000000 });
       
       this.log.info(TAG, 'Motion sensors started');
@@ -596,12 +610,19 @@ export class ContextAwarenessService {
       this.tray.put('motionState', 'pickup', 0.85, 'accelerometer');
 
       if (this.lastMotionState !== 'pickup') {
+        this.stateBeforePickup = this.lastMotionState;
         this.log.info(TAG, `Motion state: ${this.lastMotionState} -> pickup (brief glance)`);
         this.engine.pushEvent('motion_pickup');
         this.lastMotionState = 'pickup';
       }
       this.pickupConfirmed = false;
       // 拿起手机不触发GPS — 只是瞬间查看，不需要位置更新
+      return;
+    }
+
+    // 拿起后冷却期：恢复拿起前的状态，防止手持抖动误判为walking触发GPS
+    let now_ms = Date.now();
+    if (now_ms < this.postPickupCooldownUntil) {
       return;
     }
 
@@ -649,10 +670,14 @@ export class ContextAwarenessService {
     if (newState !== this.lastMotionState) {
       this.log.info(TAG, `Motion state: ${this.lastMotionState} -> ${newState}, gpsSpeed=${gpsSpeed.toFixed(1)}m/s`);
 
-      // 放下手机：从 pickup 转为其他状态
+      // 放下手机：从 pickup 转为其他状态，恢复拿起前状态，启动冷却期
       if (this.lastMotionState === 'pickup') {
         this.engine.pushEvent('motion_putdown');
-        this.log.info(TAG, 'Putdown: pickup -> ' + newState);
+        // 恢复拿起前的GPS间隔，不要因为手持抖动误触walking GPS
+        newState = this.stateBeforePickup;
+        this.postPickupCooldownUntil = Date.now() + ContextAwarenessService.POST_PICKUP_COOLDOWN_MS;
+        this.log.info(TAG, `Putdown: pickup -> restore ${newState} (cooldown ${ContextAwarenessService.POST_PICKUP_COOLDOWN_MS}ms)`);
+        this.tray.put('motionState', newState, 0.9, 'accelerometer');
       }
 
       // 更新状态历史
@@ -1233,7 +1258,19 @@ export class ContextAwarenessService {
       }
     }
 
-    // 步数：由 StepCounterPlugin 通过插件路径写入（step_count_today），CAS 不再重复写入
+    // 步数：由 StepCounterPlugin 通过插件路径写入（step_count_today）
+    // 备用：如果插件步数为0但CAS计步器有数据，使用CAS数据
+    if (this.stepCountBaseline >= 0 && this.stepCount > 0) {
+      let casDaily = this.stepCount - this.stepCountBaseline;
+      if (casDaily < 0) {
+        this.stepCountBaseline = this.stepCount;
+        casDaily = 0;
+      }
+      let traySteps = this.tray.get('step_count_today');
+      if (!traySteps || traySteps.value === '0' || traySteps.value === '') {
+        this.tray.put('step_count_today', casDaily.toString(), 0.8, 'pedometer');
+      }
+    }
 
     // 运动状态（加速度计回调已写入，这里确保有值）
     if (this.lastMotionState !== 'unknown') {

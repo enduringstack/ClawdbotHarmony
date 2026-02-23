@@ -60,6 +60,12 @@ export class StepCounterPlugin implements DigitalPlugin {
       'is_active': this.isActive ? 'true' : 'false'
     };
 
+    if (!this.sensorRegistered) {
+      this.log.warn(TAG, 'Pedometer sensor not registered, step_count_today=0');
+    } else if (this.baselineSteps < 0) {
+      this.log.debug(TAG, 'Pedometer registered but no data yet (baseline not set)');
+    }
+
     return {
       pluginName: this.name,
       timestamp: Date.now(),

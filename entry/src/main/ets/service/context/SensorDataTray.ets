@@ -54,6 +54,7 @@ const DEFAULT_TTL: Record<string, number> = {
   // 运动
   'motionState': 30 * 1000,         // 30 sec
   'stepCount': 30 * 1000,           // 30 sec
+  'step_count_today': 2 * 60 * 1000, // 2 min (from StepCounterPlugin)
 
   // 位置
   'latitude': 2 * 60 * 1000,        // 2 min

@@ -361,29 +361,42 @@ export class LocationFusionService {
     for (let i = 0; i < geofences.length; i++) {
       let gf = geofences[i];
       let signals = this.learnedSignals.get(gf.id);
-      if (!signals || signals.totalObservations === 0) continue;
 
+      // 从 LocationFusion 观测系统获取（需要3+次观测）
       let wifiList: string[] = [];
-      signals.wifiSsids.forEach((count: number, ssid: string) => {
-        if (count >= LEARNING_MIN_OBSERVATIONS) {
-          wifiList.push(ssid);
-        }
-      });
-
       let btList: string[] = [];
-      signals.btDevices.forEach((count: number, name: string) => {
-        if (count >= LEARNING_MIN_OBSERVATIONS) {
-          btList.push(name);
-        }
-      });
+      let totalObs = 0;
+      if (signals && signals.totalObservations > 0) {
+        totalObs = signals.totalObservations;
+        signals.wifiSsids.forEach((count: number, ssid: string) => {
+          if (count >= LEARNING_MIN_OBSERVATIONS) {
+            wifiList.push(ssid);
+          }
+        });
+        signals.btDevices.forEach((count: number, name: string) => {
+          if (count >= LEARNING_MIN_OBSERVATIONS) {
+            btList.push(name);
+          }
+        });
+      }
 
-      if (wifiList.length > 0 || btList.length > 0 || signals.totalObservations > 0) {
+      // 合并 Geofence.learnedSignals 中即时学习的 WiFi（首次进入就记录）
+      if (gf.learnedSignals && gf.learnedSignals.wifiSSIDs) {
+        for (let j = 0; j < gf.learnedSignals.wifiSSIDs.length; j++) {
+          let ssid = gf.learnedSignals.wifiSSIDs[j];
+          if (!wifiList.includes(ssid)) {
+            wifiList.push(ssid);
+          }
+        }
+      }
+
+      if (wifiList.length > 0 || btList.length > 0 || totalObs > 0) {
         summaries.push({
           geofenceId: gf.id,
           geofenceName: gf.name,
           wifiSsids: wifiList,
           btDevices: btList,
-          totalObservations: signals.totalObservations,
+          totalObservations: totalObs > 0 ? totalObs : (gf.learnedSignals?.visitCount ?? 0),
         });
       }
     }

@@ -59,7 +59,7 @@ import { GeofenceSuggestion } from '../context/LocationDiscoveryService';
 import { Geofence, GeofenceCategory, LearnedPlaceSignals } from '../context/ContextModels';
 
 const TAG = 'NodeRuntime';
-const APP_VERSION = '2.53.0';
+const APP_VERSION = '2.54.0';
 
 export class NodeRuntime {
   private static instance: NodeRuntime | undefined = undefined;
