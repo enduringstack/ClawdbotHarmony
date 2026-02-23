@@ -53,6 +53,11 @@ export class LocalAsrService {
       return '';
     }
 
+    // Safety: finish any previous session before starting a new one
+    if (this.sessionId.length > 0) {
+      try { this.engine.finish(this.sessionId); } catch { /* ignore */ }
+    }
+
     this.sessionId = `asr_${Date.now()}`;
 
     // Merge all PCM buffers into one continuous Uint8Array
@@ -115,17 +120,18 @@ export class LocalAsrService {
             sampleBit: 16,
           },
           extraParams: {
-            'vadEnd': 3000,
+            'vadEnd': 5000,
             'addPunc': true,
+            'maxAudioDuration': 20000,
           },
         };
         this.engine!.startListening(startParams);
 
-        // Timeout fallback
+        // Timeout fallback — 20s is enough for 15s segments
         setTimeout((): void => {
-          this.log.warn(TAG, 'Recognition timeout (30s)');
+          this.log.warn(TAG, 'Recognition timeout (20s)');
           doResolve(collectedText);
-        }, 30000);
+        }, 20000);
       });
     } catch (err) {
       this.log.error(TAG, `Recognition error: ${(err as Error).message}`);

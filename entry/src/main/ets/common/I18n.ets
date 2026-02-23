@@ -467,8 +467,22 @@ function buildZh(): Map<string, string> {
   m.set('silent.summarizing', '正在生成摘要...');
   m.set('silent.completed', '已完成');
   m.set('silent.error', '记录出错');
+  m.set('silent.monitoring', '监听中...');
+  m.set('silent.listening', '检测语音...');
+  m.set('silent.processing', '识别中...');
   m.set('settings.silentMode', '静默记录');
   m.set('settings.silentModeDesc', '后台录音，自动识别说话人并转写');
+  m.set('silent.select', '选择');
+  m.set('silent.selectAll', '全选');
+  m.set('silent.deselectAll', '取消全选');
+  m.set('settings.silentLocalAsr', '本地语音识别');
+  m.set('settings.silentLocalAsrDesc', '使用系统内置 ASR 实时转写（效果较差，默认关闭）');
+  m.set('settings.silentAudioModel', '音频摘要模型');
+  m.set('settings.silentAudioModelDesc', '留空=使用主模型，填写=使用指定模型（如 Qwen/Qwen3-Omni-30B-A3B-Instruct）');
+  m.set('silent.actionItems', '行动项');
+  m.set('silent.addedToCalendar', '已添加到日历');
+  m.set('silent.failedToAdd', '添加失败');
+  m.set('silent.actionItemBadge', '项待办');
 
   // Place Discovery
   m.set('place.discoveredTitle', '发现新地点');
@@ -557,6 +571,11 @@ function buildZh(): Map<string, string> {
   m.set('context.geofence.newBt', '关联蓝牙');
   m.set('context.geofence.saved', '已保存地点');
   m.set('context.geofence.category', '类型');
+
+  // Context Awareness - Explore Mode
+  m.set('context.explore.title', '积极探索模式');
+  m.set('context.explore.desc', '遇到新情境时主动用AI生成建议，用户反馈后转化为规则');
+  m.set('context.explore.fingerprints', '已探索状态');
 
   return m;
 }
@@ -1020,8 +1039,22 @@ function buildEn(): Map<string, string> {
   m.set('silent.summarizing', 'Generating summary...');
   m.set('silent.completed', 'Completed');
   m.set('silent.error', 'Recording error');
+  m.set('silent.monitoring', 'Monitoring...');
+  m.set('silent.listening', 'Detecting speech...');
+  m.set('silent.processing', 'Recognizing...');
   m.set('settings.silentMode', 'SILENT RECORDER');
   m.set('settings.silentModeDesc', 'Background recording with speaker ID and transcription');
+  m.set('silent.select', 'Select');
+  m.set('silent.selectAll', 'Select All');
+  m.set('silent.deselectAll', 'Deselect All');
+  m.set('settings.silentLocalAsr', 'Local ASR');
+  m.set('settings.silentLocalAsrDesc', 'Use built-in system ASR for real-time transcription (poor quality, off by default)');
+  m.set('settings.silentAudioModel', 'Audio Summary Model');
+  m.set('settings.silentAudioModelDesc', 'Empty=use main model, or specify (e.g. Qwen/Qwen3-Omni-30B-A3B-Instruct)');
+  m.set('silent.actionItems', 'Action Items');
+  m.set('silent.addedToCalendar', 'Added to calendar');
+  m.set('silent.failedToAdd', 'Failed to add');
+  m.set('silent.actionItemBadge', 'action items');
 
   // Place Discovery
   m.set('place.discoveredTitle', 'New Place Discovered');
@@ -1110,6 +1143,11 @@ function buildEn(): Map<string, string> {
   m.set('context.geofence.newBt', 'Linked Bluetooth');
   m.set('context.geofence.saved', 'Place saved');
   m.set('context.geofence.category', 'Category');
+
+  // Context Awareness - Explore Mode
+  m.set('context.explore.title', 'Active Explore Mode');
+  m.set('context.explore.desc', 'AI suggests actions for new contexts; your feedback becomes rules');
+  m.set('context.explore.fingerprints', 'Explored states');
 
   return m;
 }

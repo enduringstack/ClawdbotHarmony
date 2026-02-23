@@ -106,6 +106,92 @@
     "enabled": true
   },
   {
+    "id": "rule_home_sedentary_alert",
+    "name": "在家久坐提醒（1小时）",
+    "conditions": [
+      {
+        "key": "geofence",
+        "op": "eq",
+        "value": "{{home}}"
+      },
+      {
+        "key": "motionState",
+        "op": "eq",
+        "value": "stationary"
+      },
+      {
+        "key": "activityDuration",
+        "op": "gte",
+        "value": "3600"
+      },
+      {
+        "key": "isSleeping",
+        "op": "neq",
+        "value": "true"
+      }
+    ],
+    "excludeConditions": [
+      [
+        {
+          "key": "timeOfDay",
+          "op": "eq",
+          "value": "night"
+        }
+      ]
+    ],
+    "action": {
+      "id": "alert_move_home",
+      "type": "alert",
+      "payload": "在家坐了超过1小时了！起来活动一下 🏃‍♂️"
+    },
+    "priority": 3.0,
+    "cooldownMs": 3600000,
+    "enabled": true
+  },
+  {
+    "id": "rule_home_sedentary_wifi",
+    "name": "在家久坐提醒（WiFi检测）",
+    "conditions": [
+      {
+        "key": "wifiGeofence",
+        "op": "eq",
+        "value": "home"
+      },
+      {
+        "key": "motionState",
+        "op": "eq",
+        "value": "stationary"
+      },
+      {
+        "key": "activityDuration",
+        "op": "gte",
+        "value": "3600"
+      },
+      {
+        "key": "isSleeping",
+        "op": "neq",
+        "value": "true"
+      }
+    ],
+    "excludeConditions": [
+      [
+        {
+          "key": "timeOfDay",
+          "op": "eq",
+          "value": "night"
+        }
+      ]
+    ],
+    "action": {
+      "id": "alert_move_home_wifi",
+      "type": "alert",
+      "payload": "在家坐了超过1小时了！起来活动一下 🏃‍♂️"
+    },
+    "priority": 2.5,
+    "cooldownMs": 3600000,
+    "enabled": true
+  },
+  {
     "id": "rule_commuting",
     "name": "通勤路上",
     "conditions": [

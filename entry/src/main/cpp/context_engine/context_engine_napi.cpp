@@ -70,7 +70,7 @@ double jsonGetNum(const std::string& json, const std::string& key, double defVal
     if (pos == std::string::npos) return defVal;
     pos++;
     while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
-    try { return std::stod(json.substr(pos)); } catch (...) { return defVal; }
+    return context_engine::safe_stod(json.substr(pos), defVal);
 }
 
 bool jsonGetBool(const std::string& json, const std::string& key, bool defVal) {

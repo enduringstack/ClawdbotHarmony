@@ -61,7 +61,7 @@ export class VoiceprintService {
   private resourceManager: resourceManager.ResourceManager | null = null;
 
   // Thresholds
-  private readonly IDENTIFY_THRESHOLD = 0.5;
+  private readonly IDENTIFY_THRESHOLD = 0.35;
   private readonly HIGH_CONFIDENCE = 0.75;
   private readonly MEDIUM_CONFIDENCE = 0.6;
   private readonly LOW_CONFIDENCE = 0.45;
@@ -194,47 +194,112 @@ export class VoiceprintService {
     }
   }
 
+  /**
+   * Enroll a speaker from pre-computed embeddings (e.g., from stored conversation entries).
+   * Unlike enrollSpeaker(), this skips audio→embedding extraction.
+   */
+  async enrollFromEmbeddings(name: string, embeddings: Float32Array[]): Promise<boolean> {
+    if (!this.initialized || !this.manager) return false;
+    if (embeddings.length === 0) return false;
+
+    try {
+      // Filter out invalid embeddings
+      const valid: Float32Array[] = [];
+      for (const emb of embeddings) {
+        if (emb.length > 0) valid.push(emb);
+      }
+      if (valid.length === 0) return false;
+
+      // Remove existing if any
+      if (this.manager.contains(name)) {
+        this.manager.remove(name);
+      }
+
+      const avgEmb = this.averageEmbeddings(valid);
+      const ok = this.manager.add({ name, v: avgEmb });
+      if (!ok) {
+        console.error(TAG, `Failed to add speaker "${name}" to manager`);
+        return false;
+      }
+
+      const profile: VoiceprintProfile = {
+        name: name,
+        enrolledAt: Date.now(),
+        sampleCount: valid.length,
+        embedding: Array.from(avgEmb),
+      };
+
+      this.profiles = this.profiles.filter((p) => p.name !== name);
+      this.profiles.push(profile);
+      await this.saveProfiles();
+
+      console.info(TAG, `Enrolled speaker "${name}" from ${valid.length} pre-computed embedding(s)`);
+      return true;
+    } catch (e) {
+      const err = e as BusinessError;
+      console.error(TAG, `enrollFromEmbeddings error: ${err.message}`);
+      return false;
+    }
+  }
+
   identify(samples: Float32Array, sampleRate: number = 16000, threshold?: number): IdentifyResult {
     const unknown: IdentifyResult = { speaker: '', score: 0, confidence: 'unknown' };
     if (!this.initialized || !this.manager) return unknown;
 
-    const actualThreshold = threshold ?? this.IDENTIFY_THRESHOLD;
-
     try {
       const embedding = this.extractEmbedding(samples, sampleRate);
       if (!embedding || embedding.length === 0) return unknown;
-
-      // Search for matching speaker
-      const matchName = this.manager.search({ threshold: actualThreshold, v: embedding });
-
-      if (!matchName || matchName === '') return unknown;
-
-      // Calculate score by comparing with stored embedding
-      const profile = this.profiles.find((p) => p.name === matchName);
-      let score = actualThreshold; // Default to threshold if we can't calculate
-
-      if (profile && profile.embedding.length > 0) {
-        const storedEmb = new Float32Array(profile.embedding);
-        score = this.cosineSimilarity(embedding, storedEmb);
-      }
-
-      let confidence: 'high' | 'medium' | 'low' | 'unknown';
-      if (score >= this.HIGH_CONFIDENCE) {
-        confidence = 'high';
-      } else if (score >= this.MEDIUM_CONFIDENCE) {
-        confidence = 'medium';
-      } else if (score >= this.LOW_CONFIDENCE) {
-        confidence = 'low';
-      } else {
-        confidence = 'unknown';
-      }
-
-      return { speaker: matchName, score, confidence };
+      return this.identifyFromEmbedding(embedding, threshold);
     } catch (e) {
       const err = e as BusinessError;
       console.error(TAG, `identify error: ${err.message}`);
       return unknown;
     }
+  }
+
+  /**
+   * Identify speaker from a pre-computed embedding.
+   * Uses manual cosine comparison against all stored profiles for reliability and debug visibility.
+   */
+  identifyFromEmbedding(embedding: Float32Array, threshold?: number): IdentifyResult {
+    const unknown: IdentifyResult = { speaker: '', score: 0, confidence: 'unknown' };
+    if (!this.initialized || this.profiles.length === 0) return unknown;
+
+    const actualThreshold = threshold ?? this.IDENTIFY_THRESHOLD;
+
+    let bestName = '';
+    let bestScore = -1;
+
+    // Manual cosine comparison against all stored profiles
+    for (const profile of this.profiles) {
+      if (profile.embedding.length === 0) continue;
+      const storedEmb = new Float32Array(profile.embedding);
+      const score = this.cosineSimilarity(embedding, storedEmb);
+      console.info(TAG, `Cosine similarity with "${profile.name}": ${score.toFixed(4)}`);
+      if (score > bestScore) {
+        bestScore = score;
+        bestName = profile.name;
+      }
+    }
+
+    if (bestScore < actualThreshold || bestName === '') {
+      console.info(TAG, `Best match: "${bestName}" score=${bestScore.toFixed(4)} < threshold=${actualThreshold} → no match`);
+      // Return actual score for debug visibility (speaker stays empty to indicate no match)
+      return { speaker: '', score: bestScore >= 0 ? bestScore : 0, confidence: 'unknown' };
+    }
+
+    let confidence: 'high' | 'medium' | 'low' | 'unknown';
+    if (bestScore >= this.HIGH_CONFIDENCE) {
+      confidence = 'high';
+    } else if (bestScore >= this.MEDIUM_CONFIDENCE) {
+      confidence = 'medium';
+    } else if (bestScore >= this.LOW_CONFIDENCE) {
+      confidence = 'low';
+    } else {
+      confidence = 'unknown';
+    }
+
+    return { speaker: bestName, score: bestScore, confidence };
   }
 
   verify(name: string, samples: Float32Array, sampleRate: number = 16000, threshold?: number): VerifyResult {

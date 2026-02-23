@@ -134,7 +134,7 @@ Vec LinUCB::buildFeatureVec(const ContextMap& ctx) const {
     double hour = 12.0;
     auto it = ctx.find("hour");
     if (it != ctx.end()) {
-        try { hour = std::stod(it->second); } catch (...) {}
+        hour = safe_stod(it->second, 12.0);
     }
     x[0] = std::sin(2.0 * M_PI * hour / 24.0);
     x[1] = std::cos(2.0 * M_PI * hour / 24.0);
@@ -143,7 +143,7 @@ Vec LinUCB::buildFeatureVec(const ContextMap& ctx) const {
     double battery = 50.0;
     it = ctx.find("batteryLevel");
     if (it != ctx.end()) {
-        try { battery = std::stod(it->second); } catch (...) {}
+        battery = safe_stod(it->second, 50.0);
     }
     x[2] = battery / 100.0;
 
@@ -280,7 +280,7 @@ void LinUCB::importJson(const std::string& json) {
     if (alphaPos != std::string::npos) {
         auto colon = json.find(':', alphaPos);
         if (colon != std::string::npos) {
-            try { alpha_ = std::stod(json.substr(colon + 1)); } catch (...) {}
+            alpha_ = safe_stod(json.substr(colon + 1), alpha_);
         }
     }
 
@@ -346,7 +346,7 @@ void LinUCB::importJson(const std::string& json) {
                     std::string token;
                     int col = 0;
                     while (std::getline(iss, token, ',') && col < LINUCB_DIM) {
-                        try { arm.A[row][col] = std::stod(token); } catch (...) {}
+                        arm.A[row][col] = safe_stod(token, arm.A[row][col]);
                         col++;
                     }
                     p = rowEnd + 1;
@@ -366,7 +366,7 @@ void LinUCB::importJson(const std::string& json) {
                     std::string token;
                     int idx = 0;
                     while (std::getline(iss, token, ',') && idx < LINUCB_DIM) {
-                        try { arm.b[idx] = std::stod(token); } catch (...) {}
+                        arm.b[idx] = safe_stod(token, arm.b[idx]);
                         idx++;
                     }
                 }

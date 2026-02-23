@@ -14,6 +14,50 @@ import trainingSyncNative from 'libtraining_sync.so';
 
 const TAG = 'TrainingDataSync';
 
+// Typed wrappers for native NAPI calls (ArkTS strict mode disallows implicit any)
+interface NativeInitConfig {
+  deviceId: string;
+}
+function nativeInit(config: NativeInitConfig): void {
+  trainingSyncNative.init(config);
+}
+function nativeDeserialize(data: string): void {
+  trainingSyncNative.deserialize(data);
+}
+function nativeRecordRuleMatch(record: RuleMatchRecord): void {
+  trainingSyncNative.recordRuleMatch(record);
+}
+function nativeRecordFeedback(record: UserFeedbackRecord): void {
+  trainingSyncNative.recordFeedback(record);
+}
+function nativeRecordStateTransition(record: StateTransitionRecord): void {
+  trainingSyncNative.recordStateTransition(record);
+}
+function nativeRecordGeofenceFeature(record: GeofenceFeatureRecord): void {
+  trainingSyncNative.recordGeofenceFeature(record);
+}
+function nativeGetStats(): SyncStatsInfo {
+  return trainingSyncNative.getStats() as SyncStatsInfo;
+}
+function nativeExportPending(): string {
+  return trainingSyncNative.exportPending() as string;
+}
+function nativeMarkSynced(ids: string[]): void {
+  trainingSyncNative.markSynced(ids);
+}
+function nativeCleanupSynced(): void {
+  trainingSyncNative.cleanupSynced();
+}
+function nativeSerialize(): string {
+  return trainingSyncNative.serialize() as string;
+}
+function nativeClear(): void {
+  trainingSyncNative.clear();
+}
+function nativeSetMaxRecords(max: number): void {
+  trainingSyncNative.setMaxRecords(max);
+}
+
 /** 同步统计 */
 export interface SyncStatsInfo {
   pending: number;
@@ -156,7 +200,7 @@ export class TrainingDataSync {
     
     try {
       let deviceId = context.applicationInfo?.name || 'clawdbot_device';
-      trainingSyncNative.init({ deviceId: deviceId });
+      nativeInit({ deviceId: deviceId });
       
       this.prefs = await preferences.getPreferences(context, 'training_data_sync');
       this.syncEnabled = await this.prefs.get('sync_enabled', false) as boolean;
@@ -164,7 +208,7 @@ export class TrainingDataSync {
       let savedData = await this.prefs.get('data', '') as string;
       if (savedData.length > 0) {
         try {
-          trainingSyncNative.deserialize(savedData);
+          nativeDeserialize(savedData);
         } catch (deserializeErr) {
           this.log.error(TAG, `Deserialize failed, clearing corrupted data: ${(deserializeErr as Error).message}`);
           await this.prefs.delete('data');
@@ -227,7 +271,7 @@ export class TrainingDataSync {
       isCharging: snapshot.isCharging === 'true'
     };
     
-    trainingSyncNative.recordRuleMatch(record);
+    nativeRecordRuleMatch(record);
     this.persist();
   }
   
@@ -247,7 +291,7 @@ export class TrainingDataSync {
       geofence: data.context.geofence || ''
     };
     
-    trainingSyncNative.recordFeedback(record);
+    nativeRecordFeedback(record);
     this.persist();
   }
   
@@ -264,7 +308,7 @@ export class TrainingDataSync {
       wifiSsid: data.context.wifiSsid || ''
     };
     
-    trainingSyncNative.recordStateTransition(record);
+    nativeRecordStateTransition(record);
     this.persist();
   }
   
@@ -287,7 +331,7 @@ export class TrainingDataSync {
       duration: duration
     };
     
-    trainingSyncNative.recordGeofenceFeature(record);
+    nativeRecordGeofenceFeature(record);
     this.persist();
   }
   
@@ -297,13 +341,13 @@ export class TrainingDataSync {
       return false;
     }
     
-    let stats:SyncStatsInfo = trainingSyncNative.getStats();
+    let stats:SyncStatsInfo = nativeGetStats();
     if (stats.pending === 0) {
       this.log.debug(TAG, 'No records to sync');
       return true;
     }
     
-    let pendingJson:string = trainingSyncNative.exportPending();
+    let pendingJson:string = nativeExportPending();
     this.log.info(TAG, `Syncing ${stats.pending} records to ${this.syncEndpoint}`);
     
     try {
@@ -319,8 +363,8 @@ export class TrainingDataSync {
       let response = await request.request(this.syncEndpoint + '/training/upload', options);
       
       if (response.responseCode === 200 || response.responseCode === 201) {
-        trainingSyncNative.markSynced([]);
-        trainingSyncNative.cleanupSynced();
+        nativeMarkSynced([]);
+        nativeCleanupSynced();
         this.persist();
         
         this.log.info(TAG, `Sync successful: ${stats.pending} records`);
@@ -337,7 +381,7 @@ export class TrainingDataSync {
   }
   
   getStats(): StatsResult {
-    let stats: SyncStatsInfo = trainingSyncNative.getStats();
+    let stats: SyncStatsInfo = nativeGetStats();
     let result: StatsResult = {
       pending: stats.pending,
       synced: stats.synced,
@@ -347,21 +391,21 @@ export class TrainingDataSync {
   }
   
   exportData(): string {
-    return trainingSyncNative.serialize();
+    return nativeSerialize();
   }
   
   clear(): void {
-    trainingSyncNative.clear();
+    nativeClear();
     this.persist();
   }
   
   setMaxRecords(max: number): void {
-    trainingSyncNative.setMaxRecords(max);
+    nativeSetMaxRecords(max);
   }
   
   private persist(): void {
     if (this.prefs) {
-      let data: string = trainingSyncNative.serialize();
+      let data: string = nativeSerialize();
       this.prefs.put('data', data);
       this.prefs.flush();
     }

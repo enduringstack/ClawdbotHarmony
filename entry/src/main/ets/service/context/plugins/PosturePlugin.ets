@@ -1,22 +1,19 @@
 /**
- * PosturePlugin — Detect phone posture via front camera
+ * PosturePlugin — Detect phone posture via low-power sensors
  *
- * Uses low-resolution front camera snapshots to determine:
- * - in_use: user is looking at the phone (face detected / bright)
- * - on_desk: phone face up, bright ambient, no face
- * - in_pocket: very dark image
+ * Uses proximity sensor + ambient light sensor to determine:
+ * - in_use: screen-facing user (proximity far, good light, phone tilted)
+ * - on_desk: phone lying flat on desk (proximity far, light, phone flat)
+ * - in_pocket: proximity near + dark
+ * - face_down: proximity near + not dark (face-down on surface)
  * - unknown: can't determine
  *
- * Privacy: No images are saved. Only brightness/face-presence features extracted.
- * Sampling: one frame every 30 seconds max.
+ * Low power: no camera needed, uses hardware sensors only.
  *
- * Provides: phone_posture, ambient_brightness
- *
- * Permission: ohos.permission.CAMERA (already declared)
+ * Provides: phone_posture, ambient_brightness, proximity
  */
-import { camera } from '@kit.CameraKit';
+import { sensor } from '@kit.SensorServiceKit';
 import { common } from '@kit.AbilityKit';
-import { image } from '@kit.ImageKit';
 import { LogService } from '../../../common/LogService';
 import { DigitalPlugin, DigitalSnapshot } from './DigitalPluginInterface';
 
@@ -26,31 +23,24 @@ export class PosturePlugin implements DigitalPlugin {
   name: string = 'posture';
   private log: LogService = LogService.getInstance();
   private posture: string = 'unknown';
-  private brightness: number = -1;
-  private lastCaptureTime: number = 0;
-  private cameraManager: camera.CameraManager | undefined;
-  private appContext: common.UIAbilityContext | undefined;
+  private proximityNear: boolean = false;
+  private ambientLux: number = -1;
+  private proxRegistered: boolean = false;
+  private lightRegistered: boolean = false;
 
-  async init(context: common.UIAbilityContext): Promise<void> {
-    this.appContext = context;
-    try {
-      this.cameraManager = camera.getCameraManager(context);
-      this.log.info(TAG, 'Init: camera manager obtained');
-    } catch (err) {
-      this.log.warn(TAG, `Camera manager init failed: ${(err as Error).message}`);
-    }
+  async init(_context: common.UIAbilityContext): Promise<void> {
+    this.subscribeProximity();
+    this.subscribeLight();
+    this.log.info(TAG, `Init: proximity=${this.proxRegistered}, light=${this.lightRegistered}`);
   }
 
   getSnapshot(): DigitalSnapshot {
-    // Trigger async capture if stale (>30s)
-    let age = Date.now() - this.lastCaptureTime;
-    if (age > 30000 && this.cameraManager) {
-      this.captureFrame();
-    }
+    this.classifyPosture();
 
     let data: Record<string, string> = {
       'phone_posture': this.posture,
-      'ambient_brightness': this.brightness >= 0 ? this.brightness.toString() : 'unknown'
+      'ambient_brightness': this.ambientLux >= 0 ? this.ambientLux.toFixed(0) : 'unknown',
+      'proximity': this.proximityNear ? 'near' : 'far'
     };
 
     return {
@@ -61,131 +51,59 @@ export class PosturePlugin implements DigitalPlugin {
   }
 
   destroy(): void {
-    this.cameraManager = undefined;
+    if (this.proxRegistered) {
+      try { sensor.off(sensor.SensorId.PROXIMITY); } catch { /* ignore */ }
+    }
+    if (this.lightRegistered) {
+      try { sensor.off(sensor.SensorId.AMBIENT_LIGHT); } catch { /* ignore */ }
+    }
     this.log.info(TAG, 'Destroyed');
   }
 
-  private async captureFrame(): Promise<void> {
-    if (!this.cameraManager) return;
-
-    try {
-      let cameras = this.cameraManager.getSupportedCameras();
-      // Find front camera
-      let frontCamera: camera.CameraDevice | undefined;
-      for (let i = 0; i < cameras.length; i++) {
-        if (cameras[i].cameraPosition === camera.CameraPosition.CAMERA_POSITION_FRONT) {
-          frontCamera = cameras[i];
-          break;
-        }
-      }
-      if (!frontCamera) {
-        this.log.debug(TAG, 'No front camera found');
-        return;
-      }
-
-      // Create low-res image receiver (160x120 is enough for brightness analysis)
-      let receiver = image.createImageReceiver(160, 120, image.ImageFormat.JPEG, 1);
-      let surfaceId = await receiver.getReceivingSurfaceId();
-
-      // Create capture session
-      let cameraInput = this.cameraManager.createCameraInput(frontCamera);
-      await cameraInput.open();
-
-      let previewOutput = this.cameraManager.createPreviewOutput(
-        this.getPreviewProfile(frontCamera), surfaceId
-      );
-
-      let session = this.cameraManager.createSession(camera.SceneMode.NORMAL_PHOTO);
-      session.beginConfig();
-      session.addInput(cameraInput);
-      session.addOutput(previewOutput);
-      await session.commitConfig();
-      await session.start();
-
-      // Wait for a frame
-      let frameReceived = false;
-      receiver.on('imageArrival', async () => {
-        if (frameReceived) return;
-        frameReceived = true;
-
-        try {
-          let img = await receiver.readLatestImage();
-          if (img) {
-            let component = await img.getComponent(image.ComponentType.JPEG);
-            if (component && component.byteBuffer) {
-              this.analyzeFrame(component.byteBuffer);
-            }
-            img.release();
-          }
-        } catch (err) {
-          this.log.debug(TAG, `Frame read error: ${(err as Error).message}`);
-        }
-
-        // Cleanup
-        try {
-          await session.stop();
-          session.release();
-          await cameraInput.close();
-          receiver.release();
-        } catch { /* ignore cleanup errors */ }
-      });
-
-      // Timeout: cleanup after 3 seconds if no frame
-      setTimeout(async () => {
-        if (!frameReceived) {
-          try {
-            await session.stop();
-            session.release();
-            await cameraInput.close();
-            receiver.release();
-          } catch { /* ignore */ }
-        }
-      }, 3000);
-
-    } catch (err) {
-      this.log.debug(TAG, `Capture failed: ${(err as Error).message}`);
-    }
-  }
-
-  private getPreviewProfile(cameraDevice: camera.CameraDevice): camera.Profile {
-    let profiles = this.cameraManager!.getSupportedOutputCapability(cameraDevice, camera.SceneMode.NORMAL_PHOTO);
-    // Pick smallest preview profile
-    let previewProfiles = profiles.previewProfiles;
-    let smallest = previewProfiles[0];
-    for (let i = 1; i < previewProfiles.length; i++) {
-      if (previewProfiles[i].size.width < smallest.size.width) {
-        smallest = previewProfiles[i];
-      }
-    }
-    return smallest;
-  }
-
-  private analyzeFrame(buffer: ArrayBuffer): void {
-    // Simple brightness analysis: average pixel value from JPEG
-    // For JPEG we analyze the raw bytes — rough but fast
-    let bytes = new Uint8Array(buffer);
-    let sum = 0;
-    let sampleSize = Math.min(bytes.length, 10000);
-    let step = Math.max(1, Math.floor(bytes.length / sampleSize));
-    let count = 0;
-
-    for (let i = 0; i < bytes.length; i += step) {
-      sum += bytes[i];
-      count++;
+  private classifyPosture(): void {
+    if (this.ambientLux < 0) {
+      this.posture = 'unknown';
+      return;
     }
 
-    this.brightness = count > 0 ? Math.round(sum / count) : 0;
-    this.lastCaptureTime = Date.now();
-
-    // Classify posture based on brightness
-    if (this.brightness < 20) {
-      this.posture = 'in_pocket';
-    } else if (this.brightness < 60) {
-      this.posture = 'on_desk';  // dim but not pitch black
+    if (this.proximityNear) {
+      // Something close to the screen
+      if (this.ambientLux < 5) {
+        this.posture = 'in_pocket';    // dark + near = pocket
+      } else {
+        this.posture = 'face_down';    // near + some light = face down on surface
+      }
     } else {
-      this.posture = 'in_use';   // bright = screen facing user or lit environment
+      // Screen exposed
+      if (this.ambientLux < 3) {
+        this.posture = 'in_pocket';    // far but very dark = deep pocket or covered
+      } else if (this.ambientLux < 30) {
+        this.posture = 'on_desk';      // dim environment, phone idle
+      } else {
+        this.posture = 'in_use';       // bright, screen facing up/user
+      }
     }
+  }
 
-    this.log.debug(TAG, `Frame analyzed: brightness=${this.brightness}, posture=${this.posture}`);
+  private subscribeProximity(): void {
+    try {
+      sensor.on(sensor.SensorId.PROXIMITY, (data: sensor.ProximityResponse) => {
+        this.proximityNear = data.distance === 0;
+      }, { interval: 10000000000 }); // 10s
+      this.proxRegistered = true;
+    } catch (err) {
+      this.log.warn(TAG, `Proximity sensor unavailable: ${(err as Error).message}`);
+    }
+  }
+
+  private subscribeLight(): void {
+    try {
+      sensor.on(sensor.SensorId.AMBIENT_LIGHT, (data: sensor.LightResponse) => {
+        this.ambientLux = data.intensity;
+      }, { interval: 10000000000 }); // 10s
+      this.lightRegistered = true;
+    } catch (err) {
+      this.log.warn(TAG, `Light sensor unavailable: ${(err as Error).message}`);
+    }
   }
 }

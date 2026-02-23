@@ -123,12 +123,16 @@ export class FeedbackService {
       resolved: false,
     };
 
-    // 10 分钟无交互 → 自动记录 ignored
+    // 10 分钟无交互 → 自动记录 ignored, remove pending LLM rule
     card.ignoreTimerId = setTimeout(() => {
       if (!card.resolved) {
         this.recordFeedback(ruleId, 'ignored', REWARD_IGNORED);
         card.resolved = true;
         this.activeCards.delete(ruleId);
+        // Don't promote ignored LLM rules
+        if (ruleId.startsWith('user_llm_')) {
+          this.engine.removePendingRule(ruleId);
+        }
       }
     }, IGNORE_TIMEOUT_MS) as number;
 
@@ -148,13 +152,17 @@ export class FeedbackService {
       clearTimeout(card.ignoreTimerId);
     }
 
-    // 5 分钟后给 dismiss 惩罚
+    // 5 分钟后给 dismiss 惩罚, remove pending LLM rule
     let dismissCard = card;
     card.dismissTimerId = setTimeout(() => {
       if (!dismissCard.resolved) {
         this.recordFeedback(ruleId, 'dismissed', REWARD_DISMISSED);
         dismissCard.resolved = true;
         this.activeCards.delete(ruleId);
+        // Don't promote dismissed LLM rules
+        if (ruleId.startsWith('user_llm_')) {
+          this.engine.removePendingRule(ruleId);
+        }
       }
     }, DISMISS_TIMEOUT_MS) as number;
 
@@ -164,30 +172,63 @@ export class FeedbackService {
   // ==================== 显式反馈 ====================
 
   /**
-   * 用户点击 👍
+   * 用户点击 👍 — positive feedback promotes LLM rules to engine
    */
   async onThumbsUp(ruleId: string, envContext?: EnvironmentContext): Promise<void> {
     this.resolveCard(ruleId);
     await this.recordFeedback(ruleId, 'thumbs_up', REWARD_THUMBS_UP);
     await this.logToBehavior(ruleId, true, envContext);
+    await this.handleLlmRuleFeedback(ruleId, true);
   }
 
   /**
-   * 用户点击 👎
+   * 用户点击 👎 — negative feedback removes pending LLM rules
    */
   async onThumbsDown(ruleId: string, envContext?: EnvironmentContext): Promise<void> {
     this.resolveCard(ruleId);
     await this.recordFeedback(ruleId, 'thumbs_down', REWARD_THUMBS_DOWN);
     await this.logToBehavior(ruleId, false, envContext);
+    await this.handleLlmRuleFeedback(ruleId, false);
   }
 
   /**
-   * 用户执行了推荐的动作（如点击卡片打开导航）
+   * 用户执行了推荐的动作（如点击卡片打开导航）— promotes LLM rules
    */
   async onActionTaken(ruleId: string, envContext?: EnvironmentContext): Promise<void> {
     this.resolveCard(ruleId);
     await this.recordFeedback(ruleId, 'action_taken', REWARD_ACTION_TAKEN);
     await this.logToBehavior(ruleId, true, envContext);
+    await this.handleLlmRuleFeedback(ruleId, true);
+  }
+
+  /**
+   * Handle LLM rule promotion/removal based on user feedback.
+   * Positive: promote pending rule to engine (becomes permanent).
+   * Negative: remove pending rule (won't be used again).
+   */
+  private async handleLlmRuleFeedback(ruleId: string, positive: boolean): Promise<void> {
+    if (!ruleId.startsWith('user_llm_')) return;
+
+    // Notify ContextAwarenessService that feedback was received (via callback)
+    if (this.llmFeedbackCallback) {
+      this.llmFeedbackCallback(ruleId);
+    }
+
+    if (positive) {
+      let ok = await this.engine.promotePendingRule(ruleId);
+      this.log.info(TAG, `LLM rule promoted on positive feedback: ${ruleId} ok=${ok}`);
+    } else {
+      this.engine.removePendingRule(ruleId);
+      this.log.info(TAG, `LLM rule removed on negative feedback: ${ruleId}`);
+    }
+  }
+
+  // Callback to notify ContextAwarenessService without circular import
+  private llmFeedbackCallback: ((ruleId: string) => void) | null = null;
+
+  /** Set callback for LLM feedback notification (called by ContextAwarenessService) */
+  setLlmFeedbackCallback(cb: (ruleId: string) => void): void {
+    this.llmFeedbackCallback = cb;
   }
 
   // ==================== 统计 ====================

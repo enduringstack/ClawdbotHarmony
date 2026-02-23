@@ -291,9 +291,9 @@ export class DigitalWorldService {
       },
       {
         plugin: new PosturePlugin(),
-        privacyLevel: 'high',
-        enabledByDefault: false,
-        description: '通过前置摄像头判断手机姿态（使用中/桌上/口袋）'
+        privacyLevel: 'low',
+        enabledByDefault: true,
+        description: '通过近距离+光线传感器判断手机姿态（使用中/桌上/口袋）'
       },
       {
         plugin: new AmbientSoundPlugin(),

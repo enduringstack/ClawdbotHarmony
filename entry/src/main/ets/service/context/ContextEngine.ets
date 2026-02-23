@@ -134,6 +134,9 @@ export class ContextEngineService {
   private prefsStore: preferences.Preferences | null = null;
   private appContext: common.UIAbilityContext | null = null;
 
+  // Pending LLM rules: held until user gives positive feedback
+  private pendingLlmRules: Map<string, ContextRule> = new Map();
+
   static getInstance(): ContextEngineService {
     if (!ContextEngineService.instance) {
       ContextEngineService.instance = new ContextEngineService();
@@ -199,6 +202,12 @@ export class ContextEngineService {
         log.info(TAG, 'LinUCB state restored');
       }
 
+      // Deduplicate existing rules (clean up duplicates from previous LLM auto-persist)
+      let removed = await this.deduplicateRules();
+      if (removed > 0) {
+        log.info(TAG, `Init dedup: removed ${removed} duplicate rules`);
+      }
+
       this.initialized = true;
     } catch (err) {
       let error = err as Error;
@@ -256,6 +265,128 @@ export class ContextEngineService {
   /** Check if a rule is user-created (id starts with 'user_') */
   isUserRule(ruleId: string): boolean {
     return ruleId.startsWith('user_');
+  }
+
+  // ==================== Pending LLM rules ====================
+
+  /** Store an LLM-generated rule as pending (not yet in engine). */
+  addPendingRule(rule: ContextRule): void {
+    this.pendingLlmRules.set(rule.id, rule);
+    log.info(TAG, `Pending LLM rule stored: ${rule.id} "${rule.name}" (${this.pendingLlmRules.size} pending)`);
+  }
+
+  /** Promote a pending LLM rule to the engine (user gave positive feedback). Dedup before adding. */
+  async promotePendingRule(ruleId: string): Promise<boolean> {
+    let rule = this.pendingLlmRules.get(ruleId);
+    if (!rule) {
+      log.warn(TAG, `promotePendingRule: ${ruleId} not found in pending`);
+      return false;
+    }
+    this.pendingLlmRules.delete(ruleId);
+
+    // Dedup: check if a similar rule already exists
+    if (this.isDuplicateRule(rule)) {
+      log.info(TAG, `Skipping duplicate rule: ${ruleId} "${rule.name}"`);
+      return false;
+    }
+
+    let ok = await this.addRule(rule);
+    log.info(TAG, `LLM rule promoted: ${ruleId} "${rule.name}" ok=${ok}, totalRules=${this.getRuleCount()}`);
+    return ok;
+  }
+
+  /** Remove a pending LLM rule (user gave negative feedback or dismissed). */
+  removePendingRule(ruleId: string): void {
+    if (this.pendingLlmRules.delete(ruleId)) {
+      log.info(TAG, `Pending LLM rule removed: ${ruleId}`);
+    }
+  }
+
+  /**
+   * Check if a similar rule already exists in the engine.
+   * Similarity: same action payload OR same set of key conditions.
+   */
+  private isDuplicateRule(newRule: ContextRule): boolean {
+    try {
+      let allRulesJson = nativeExportRules();
+      let allRules: ContextRule[] = JSON.parse(allRulesJson) as ContextRule[];
+
+      for (let existing of allRules) {
+        // Same action payload → duplicate
+        if (existing.action.payload === newRule.action.payload) {
+          log.debug(TAG, `Duplicate by payload: "${existing.id}" vs "${newRule.id}"`);
+          return true;
+        }
+
+        // Same core conditions (timeOfDay + motionState + geofence + isWeekend) → likely duplicate
+        if (this.conditionsOverlap(existing.conditions, newRule.conditions)) {
+          log.debug(TAG, `Duplicate by conditions: "${existing.id}" vs "${newRule.id}"`);
+          return true;
+        }
+      }
+    } catch (err) {
+      log.warn(TAG, `isDuplicateRule error: ${(err as Error).message}`);
+    }
+    return false;
+  }
+
+  /** Check if two condition sets overlap on all core keys */
+  private conditionsOverlap(a: ContextCondition[], b: ContextCondition[]): boolean {
+    let coreKeys = ['timeOfDay', 'isWeekend', 'motionState', 'geofence'];
+    let matchCount = 0;
+    let totalKeys = 0;
+
+    for (let key of coreKeys) {
+      let aVal = '';
+      let bVal = '';
+      for (let c of a) {
+        if (c.key === key) { aVal = c.value; break; }
+      }
+      for (let c of b) {
+        if (c.key === key) { bVal = c.value; break; }
+      }
+      // Both have this key
+      if (aVal.length > 0 && bVal.length > 0) {
+        totalKeys++;
+        if (aVal === bVal) matchCount++;
+      }
+    }
+
+    // Consider duplicate if 3+ core keys match
+    return totalKeys >= 3 && matchCount >= 3;
+  }
+
+  /** Deduplicate existing rules in the engine. Removes rules with identical action payloads. */
+  async deduplicateRules(): Promise<number> {
+    try {
+      let allRulesJson = nativeExportRules();
+      let allRules: ContextRule[] = JSON.parse(allRulesJson) as ContextRule[];
+      let seen: Set<string> = new Set();
+      let toRemove: string[] = [];
+
+      for (let rule of allRules) {
+        let fingerprint = rule.action.payload.trim();
+        if (seen.has(fingerprint)) {
+          toRemove.push(rule.id);
+        } else {
+          seen.add(fingerprint);
+        }
+      }
+
+      for (let id of toRemove) {
+        nativeRemoveRule(id);
+        log.info(TAG, `Dedup removed: ${id}`);
+      }
+
+      if (toRemove.length > 0) {
+        await this.persistRules();
+      }
+      log.info(TAG, `Deduplication: removed ${toRemove.length} duplicates, ${this.getRuleCount()} rules remain`);
+      return toRemove.length;
+    } catch (err) {
+      log.error(TAG, `deduplicateRules error: ${(err as Error).message}`);
+      return 0;
+    }
   }
 
   /** Toggle a rule's enabled state */

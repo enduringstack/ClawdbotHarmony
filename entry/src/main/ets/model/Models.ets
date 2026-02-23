@@ -147,6 +147,7 @@ export interface ApiMessage {
   toolCalls?: string;    // JSON string of OpenAI tool_calls array (for assistant messages)
   toolCallId?: string;   // tool_call_id (for role:"tool" result messages)
   imageBase64?: string;  // base64-encoded image for multimodal messages
+  audioBase64?: string;  // base64-encoded WAV audio for multimodal messages (Qwen3-Omni)
 }
 
 export interface ToolSchema {
@@ -319,9 +320,11 @@ export interface SilentConversationRecord {
   endTime: number;         // when recording ended (0 if still active)
   entries: SilentConversationEntry[];
   summary: string;         // AI-generated summary
+  title: string;           // auto-generated title: "主题 | HH:MM-HH:MM | 人A、人B等"
   status: string;          // 'recording' | 'summarizing' | 'completed' | 'error'
   participants: string[];  // unique speaker names
   speakerAliases: Record<string, string>;  // map original speaker ID to display name
+  actionItems?: ActionItem[];  // extracted action items for calendar
 }
 
 // Lightweight observable item for UI list display
@@ -331,18 +334,22 @@ export class SilentConversationItem {
   startTime: number;
   endTime: number;
   summary: string;
+  title: string;
   status: string;
   participants: string[];
   entryCount: number;
+  actionItemCount: number;
 
   constructor(record: SilentConversationRecord) {
     this.id = record.id;
     this.startTime = record.startTime;
     this.endTime = record.endTime;
     this.summary = record.summary;
+    this.title = record.title ?? '';
     this.status = record.status;
     this.participants = record.participants;
     this.entryCount = record.entries.length;
+    this.actionItemCount = record.actionItems ? record.actionItems.length : 0;
   }
 }
 
@@ -413,6 +420,17 @@ export interface EmotionAnalysis {
   pitchVariation: number;
   energyLevel: number;
   speakingRate: number;
+}
+
+// Action item extracted from silent conversation for calendar creation
+export interface ActionItem {
+  title: string;           // event title, e.g. "去机场"
+  startTime: number;       // epoch ms
+  endTime: number;         // epoch ms (default startTime + 1h)
+  location: string;        // location (optional)
+  reminder: number;        // reminder minutes before (default 15)
+  created: boolean;        // whether successfully added to calendar
+  eventId: number;         // calendar eventId (0 = not created)
 }
 
 // Extended entry with extraction and emotion data

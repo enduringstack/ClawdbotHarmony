@@ -27,11 +27,15 @@ export class EmotionAnalyzer {
   }
 
   analyzeAudio(pcmData: Int16Array): EmotionAnalysis {
+    // Truncate to first 2s — pitch autocorrelation is O(n²), 15s audio takes minutes
+    let maxSamples = this.SAMPLE_RATE * 2;
+    let data = pcmData.length > maxSamples ? pcmData.slice(0, maxSamples) : pcmData;
+
     let result: EmotionAnalysis = {
       timestamp: Date.now(),
       emotion: 'neutral',
       confidence: 0.5,
-      features: this.extractAudioFeatures(pcmData),
+      features: { rms: 0, zeroCrossingRate: 0, spectralCentroid: 0, pitch: 0, pitchStd: 0, duration: pcmData.length / this.SAMPLE_RATE },
       stressLevel: 0.5,
       isSinging: false,
       pitchVariation: 0,
@@ -39,20 +43,23 @@ export class EmotionAnalyzer {
       speakingRate: 0
     };
 
-    if (pcmData.length < this.SAMPLE_RATE * 0.5) {
+    if (data.length < this.SAMPLE_RATE * 0.5) {
       return result;
     }
 
-    result.features = this.extractAudioFeatures(pcmData);
-    
-    result.pitchVariation = this.calculatePitchVariation(pcmData);
-    result.energyLevel = this.calculateEnergyLevel(pcmData);
-    result.speakingRate = this.estimateSpeakingRate(pcmData);
-    result.isSinging = this.detectSinging(pcmData, result.features);
-    result.stressLevel = this.calculateStressLevel(result.features, result.energyLevel, result.speakingRate);
-    
-    result.emotion = this.classifyEmotion(result.features, result.stressLevel, result.isSinging);
-    result.confidence = this.calculateConfidence(result.features);
+    let features = this.extractAudioFeatures(data);
+    features.duration = pcmData.length / this.SAMPLE_RATE; // Use full duration for display
+    result.features = features;
+
+    // Reuse pitch from features — no duplicate estimatePitch call
+    result.pitchVariation = features.pitchStd / (features.pitch || 1);
+    result.energyLevel = this.calculateEnergyLevel(data);
+    result.speakingRate = this.estimateSpeakingRate(data);
+    result.isSinging = this.detectSinging(data, features);
+    result.stressLevel = this.calculateStressLevel(features, result.energyLevel, result.speakingRate);
+
+    result.emotion = this.classifyEmotion(features, result.stressLevel, result.isSinging);
+    result.confidence = this.calculateConfidence(features);
 
     return result;
   }

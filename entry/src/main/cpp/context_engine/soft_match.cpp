@@ -10,19 +10,25 @@
  */
 #include "context_engine.h"
 #include <cmath>
+#include <cerrno>
+#include <cstdlib>
 #include <sstream>
 #include <algorithm>
 
 namespace context_engine {
 
 static bool tryParseDouble(const std::string& s, double& out) {
-    try {
-        size_t pos;
-        out = std::stod(s, &pos);
-        return pos == s.size();
-    } catch (...) {
-        return false;
-    }
+    if (s.empty()) return false;
+    const char* start = s.c_str();
+    char* end = nullptr;
+    errno = 0;
+    double val = strtod(start, &end);
+    if (end == start || errno == ERANGE) return false;
+    // Check that entire string was consumed (like stod with pos check)
+    while (*end == ' ' || *end == '\t') end++;
+    if (*end != '\0') return false;
+    out = val;
+    return true;
 }
 
 static std::vector<std::string> splitCsv(const std::string& s) {

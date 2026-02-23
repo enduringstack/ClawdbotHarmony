@@ -87,7 +87,9 @@ export class ContextAwarenessService {
   private feedbackSvc: FeedbackService;
   
   private initialized: boolean = false;
+  private initializing: boolean = false;
   private isRunning: boolean = false;
+  private starting: boolean = false;
   private context: common.UIAbilityContext | undefined;
   
   // 当前状态
@@ -111,7 +113,7 @@ export class ContextAwarenessService {
   private static readonly ACCEL_HISTORY_SIZE = 30;
   private pickupStartTime: number = 0;
   private isPickupState: boolean = false;
-  private lastStableGravityAngle: number = 0;
+  private lastStableGravityAngle: number = 90;  // 90° = held in hand; avoid false pickup at startup (0° = flat would trigger immediately)
   private pickupConfirmed: boolean = false;
   private static readonly PICKUP_PULSE_THRESHOLD = 10.5;
   private static readonly PICKUP_ANGLE_CHANGE_THRESHOLD = 20;
@@ -137,7 +139,16 @@ export class ContextAwarenessService {
   // 防抖：避免重复推荐
   private lastRecommendations: Map<string, number> = new Map();
   private lastDigitalData: Record<string, string> = {};
+
+  // LLM fallback dedup: don't repeat same recommendation without feedback
+  private lastLlmPayload: string = '';
+  private lastLlmRuleId: string = '';
+  private lastLlmFeedbackReceived: boolean = false;
   private static readonly RECOMMENDATION_COOLDOWN_MS = 5 * 60 * 1000;  // 5分钟冷却
+
+  // 积极探索模式：每个新状态指纹都触发 LLM 建议
+  private exploreMode: boolean = false;
+  private exploredFingerprints: Set<string> = new Set();
   
   // 位置自动发现
   private locationDiscovery: LocationDiscoveryService = LocationDiscoveryService.getInstance();
@@ -213,7 +224,8 @@ export class ContextAwarenessService {
   }
   
   async init(context: common.UIAbilityContext): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized || this.initializing) return;
+    this.initializing = true;
     this.context = context;
     
     await this.geofenceMgr.init(context);
@@ -232,16 +244,20 @@ export class ContextAwarenessService {
     // 初始化位置发现服务
     await this.locationDiscovery.init(context);
     await this.feedbackSvc.init(context);
+    // Register callback so FeedbackService can notify us of LLM feedback (avoids circular import)
+    this.feedbackSvc.setLlmFeedbackCallback((ruleId: string) => {
+      this.markLlmFeedbackReceived(ruleId);
+    });
     await this.loadSuggestionState();
 
     // 初始化 LLM 兜底服务
     this.llmFallback.init(context);
 
-    // 初始化数字世界感知服务
-    // TODO [Digital World Integration]: DigitalWorldService provides digital context
-    // (calendar events, screen state, audio scene, etc.) that enriches the ContextSnapshot.
-    // Currently initialized and polled independently; data is merged in buildSnapshot().
-    await this.digitalWorld.init(context);
+    // 数字世界感知服务：延迟到 start() 里权限请求之后再 init
+    // 这样 WearablePlugin 请求 READ_HEALTH_DATA 时 UI 已就绪，弹窗能正常显示
+
+    // 加载积极探索模式状态
+    await this.loadExploreMode();
 
     // 初始化训练数据同步 (服务端与 Gateway 同机，端口 18790)
     await this.trainingSync.init(context, 'http://192.168.1.76:18790');
@@ -257,9 +273,11 @@ export class ContextAwarenessService {
   async start(): Promise<boolean> {
     if (this.isRunning) return true;
     if (!this.initialized) {
-      this.log.error(TAG, 'Service not initialized');
+      this.log.warn(TAG, 'Service not initialized yet, skipping start');
       return false;
     }
+    if (this.starting) return true;
+    this.starting = true;
     
     try {
       // 请求位置权限
@@ -283,14 +301,22 @@ export class ContextAwarenessService {
         this.log.warn(TAG, 'Location permission denied, location features disabled');
       }
 
-      // 启动数字世界感知
-      this.digitalWorld.start();
-
+      // 核心功能已就绪，标记 isRunning 以启用定时评估
       this.isRunning = true;
       this.log.info(TAG, 'Context Awareness Service started (multi-tier sensing enabled)');
+
+      // 初始化 + 启动数字世界感知（非关键路径，失败不影响规则评估）
+      try {
+        await this.digitalWorld.init(this.context as common.UIAbilityContext);
+        this.digitalWorld.start();
+      } catch (dwErr) {
+        this.log.warn(TAG, `DigitalWorld init/start failed (non-fatal): ${(dwErr as Error).message}`);
+      }
+
       return true;
     } catch (err) {
       this.log.error(TAG, `Failed to start: ${(err as Error).message}`);
+      this.starting = false;  // 允许重试
       return false;
     }
   }
@@ -426,13 +452,12 @@ export class ContextAwarenessService {
   private async requestMotionPermission(): Promise<boolean> {
     try {
       let atManager = abilityAccessCtrl.createAtManager();
+      // READ_HEALTH_DATA 由 WearablePlugin.init() 单独请求，避免重复弹窗
       let result = await atManager.requestPermissionsFromUser(this.context as common.UIAbilityContext,
-        ['ohos.permission.ACTIVITY_MOTION', 'ohos.permission.READ_HEALTH_DATA']);
+        ['ohos.permission.ACTIVITY_MOTION']);
       let motionGranted = result.authResults[0] === 0;
-      let healthGranted = result.authResults.length > 1 && result.authResults[1] === 0;
-      this.log.info(TAG, `ACTIVITY_MOTION permission: ${motionGranted ? 'granted' : 'denied'}, READ_HEALTH_DATA: ${healthGranted ? 'granted' : 'denied'}`);
-      let granted = motionGranted;
-      return granted;
+      this.log.info(TAG, `ACTIVITY_MOTION permission: ${motionGranted ? 'granted' : 'denied'}`);
+      return motionGranted;
     } catch (err) {
       this.log.warn(TAG, `Motion permission request failed: ${(err as Error).message}`);
       return false;
@@ -463,8 +488,7 @@ export class ContextAwarenessService {
       }, { interval: 1000000000 });
       
       sensor.on(sensor.SensorId.PEDOMETER, (data: sensor.PedometerResponse) => {
-        this.stepCount = data.steps;
-        this.tray.put('stepCount', data.steps.toString(), 1.0, 'pedometer');
+        this.stepCount = data.steps;  // 仅内部使用（pickup检测），显示由 StepCounterPlugin 负责
       }, { interval: 5000000000 });
       
       this.log.info(TAG, 'Motion sensors started');
@@ -502,21 +526,25 @@ export class ContextAwarenessService {
   
   private detectPickup(): boolean {
     if (this.accelHistory.length < 3) return false;
-    
+
     let now = Date.now();
     let recent = this.accelHistory.slice(-5);
     let current = recent[recent.length - 1];
     let prev = recent.length > 1 ? recent[recent.length - 2] : current;
-    
+
     let hasPulse = current.magnitude > ContextAwarenessService.PICKUP_PULSE_THRESHOLD;
     let angleChange = Math.abs(current.gravityAngle - this.lastStableGravityAngle);
     let hasAngleChange = angleChange > ContextAwarenessService.PICKUP_ANGLE_CHANGE_THRESHOLD;
-    
-    if (hasPulse && hasAngleChange && !this.isPickupState) {
+
+    // 只在手机之前是平放状态时才触发 pickup（区分拿起 vs 放下）
+    // 平放: gravityAngle < 25°(正面朝上) 或 > 155°(正面朝下)
+    let wasFlat = this.lastStableGravityAngle < 25 || this.lastStableGravityAngle > 155;
+
+    if (hasPulse && hasAngleChange && wasFlat && !this.isPickupState) {
       this.pickupStartTime = now;
       this.isPickupState = true;
       this.pickupConfirmed = false;
-      this.log.debug(TAG, `Pickup detected: mag=${current.magnitude.toFixed(1)}, angle=${angleChange.toFixed(1)}`);
+      this.log.debug(TAG, `Pickup detected: mag=${current.magnitude.toFixed(1)}, angle=${angleChange.toFixed(1)}, stableAngle=${this.lastStableGravityAngle.toFixed(1)}`);
     }
     
     if (this.isPickupState) {
@@ -566,7 +594,6 @@ export class ContextAwarenessService {
     
     if (isPickup || this.pickupConfirmed) {
       this.tray.put('motionState', 'pickup', 0.85, 'accelerometer');
-      this.tray.put('isPickup', 'true', 0.9, 'accelerometer');
 
       if (this.lastMotionState !== 'pickup') {
         this.log.info(TAG, `Motion state: ${this.lastMotionState} -> pickup (brief glance)`);
@@ -574,12 +601,10 @@ export class ContextAwarenessService {
         this.lastMotionState = 'pickup';
       }
       this.pickupConfirmed = false;
-      this.adjustLocationInterval('pickup');
+      // 拿起手机不触发GPS — 只是瞬间查看，不需要位置更新
       return;
     }
-    
-    this.tray.put('isPickup', 'false', 0.9, 'accelerometer');
-    
+
     if (this.accelHistory.length >= 3) {
       let recent = this.accelHistory.slice(-3);
       let avgMag = recent.reduce((sum, s) => sum + s.magnitude, 0) / recent.length;
@@ -623,10 +648,16 @@ export class ContextAwarenessService {
 
     if (newState !== this.lastMotionState) {
       this.log.info(TAG, `Motion state: ${this.lastMotionState} -> ${newState}, gpsSpeed=${gpsSpeed.toFixed(1)}m/s`);
-      
+
+      // 放下手机：从 pickup 转为其他状态
+      if (this.lastMotionState === 'pickup') {
+        this.engine.pushEvent('motion_putdown');
+        this.log.info(TAG, 'Putdown: pickup -> ' + newState);
+      }
+
       // 更新状态历史
       this.updateActivityState(newState);
-      
+
       this.engine.pushEvent('motion_' + newState);
       this.prevMotionState = this.lastMotionState;
       this.lastMotionState = newState;
@@ -754,12 +785,7 @@ export class ContextAwarenessService {
     let newWifiInterval: number;
     let newAccelInterval: number;
 
-    if (state === 'pickup') {
-      // Pickup: slow GPS (user just picked up phone), keep WiFi, responsive accel
-      newGpsInterval = ContextAwarenessService.GPS_STATIONARY;
-      newWifiInterval = this.wifiIntervalMs;
-      newAccelInterval = ContextAwarenessService.ACCEL_WALKING;
-    } else switch (state) {
+    switch (state) {
       case 'stationary':
         newGpsInterval = ContextAwarenessService.GPS_STATIONARY;
         newWifiInterval = ContextAwarenessService.WIFI_STATIONARY;
@@ -1207,15 +1233,56 @@ export class ContextAwarenessService {
       }
     }
 
-    // 步数
-    if (this.stepCount > 0) {
-      this.tray.put('stepCount', this.stepCount.toString(), 1.0, 'pedometer');
-    }
+    // 步数：由 StepCounterPlugin 通过插件路径写入（step_count_today），CAS 不再重复写入
 
     // 运动状态（加速度计回调已写入，这里确保有值）
     if (this.lastMotionState !== 'unknown') {
       this.tray.put('motionState', this.lastMotionState, 0.9, 'accelerometer');
     }
+    // 拿起手机状态（基于当前运动状态判断，不依赖瞬时检测器）
+    this.tray.put('isPickup', this.lastMotionState === 'pickup' ? 'true' : 'false', 0.9, 'accelerometer');
+
+    // CellID
+    if (this.lastCellId.length > 0) {
+      this.tray.put('cellId', this.lastCellId, 0.9, 'cellular');
+    } else {
+      this.tray.put('cellId', '(unavailable)', 0.3, 'cellular');
+    }
+
+    // 插件数据 → 托盘（按物理/数字世界分类）
+    // 物理世界插件：传感器类（bluetooth, wearable, audio, media, posture, screen, stepCounter）
+    // 数字世界插件：应用/信息类（calendar, appUsage, foregroundApp, notification）
+    let pluginSkip: string[] = [
+      'wifi_ssid', 'wifi_connected', 'wifi_rssi', 'wifi_frequency',  // 已有 wifiSsid / networkType
+      'step_count', 'is_active',                                      // 已有 stepCount / motionState
+      'screen_on', 'screen_locked', 'user_active',                   // 内部状态
+      'init_error', 'data_source', 'device_name', 'device_connected' // 元数据噪声
+    ];
+    let digitalPluginNames: string[] = ['calendar', 'appUsage', 'foregroundApp', 'notification'];
+    let physicalSourceMap: Record<string, string> = {
+      'bluetooth': 'bluetooth', 'wearable': 'wearable', 'ambientSound': 'audio',
+      'media': 'media', 'posture': 'posture', 'screen': 'screen', 'stepCounter': 'pedometer',
+      'wifi': 'wifi'
+    };
+    let pluginStatuses = this.digitalWorld.getPluginStatus();
+    for (let i = 0; i < pluginStatuses.length; i++) {
+      let ps = pluginStatuses[i];
+      if (!ps.enabled || !ps.hasData) continue;
+      let snapshot = this.digitalWorld.getPluginSnapshot(ps.name);
+      if (!snapshot) continue;
+      let isDigital = digitalPluginNames.includes(ps.name);
+      let source = isDigital ? 'digital' : (physicalSourceMap[ps.name] ?? ps.name);
+      let keys = Object.keys(snapshot.data);
+      for (let j = 0; j < keys.length; j++) {
+        let k = keys[j];
+        let v = snapshot.data[k];
+        if (v.length > 0 && !pluginSkip.includes(k)) {
+          this.tray.put(k, v, 0.8, source);
+        }
+      }
+    }
+    // 保留 lastDigitalData 供兼容
+    this.lastDigitalData = this.digitalWorld.getDigitalData();
   }
 
   /**
@@ -1363,32 +1430,46 @@ export class ContextAwarenessService {
   private async evaluateAndDeliver(snapshot: ContextSnapshot): Promise<void> {
     let results = this.engine.evaluate(snapshot, 3);
 
+    // 积极探索模式：新状态指纹 → 强制触发 LLM（即使有引擎匹配也不跳过）
+    let exploreTriggered = false;
+    if (this.exploreMode) {
+      let fp = this.computeFingerprint(snapshot);
+      if (!this.exploredFingerprints.has(fp)) {
+        this.exploredFingerprints.add(fp);
+        this.saveExploredFingerprints();
+        exploreTriggered = true;
+        this.log.info(TAG, `Explore mode: new fingerprint "${fp}", will trigger LLM`);
+      }
+    }
+
     if (results.length > 0) {
       let top = results[0];
-      if (this.isOnCooldown(top.ruleId)) return;
-
-      let rec: ContextRecommendation = {
-        rule: {
-          id: top.ruleId,
-          trigger: {} as RuleTrigger,
+      if (!this.isOnCooldown(top.ruleId)) {
+        let rec: ContextRecommendation = {
+          rule: {
+            id: top.ruleId,
+            trigger: {} as RuleTrigger,
+            action: top.action as UserAction,
+            confidence: top.confidence,
+            triggerCount: 0,
+            acceptCount: 0,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            enabled: true
+          },
           action: top.action as UserAction,
-          confidence: top.confidence,
-          triggerCount: 0,
-          acceptCount: 0,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          enabled: true
-        },
-        action: top.action as UserAction,
-        reason: `基于当前情景推荐 (${Math.round(top.confidence * 100)}% 匹配)`
-      };
+          reason: `基于当前情景推荐 (${Math.round(top.confidence * 100)}% 匹配)`
+        };
 
-      this.notifyRecommendation(rec);
-      this.setOnCooldown(top.ruleId);
-      
-      // 记录训练数据
-      this.trainingSync.recordRuleMatch(snapshot, top.ruleId, top.action.type || 'suggestion', top.confidence);
-      return;
+        this.notifyRecommendation(rec);
+        this.setOnCooldown(top.ruleId);
+
+        // 记录训练数据
+        this.trainingSync.recordRuleMatch(snapshot, top.ruleId, top.action.type || 'suggestion', top.confidence);
+      }
+
+      // 非探索模式或已探索过的指纹：有引擎结果就够了
+      if (!exploreTriggered) return;
     }
 
     // C++ engine returned no matches — try LLM fallback
@@ -1396,8 +1477,23 @@ export class ContextAwarenessService {
     let llmResult = await this.llmFallback.analyzeContext(snapshot);
     if (!llmResult) return;
 
-    let llmRuleId = `user_llm_${Date.now()}`;
     if (this.isOnCooldown('llm_fallback')) return;
+
+    // Don't repeat same LLM recommendation if user didn't give feedback on the last one
+    let llmPayload = `${llmResult.title}: ${llmResult.content}`;
+    if (this.lastLlmPayload.length > 0 && this.lastLlmPayload === llmPayload && !this.lastLlmFeedbackReceived) {
+      // Same recommendation, no feedback yet — just update timestamp, don't show again
+      this.log.info(TAG, `Skipping repeat LLM recommendation: "${llmResult.title}"`);
+      this.setOnCooldown('llm_fallback');
+      return;
+    }
+
+    let now = new Date();
+    let dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    let llmRuleId = `user_llm_${dateStr}`;
+    this.lastLlmPayload = llmPayload;
+    this.lastLlmRuleId = llmRuleId;
+    this.lastLlmFeedbackReceived = false;
 
     let rec: ContextRecommendation = {
       rule: {
@@ -1412,40 +1508,39 @@ export class ContextAwarenessService {
         enabled: true
       },
       action: { type: 'show_info', target: 'llm_suggestion' } as UserAction,
-      reason: `${llmResult.title}: ${llmResult.content}`
+      reason: llmPayload
     };
 
     this.notifyRecommendation(rec);
     this.setOnCooldown('llm_fallback');
 
-    // === Persist LLM result as a C++ engine rule for future matching ===
+    // === Store LLM result as PENDING rule (only promoted on positive feedback) ===
     try {
       let conditions: EngineCondition[] = this.snapshotToConditions(snapshot);
-      let actionPayload = `${llmResult.title}: ${llmResult.content}`;
       let cooldownMs = llmResult.priority === 'high' ? 3600000 : llmResult.priority === 'medium' ? 14400000 : 28800000;
 
       let newRule: EngineRule = {
         id: llmRuleId,
         name: llmResult.title,
         conditions: conditions,
-        action: { id: `llm_action_${Date.now()}`, type: 'suggestion', payload: actionPayload } as EngineAction,
+        action: { id: `llm_action_${dateStr}`, type: 'suggestion', payload: llmPayload } as EngineAction,
         priority: llmResult.priority === 'high' ? 2.0 : llmResult.priority === 'medium' ? 1.5 : 1.0,
         cooldownMs: cooldownMs,
         enabled: true,
       };
 
       let engine = ContextEngineService.getInstance();
-      let ok = await engine.addRule(newRule);
-      this.log.info(TAG, `LLM rule persisted: id=${llmRuleId}, name=${llmResult.title}, ok=${ok}, totalRules=${engine.getRuleCount()}`);
+      engine.addPendingRule(newRule);
+      this.log.info(TAG, `LLM rule stored as pending: id=${llmRuleId}, name=${llmResult.title}`);
     } catch (err) {
-      this.log.warn(TAG, `Failed to persist LLM rule: ${(err as Error).message}`);
+      this.log.warn(TAG, `Failed to store pending LLM rule: ${(err as Error).message}`);
     }
 
     // Log to BehaviorLogger with source='llm'
     let ctx = this.currentContext ?? await this.getCurrentContext();
     let llmAction: UserAction = { type: 'show_info', target: 'llm_suggestion', params: { 'source': 'llm', 'title': llmResult.title } };
     await this.behaviorLog.logBehavior(ctx, llmAction);
-    this.log.info(TAG, `LLM fallback delivered and persisted: ${llmResult.title}`);
+    this.log.info(TAG, `LLM fallback delivered (pending): ${llmResult.title}`);
   }
 
   /**
@@ -1892,6 +1987,75 @@ export class ContextAwarenessService {
     this.lastRecommendations.set(ruleId, Date.now());
   }
   
+
+  /**
+   * Mark that the user gave feedback on an LLM recommendation.
+   * Called by FeedbackService so we know whether to repeat the recommendation.
+   */
+  markLlmFeedbackReceived(ruleId: string): void {
+    if (ruleId === this.lastLlmRuleId || ruleId.startsWith('user_llm_')) {
+      this.lastLlmFeedbackReceived = true;
+    }
+  }
+
+  // ==================== 积极探索模式 ====================
+
+  /** 获取积极探索模式状态 */
+  isExploreMode(): boolean {
+    return this.exploreMode;
+  }
+
+  /** 设置积极探索模式 */
+  async setExploreMode(enabled: boolean): Promise<void> {
+    this.exploreMode = enabled;
+    if (this.context) {
+      try {
+        let prefs = await preferences.getPreferences(this.context, 'context_awareness');
+        await prefs.put('explore_mode', enabled);
+        await prefs.flush();
+      } catch (err) {
+        this.log.warn(TAG, `Failed to persist explore mode: ${(err as Error).message}`);
+      }
+    }
+    this.log.info(TAG, `Explore mode ${enabled ? 'enabled' : 'disabled'}, explored ${this.exploredFingerprints.size} fingerprints`);
+  }
+
+  /** 加载积极探索模式持久化状态 */
+  private async loadExploreMode(): Promise<void> {
+    if (!this.context) return;
+    try {
+      let prefs = await preferences.getPreferences(this.context, 'context_awareness');
+      this.exploreMode = await prefs.get('explore_mode', false) as boolean;
+      let fpJson = await prefs.get('explored_fingerprints', '[]') as string;
+      let fpArr: string[] = JSON.parse(fpJson) as string[];
+      for (let i = 0; i < fpArr.length; i++) {
+        this.exploredFingerprints.add(fpArr[i]);
+      }
+    } catch (err) {
+      this.log.warn(TAG, `Failed to load explore mode: ${(err as Error).message}`);
+    }
+  }
+
+  /** 持久化已探索指纹 */
+  private async saveExploredFingerprints(): Promise<void> {
+    if (!this.context) return;
+    try {
+      let prefs = await preferences.getPreferences(this.context, 'context_awareness');
+      let arr: string[] = [];
+      this.exploredFingerprints.forEach((fp: string) => {
+        arr.push(fp);
+      });
+      await prefs.put('explored_fingerprints', JSON.stringify(arr));
+      await prefs.flush();
+    } catch (err) {
+      this.log.warn(TAG, `Failed to save fingerprints: ${(err as Error).message}`);
+    }
+  }
+
+  /** 计算状态指纹：只取核心维度 */
+  private computeFingerprint(snapshot: ContextSnapshot): string {
+    return `${snapshot.timeOfDay || 'unknown'}|${snapshot.isWeekend || 'false'}|${snapshot.motionState || 'unknown'}|${snapshot.geofence || 'none'}`;
+  }
 
   /**
    * 用户对推荐的反馈（保留旧 API 兼容性）

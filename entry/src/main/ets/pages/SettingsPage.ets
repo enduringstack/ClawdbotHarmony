@@ -150,6 +150,9 @@ export struct SettingsPage {
   // Module Monitor
   @State moduleStats: ModuleStat[] = [];
   @State showModuleMonitor: boolean = false;
+  // Silent Mode
+  @State silentAudioModel: string = '';
+  @State silentLocalAsr: boolean = false;  // Local ASR disabled by default (poor quality)
   // Context Awareness
   @State contextAwarenessEnabled: boolean = false;
 
@@ -889,6 +892,16 @@ export struct SettingsPage {
               Text(this.intentMode === 'auto' ? I18n.t('settings.intentModeAutoDesc') :
                 this.intentMode === 'local' ? I18n.t('settings.intentModeLocalDesc') : I18n.t('settings.intentModeCloudDesc'))
                 .fontSize(10).fontColor('#999999').margin({ top: 4 }).width('100%')
+
+              // --- Audio Summary Model ---
+              Divider().margin({ top: 12, bottom: 12 }).color('#F0F0F0')
+              Text(I18n.t('settings.silentAudioModel'))
+                .fontSize(13).fontColor('#1A1A1A').fontWeight(FontWeight.Medium).width('100%')
+              Text(I18n.t('settings.silentAudioModelDesc'))
+                .fontSize(10).fontColor('#999999').margin({ top: 2 }).width('100%')
+              TextInput({ text: this.silentAudioModel, placeholder: 'Qwen/Qwen3-Omni-30B-A3B-Instruct' })
+                .height(32).fontSize(12).backgroundColor('#F5F5F5').borderRadius(6).margin({ top: 4 })
+                .onChange((v: string) => { this.silentAudioModel = v; })
             }
           }
           .width('100%')
@@ -1462,6 +1475,32 @@ export struct SettingsPage {
           .onClick(() => {
             router.pushUrl({ url: 'pages/ConversationsRoutePage' });
           })
+
+          Divider().color('#F0F0F0').margin({ top: 12, bottom: 12 })
+
+          // Local ASR toggle
+          Divider().color('#F0F0F0').margin({ top: 12, bottom: 12 })
+
+          Row() {
+            Column({ space: 2 }) {
+              Text(I18n.t('settings.silentLocalAsr'))
+                .fontSize(14)
+                .fontColor('#1A1A1A')
+              Text(I18n.t('settings.silentLocalAsrDesc'))
+                .fontSize(11)
+                .fontColor('#999999')
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Toggle({ type: ToggleType.Switch, isOn: this.silentLocalAsr })
+              .selectedColor('#007AFF')
+              .onChange((isOn: boolean) => {
+                this.silentLocalAsr = isOn;
+              })
+          }
+          .width('100%')
+
         }
         .width('100%')
         .padding(16)
@@ -2270,6 +2309,9 @@ export struct SettingsPage {
       // Assistant customization
       this.assistantName = (await store.get('assistant_name', '')) as string;
       this.assistantAvatar = (await store.get('assistant_avatar', '')) as string;
+      // Silent mode audio model & local ASR
+      this.silentAudioModel = (await store.get('silent_audio_model', '')) as string;
+      this.silentLocalAsr = (await store.get('silent_local_asr', false)) as boolean;
     } catch { /* first launch defaults */ }
   }
 
@@ -2565,6 +2607,9 @@ export struct SettingsPage {
       // Assistant customization
       await store.put('assistant_name', this.assistantName);
       await store.put('assistant_avatar', this.assistantAvatar);
+      // Silent mode audio model & local ASR
+      await store.put('silent_audio_model', this.silentAudioModel);
+      await store.put('silent_local_asr', this.silentLocalAsr);
       await store.flush();
 
       // Save gateway settings

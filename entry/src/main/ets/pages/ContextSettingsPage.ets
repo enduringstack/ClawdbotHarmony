@@ -42,15 +42,106 @@ struct ContextSettingsPage {
   @State fbTopRuleNames: string[] = [];
   @State fbTopRuleScores: string[] = [];
 
+  // 积极探索模式
+  @State exploreMode: boolean = false;
+  @State exploreFpCount: number = 0;
   // 已学习的位置信号
   @State learnedSignals: LearnedSignalsSummary[] = [];
-  // 数据托盘
-  @State trayKeys: string[] = [];
-  @State trayValues: string[] = [];
-  @State trayAges: string[] = [];
-  @State trayIndicators: string[] = [];   // 🟢/🟡/🔴
-  @State trayQualities: string[] = [];
+  // 数据托盘 — 物理世界
+  @State physKeys: string[] = [];
+  @State physLabels: string[] = [];
+  @State physValues: string[] = [];
+  @State physAges: string[] = [];
+  @State physIndicators: string[] = [];
+  @State physQualities: string[] = [];
+  // 数据托盘 — 数字世界
+  @State digiKeys: string[] = [];
+  @State digiLabels: string[] = [];
+  @State digiValues: string[] = [];
+  @State digiAges: string[] = [];
+  @State digiIndicators: string[] = [];
+  @State digiQualities: string[] = [];
   private trayTimer: number = -1;
+  // 当前状态概览
+  @State statusTime: string = '';
+  @State statusLocation: string = '';
+  @State statusMotion: string = '';
+  @State statusBattery: string = '';
+  @State statusWifi: string = '';
+
+  // key → 中文标签映射
+  private static readonly KEY_LABELS: Record<string, string> = {
+    // ---- 物理世界（传感器 + 环境） ----
+    'hour': '小时',
+    'timeOfDay': '时段',
+    'dayOfWeek': '星期',
+    'isWeekend': '周末',
+    'batteryLevel': '电量',
+    'isCharging': '充电中',
+    'networkType': '网络类型',
+    'wifiSsid': 'WiFi名称',
+    'wifiLost': 'WiFi丢失',
+    'wifiLostCategory': 'WiFi丢失分类',
+    'wifiLostWork': '离开公司WiFi',
+    'latitude': '纬度',
+    'longitude': '经度',
+    'geofence': '围栏',
+    'stepCount': '步数(累计)',
+    'step_count_today': '今日步数',
+    'motionState': '运动状态',
+    'isPickup': '拿起手机',
+    'gpsSpeed': 'GPS速度',
+    'locationAccuracy': '定位精度(m)',
+    'cellId': '基站ID',
+    // 蓝牙
+    'bt_enabled': '蓝牙开启',
+    'bt_connected_count': '蓝牙连接数',
+    'bt_audio_connected': '蓝牙音频',
+    'bt_device_names': '蓝牙设备',
+    // 穿戴设备
+    'heart_rate': '心率',
+    'heart_rate_status': '心率状态',
+    'heart_rate_age_sec': '心率数据龄(秒)',
+    'wearing_state': '佩戴状态',
+    // 音频环境
+    'audio_scene': '音频场景',
+    'audio_device': '音频设备',
+    'audio_inCall': '通话中',
+    'audio_ringing': '响铃中',
+    'audio_headphones': '耳机连接',
+    'noise_level': '噪音等级',
+    'sound_scene': '声音场景',
+    'has_voice': '检测到人声',
+    'volume_db': '音量(dB)',
+    // 姿态
+    'phone_posture': '手机姿态',
+    'ambient_brightness': '环境亮度(lux)',
+    'proximity': '近距离感应',
+    // ---- 数字世界（应用 / 信息） ----
+    // 日历
+    'cal_eventCount': '日历事件数',
+    'cal_hasUpcoming': '有待办事件',
+    'cal_nextTitle': '下个日程',
+    'cal_nextMinutes': '下个日程(分钟)',
+    'cal_nextLocation': '日程地点',
+    'cal_inMeeting': '会议中',
+    'cal_currentTitle': '当前会议',
+    'cal_todayCount': '今日日程数',
+    // 应用使用
+    'app_isForeground': '应用在前台',
+    'app_sessionMinutes': '本次使用(分钟)',
+    'app_sessionsToday': '今日使用次数',
+    'app_canReadOthers': '可读取其他应用',
+    // 前台应用
+    'foreground_app': '前台应用',
+    'app_category': '应用类别',
+    'app_usage_min': '应用使用(分钟)',
+    // 通知
+    'notif_enabled': '通知已开启',
+    'notif_selfCount': '本应用通知数',
+    'notif_canReadOthers': '可读取其他通知',
+    'notif_lastSentMinutes': '上次通知(分钟)',
+  };
 
   private catIds: string[] = ['home', 'work', 'transit', 'shopping', 'restaurant', 'gym', 'custom'];
   private catLabels: string[] = ['🏠 家', '🏢 公司', '🚇 交通', '🛒 购物', '🍜 餐饮', '💪 健身', '📍 自定义'];
@@ -95,6 +186,7 @@ struct ContextSettingsPage {
       this.geofenceDetails = details;
       this.geofenceIds = ids;
       this.engineStatus = cas.getStatus();
+      this.exploreMode = cas.isExploreMode();
       this.learnedSignals = cas.getLearnedSignalsSummaries();
       this.suggestions = cas.getLocationSuggestions();
       this.suggestions = cas.getFilteredSuggestions();
@@ -164,6 +256,47 @@ struct ContextSettingsPage {
 
         Scroll() {
           Column({ space: 16 }) {
+            // ===== 当前状态概览 =====
+            Column({ space: 6 }) {
+              Text('当前状态')
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(Color.White)
+                .margin({ bottom: 4 })
+              Row({ space: 12 }) {
+                Text(this.statusTime)
+                  .fontSize(13)
+                  .fontColor('#E0E0E0')
+                Text(this.statusMotion)
+                  .fontSize(13)
+                  .fontColor('#E0E0E0')
+                Text(this.statusBattery)
+                  .fontSize(13)
+                  .fontColor('#E0E0E0')
+              }
+              .width('100%')
+              if (this.statusLocation.length > 0) {
+                Text(this.statusLocation)
+                  .fontSize(13)
+                  .fontColor('#E0E0E0')
+                  .width('100%')
+                  .margin({ top: 2 })
+              }
+              if (this.statusWifi.length > 0) {
+                Text(this.statusWifi)
+                  .fontSize(13)
+                  .fontColor('#E0E0E0')
+                  .width('100%')
+              }
+            }
+            .width('100%')
+            .padding(16)
+            .linearGradient({
+              direction: GradientDirection.Right,
+              colors: [['#2196F3', 0.0], ['#1976D2', 1.0]]
+            })
+            .borderRadius(12)
+
             // ===== 引擎状态 =====
             Column() {
               Text('引擎状态')
@@ -192,10 +325,40 @@ struct ContextSettingsPage {
             .backgroundColor(Color.White)
             .borderRadius(12)
 
+            // ===== 积极探索模式 =====
+            Column() {
+              Row() {
+                Column() {
+                  Text(I18n.t('context.explore.title'))
+                    .fontSize(15)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor('#1A1A1A')
+                  Text(I18n.t('context.explore.desc'))
+                    .fontSize(12)
+                    .fontColor('#999999')
+                    .margin({ top: 2 })
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Start)
+
+                Toggle({ type: ToggleType.Switch, isOn: this.exploreMode })
+                  .selectedColor('#007AFF')
+                  .onChange((isOn: boolean) => {
+                    this.exploreMode = isOn;
+                    ContextAwarenessService.getInstance().setExploreMode(isOn);
+                  })
+              }
+              .width('100%')
+            }
+            .width('100%')
+            .padding(16)
+            .backgroundColor(Color.White)
+            .borderRadius(12)
+
             // ===== 数据托盘 =====
             Column() {
               Row() {
-                Text('\u{1F4E1} 数据托盘 (' + this.trayKeys.length.toString() + ')')
+                Text('\u{1F4E1} 数据托盘 (' + (this.physKeys.length + this.digiKeys.length).toString() + ')')
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#1A1A1A')
@@ -206,7 +369,7 @@ struct ContextSettingsPage {
                   .onClick(() => { this.refreshTrayStatus(); })
               }
               .width('100%')
-              .margin({ bottom: 8 })
+              .margin({ bottom: 4 })
 
               Text('每 5 秒自动刷新')
                 .fontSize(11)
@@ -214,7 +377,7 @@ struct ContextSettingsPage {
                 .width('100%')
                 .margin({ bottom: 8 })
 
-              if (this.trayKeys.length === 0) {
+              if (this.physKeys.length === 0 && this.digiKeys.length === 0) {
                 Text('托盘为空（传感器未开始写入）')
                   .fontSize(13)
                   .fontColor('#999999')
@@ -222,63 +385,77 @@ struct ContextSettingsPage {
                   .textAlign(TextAlign.Center)
                   .padding(16)
               } else {
-                // Header row
-                Row() {
-                  Text('Key')
-                    .fontSize(11)
-                    .fontColor('#999999')
-                    .fontWeight(FontWeight.Medium)
-                    .width(90)
-                  Text('Value')
-                    .fontSize(11)
-                    .fontColor('#999999')
-                    .fontWeight(FontWeight.Medium)
-                    .layoutWeight(1)
-                  Text('Age')
-                    .fontSize(11)
-                    .fontColor('#999999')
-                    .fontWeight(FontWeight.Medium)
-                    .width(45)
-                  Text('Q')
-                    .fontSize(11)
-                    .fontColor('#999999')
-                    .fontWeight(FontWeight.Medium)
-                    .width(35)
-                  Text('')
-                    .width(18)
-                }
-                .width('100%')
-                .padding({ bottom: 4 })
-
-                ForEach(this.trayKeys, (key: string, idx: number) => {
-                  Row() {
-                    Text(key)
-                      .fontSize(12)
-                      .fontColor('#1A1A1A')
-                      .width(90)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    Text(idx < this.trayValues.length ? this.trayValues[idx] : '')
-                      .fontSize(12)
-                      .fontColor('#666666')
-                      .layoutWeight(1)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    Text(idx < this.trayAges.length ? this.trayAges[idx] : '')
-                      .fontSize(11)
-                      .fontColor('#999999')
-                      .width(45)
-                    Text(idx < this.trayQualities.length ? this.trayQualities[idx] : '')
-                      .fontSize(11)
-                      .fontColor('#999999')
-                      .width(35)
-                    Text(idx < this.trayIndicators.length ? this.trayIndicators[idx] : '')
-                      .fontSize(12)
-                      .width(18)
-                  }
+                // ── 物理世界 ──
+                Text('\u{1F30D} 物理世界 (' + this.physKeys.length.toString() + ')')
+                  .fontSize(13)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor('#2E7D32')
                   .width('100%')
-                  .padding({ top: 3, bottom: 3 })
-                }, (key: string, idx: number) => key + '_' + idx.toString())
+                  .margin({ bottom: 4, top: 4 })
+
+                Row() {
+                  Text('名称').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(90)
+                  Text('数值').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).layoutWeight(1)
+                  Text('龄').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(40)
+                  Text('质').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(32)
+                  Text('').width(18)
+                }.width('100%').padding({ bottom: 2 })
+
+                ForEach(this.physKeys, (key: string, idx: number) => {
+                  Row() {
+                    Text(idx < this.physLabels.length ? this.physLabels[idx] : key)
+                      .fontSize(12).fontColor('#1A1A1A').width(90).maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(idx < this.physValues.length ? this.physValues[idx] : '')
+                      .fontSize(12).fontColor('#666666').layoutWeight(1).maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(idx < this.physAges.length ? this.physAges[idx] : '')
+                      .fontSize(11).fontColor('#999999').width(40)
+                    Text(idx < this.physQualities.length ? this.physQualities[idx] : '')
+                      .fontSize(11).fontColor('#999999').width(32)
+                    Text(idx < this.physIndicators.length ? this.physIndicators[idx] : '')
+                      .fontSize(12).width(18)
+                  }.width('100%').padding({ top: 2, bottom: 2 })
+                }, (key: string, idx: number) => 'p_' + key + '_' + idx.toString())
+
+                // ── 数字世界 ──
+                Text('\u{1F4F1} 数字世界 (' + this.digiKeys.length.toString() + ')')
+                  .fontSize(13)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor('#1565C0')
+                  .width('100%')
+                  .margin({ bottom: 4, top: 12 })
+
+                if (this.digiKeys.length === 0) {
+                  Text('暂无插件数据')
+                    .fontSize(12).fontColor('#999999').width('100%')
+                    .textAlign(TextAlign.Center).padding(8)
+                } else {
+                  Row() {
+                    Text('名称').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(90)
+                    Text('数值').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).layoutWeight(1)
+                    Text('龄').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(40)
+                    Text('质').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(32)
+                    Text('').width(18)
+                  }.width('100%').padding({ bottom: 2 })
+
+                  ForEach(this.digiKeys, (key: string, idx: number) => {
+                    Row() {
+                      Text(idx < this.digiLabels.length ? this.digiLabels[idx] : key)
+                        .fontSize(12).fontColor('#1A1A1A').width(90).maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      Text(idx < this.digiValues.length ? this.digiValues[idx] : '')
+                        .fontSize(12).fontColor('#666666').layoutWeight(1).maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      Text(idx < this.digiAges.length ? this.digiAges[idx] : '')
+                        .fontSize(11).fontColor('#999999').width(40)
+                      Text(idx < this.digiQualities.length ? this.digiQualities[idx] : '')
+                        .fontSize(11).fontColor('#999999').width(32)
+                      Text(idx < this.digiIndicators.length ? this.digiIndicators[idx] : '')
+                        .fontSize(12).width(18)
+                    }.width('100%').padding({ top: 2, bottom: 2 })
+                  }, (key: string, idx: number) => 'd_' + key + '_' + idx.toString())
+                }
               }
             }
             .width('100%')
@@ -809,32 +986,34 @@ struct ContextSettingsPage {
     try {
       let cas = ContextAwarenessService.getInstance();
       let statuses: TrayStatus[] = cas.getTrayStatus();
-      let keys: string[] = [];
-      let values: string[] = [];
-      let ages: string[] = [];
-      let indicators: string[] = [];
-      let qualities: string[] = [];
+
+      let pK: string[] = [], pL: string[] = [], pV: string[] = [], pA: string[] = [], pI: string[] = [], pQ: string[] = [];
+      let dK: string[] = [], dL: string[] = [], dV: string[] = [], dA: string[] = [], dI: string[] = [], dQ: string[] = [];
+
       for (let i = 0; i < statuses.length; i++) {
         let s: TrayStatus = statuses[i];
-        keys.push(s.key);
-        values.push(s.value.length > 20 ? s.value.substring(0, 20) + '...' : s.value);
-        ages.push(this.formatAge(s.ageMs));
-        if (s.fresh) {
-          indicators.push('\u{1F7E2}');  // green circle
-        } else if (s.effectiveQuality > 0) {
-          indicators.push('\u{1F7E1}');  // yellow circle
+        let label = ContextSettingsPage.KEY_LABELS[s.key] ?? s.key;
+        let val = s.value.length > 20 ? s.value.substring(0, 20) + '...' : s.value;
+        let age = this.formatAge(s.ageMs);
+        let ind = s.fresh ? '\u{1F7E2}' : (s.effectiveQuality > 0 ? '\u{1F7E1}' : '\u{1F534}');
+        let qual = (s.effectiveQuality * 100).toFixed(0) + '%';
+
+        if (s.source === 'digital') {
+          dK.push(s.key); dL.push(label); dV.push(val); dA.push(age); dI.push(ind); dQ.push(qual);
         } else {
-          indicators.push('\u{1F534}');  // red circle
+          pK.push(s.key); pL.push(label); pV.push(val); pA.push(age); pI.push(ind); pQ.push(qual);
         }
-        qualities.push((s.effectiveQuality * 100).toFixed(0) + '%');
       }
-      this.trayKeys = keys;
-      this.trayValues = values;
-      this.trayAges = ages;
-      this.trayIndicators = indicators;
-      this.trayQualities = qualities;
+      this.physKeys = pK; this.physLabels = pL; this.physValues = pV;
+      this.physAges = pA; this.physIndicators = pI; this.physQualities = pQ;
+      this.digiKeys = dK; this.digiLabels = dL; this.digiValues = dV;
+      this.digiAges = dA; this.digiIndicators = dI; this.digiQualities = dQ;
+
+      // 更新顶部状态概览
+      this.updateStatusHeader(statuses);
     } catch (err) {
-      this.trayKeys = [];
+      this.physKeys = [];
+      this.digiKeys = [];
     }
   }
 
@@ -843,6 +1022,43 @@ struct ContextSettingsPage {
     if (ms < 60000) return (ms / 1000).toFixed(0) + 's';
     if (ms < 3600000) return (ms / 60000).toFixed(1) + 'm';
     return (ms / 3600000).toFixed(1) + 'h';
+  }
+
+  private updateStatusHeader(statuses: TrayStatus[]): void {
+    let trayMap: Record<string, string> = {};
+    for (let i = 0; i < statuses.length; i++) {
+      trayMap[statuses[i].key] = statuses[i].value;
+    }
+    // 时间
+    let now = new Date();
+    let h = now.getHours().toString().padStart(2, '0');
+    let m = now.getMinutes().toString().padStart(2, '0');
+    let tod = trayMap['timeOfDay'] ?? '';
+    let todCn: Record<string, string> = { 'morning': '上午', 'afternoon': '下午', 'evening': '傍晚', 'night': '晚上' };
+    this.statusTime = h + ':' + m + ' ' + (todCn[tod] ?? tod);
+
+    // 运动状态
+    let motion = trayMap['motionState'] ?? '';
+    let motionCn: Record<string, string> = {
+      'stationary': '静止', 'walking': '步行', 'running': '跑步',
+      'cycling': '骑行', 'driving': '驾车', 'transit': '交通',
+      'pickup': '拿起手机', 'putdown': '放下手机', 'unknown': '未知'
+    };
+    this.statusMotion = motionCn[motion] ?? motion;
+
+    // 电量
+    let bat = trayMap['batteryLevel'] ?? '';
+    let charging = trayMap['isCharging'] === 'true' ? ' \u26A1' : '';
+    this.statusBattery = bat.length > 0 ? bat + '%' + charging : '';
+
+    // 位置
+    let geofence = trayMap['geofence'] ?? '';
+    let gfCn: Record<string, string> = { 'home': '家', 'work': '公司', 'transit': '交通', 'gym': '健身房' };
+    this.statusLocation = geofence.length > 0 ? (gfCn[geofence] ?? geofence) : '';
+
+    // WiFi
+    let wifi = trayMap['wifiSsid'] ?? '';
+    this.statusWifi = wifi.length > 0 ? 'WiFi: ' + wifi : '';
   }
 
   private deleteGeofence(id: string): void {

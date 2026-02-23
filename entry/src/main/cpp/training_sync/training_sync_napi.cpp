@@ -5,6 +5,7 @@
 #include "training_sync.h"
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 using namespace training_sync;
 
@@ -276,7 +277,15 @@ static napi_value Deserialize(napi_env env, napi_callback_info info) {
     std::string json(len, '\0');
     napi_get_value_string_utf8(env, args[0], &json[0], len + 1, &len);
     
-    bool success = TrainingDataSync::getInstance().deserialize(json);
+    bool success = false;
+    try {
+        success = TrainingDataSync::getInstance().deserialize(json);
+    } catch (const std::exception& e) {
+        // Prevent native crash from corrupted data
+        success = false;
+    } catch (...) {
+        success = false;
+    }
     return CreateBool(env, success);
 }
 

@@ -6,8 +6,24 @@
 #include <iomanip>
 #include <ctime>
 #include <algorithm>
+#include <cstdlib>
+#include <cerrno>
 
 namespace training_sync {
+
+// Safe stod: uses strtod to avoid throwing exceptions
+static double safe_stod(const std::string& s, double defVal = 0.0) {
+    if (s.empty()) return defVal;
+    const char* start = s.c_str();
+    // skip whitespace
+    while (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r') start++;
+    if (*start == '\0') return defVal;
+    char* end = nullptr;
+    errno = 0;
+    double val = strtod(start, &end);
+    if (end == start || errno == ERANGE) return defVal;
+    return val;
+}
 
 // ============================================================
 // 单例
@@ -304,11 +320,7 @@ bool TrainingDataSync::deserialize(const std::string& json) {
         size_t end = s.find_first_of(",}]", colon + 1);
         if (end == std::string::npos) return 0;
         std::string numStr = s.substr(colon + 1, end - colon - 1);
-        try {
-            return std::stod(numStr);
-        } catch (...) {
-            return 0;
-        }
+        return safe_stod(numStr);
     };
 
     auto extractBool = [](const std::string& s, size_t start) -> bool {
@@ -379,11 +391,7 @@ bool TrainingDataSync::deserialize(const std::string& json) {
             size_t end = obj.find_first_of(",}", colon + 1);
             if (end == std::string::npos) break;
             std::string numStr = obj.substr(colon + 1, end - colon - 1);
-            try {
-                result[key] = std::stod(numStr);
-            } catch (...) {
-                result[key] = 0;
-            }
+            result[key] = safe_stod(numStr);
             pos = end + 1;
         }
         return result;

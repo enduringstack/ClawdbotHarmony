@@ -38,6 +38,17 @@ export struct ConversationCard {
 
   build() {
     Column() {
+      // Title line (if available) or fallback to date
+      if (this.item.title.length > 0) {
+        Text(this.item.title)
+          .fontSize(14)
+          .fontColor('#1A1A1A')
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+
       // Top row: status icon + date + duration badge
       Row() {
         Text(this.statusIcon())
@@ -45,9 +56,9 @@ export struct ConversationCard {
           .margin({ right: 6 })
 
         Text(this.formatDate())
-          .fontSize(14)
-          .fontColor('#333333')
-          .fontWeight(FontWeight.Medium)
+          .fontSize(this.item.title.length > 0 ? 12 : 14)
+          .fontColor(this.item.title.length > 0 ? '#999999' : '#333333')
+          .fontWeight(this.item.title.length > 0 ? FontWeight.Normal : FontWeight.Medium)
 
         Blank()
 
@@ -59,17 +70,7 @@ export struct ConversationCard {
           .padding({ left: 8, right: 8, top: 2, bottom: 2 })
       }
       .width('100%')
-
-      // Participants
-      if (this.item.participants.length > 0) {
-        Text(this.item.participants.join(', '))
-          .fontSize(12)
-          .fontColor('#007AFF')
-          .margin({ top: 6 })
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-      }
+      .margin({ top: this.item.title.length > 0 ? 4 : 0 })
 
       // Summary snippet (2-line max)
       if (this.item.summary.length > 0) {
@@ -82,11 +83,21 @@ export struct ConversationCard {
           .width('100%')
       }
 
-      // Entry count
+      // Entry count + action item badge
       Row() {
         Text(`${this.item.entryCount} ${t('silent.entries')}`)
           .fontSize(11)
           .fontColor('#999999')
+
+        if (this.item.actionItemCount > 0) {
+          Text(`${this.item.actionItemCount} ${t('silent.actionItemBadge')}`)
+            .fontSize(11)
+            .fontColor('#007AFF')
+            .backgroundColor('#E8F0FE')
+            .borderRadius(8)
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .margin({ left: 8 })
+        }
       }
       .width('100%')
       .margin({ top: 6 })

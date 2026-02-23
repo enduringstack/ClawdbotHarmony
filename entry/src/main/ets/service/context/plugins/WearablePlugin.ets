@@ -44,25 +44,26 @@ export class WearablePlugin implements DigitalPlugin {
     this.log.info(TAG, 'Init: requesting health data permission...');
 
     let granted = await this.requestHealthPermission();
-    if (!granted) {
-      this.initError = 'Health data permission denied';
-      this.log.warn(TAG, 'Health data permission not granted');
-      return;
-    }
-
-    // Try Health Kit first (reads wearable data from 运动健康 app)
-    let healthKitAvailable = await this.tryInitHealthKit();
-    if (healthKitAvailable) {
-      this.useHealthKit = true;
-      this.startHealthKitPolling();
-      this.log.info(TAG, 'Using Health Kit for wearable data');
-    } else {
-      // Fallback to sensor API (phone's own heart rate sensor)
+    if (granted) {
+      // Try Health Kit (reads wearable data from 运动健康 app)
+      let healthKitAvailable = await this.tryInitHealthKit();
+      if (healthKitAvailable) {
+        this.useHealthKit = true;
+        this.startHealthKitPolling();
+        this.log.info(TAG, 'Using Health Kit for wearable data');
+        return;
+      }
       this.log.info(TAG, 'Health Kit unavailable, falling back to sensor API');
-      this.subscribeHeartRateSensor();
+    } else {
+      // READ_HEALTH_DATA requires system_basic APL — normal签名不支持
+      // 回退到手机内置心率传感器（只需 MOTION_SENSORS 权限）
+      this.log.warn(TAG, 'Health Kit permission denied (APL insufficient), falling back to sensor API');
+      this.initError = '';
     }
 
-    this.log.info(TAG, `Init complete: healthKit=${this.useHealthKit}`);
+    // 传感器回退：手机自身的心率传感器
+    this.subscribeHeartRateSensor();
+    this.log.info(TAG, `Init complete: healthKit=${this.useHealthKit}, sensor fallback active`);
   }
 
   getSnapshot(): DigitalSnapshot {

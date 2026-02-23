@@ -58,7 +58,7 @@ export interface LocationState {
 
 // ==================== 运动状态 ====================
 
-export type MotionState = 
+export type MotionState =
   | 'stationary'   // 静止
   | 'walking'      // 步行
   | 'running'      // 跑步
@@ -66,6 +66,7 @@ export type MotionState =
   | 'driving'      // 开车
   | 'transit'      // 公共交通
   | 'pickup'       // 拿起手机（看一眼）
+  | 'putdown'      // 放下手机
   | 'unknown';
 
 // ==================== 环境特征 ====================

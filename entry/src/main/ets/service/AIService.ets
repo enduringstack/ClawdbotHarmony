@@ -499,6 +499,10 @@ export class AIService {
         // Multimodal user message with image (OpenAI vision format)
         let contentArr = `[{"type":"text","text":${JSON.stringify(m.content)}},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,${m.imageBase64}"}}]`;
         msgJsonParts.push(`{"role":"user","content":${contentArr}}`);
+      } else if (m.role === 'user' && m.audioBase64 && m.audioBase64.length > 0) {
+        // Multimodal user message with audio (Qwen3-Omni format)
+        let contentArr = `[{"type":"audio_url","audio_url":{"url":"data:audio/wav;base64,${m.audioBase64}"}},{"type":"text","text":${JSON.stringify(m.content)}}]`;
+        msgJsonParts.push(`{"role":"user","content":${contentArr}}`);
       } else {
         msgJsonParts.push(`{"role":${JSON.stringify(m.role)},"content":${JSON.stringify(m.content)}}`);
       }
@@ -617,6 +621,9 @@ export class AIService {
         msgJsonParts.push(`{"role":"tool","tool_call_id":${JSON.stringify(m.toolCallId)},"content":${JSON.stringify(m.content)}}`);
       } else if (m.role === 'user' && m.imageBase64 && m.imageBase64.length > 0) {
         let contentArr = `[{"type":"text","text":${JSON.stringify(m.content)}},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,${m.imageBase64}"}}]`;
+        msgJsonParts.push(`{"role":"user","content":${contentArr}}`);
+      } else if (m.role === 'user' && m.audioBase64 && m.audioBase64.length > 0) {
+        let contentArr = `[{"type":"audio_url","audio_url":{"url":"data:audio/wav;base64,${m.audioBase64}"}},{"type":"text","text":${JSON.stringify(m.content)}}]`;
         msgJsonParts.push(`{"role":"user","content":${contentArr}}`);
       } else {
         msgJsonParts.push(`{"role":${JSON.stringify(m.role)},"content":${JSON.stringify(m.content)}}`);
@@ -900,6 +907,19 @@ export class AIService {
     } else {
       response = await this.callOpenAI(messages, settings, systemPrompt, []);
     }
+    return response.text;
+  }
+
+  /**
+   * Simple one-shot chat with audio: send system prompt + user message + WAV audio base64.
+   * Used for Qwen3-Omni audio transcription & summarization.
+   */
+  async simpleChatWithAudio(systemPrompt: string, userMessage: string,
+    audioBase64: string, settings: SettingsData): Promise<string> {
+    let messages: ApiMessage[] = [];
+    let msg: ApiMessage = { role: 'user', content: userMessage, audioBase64: audioBase64 };
+    messages.push(msg);
+    let response: RawResponse = await this.callOpenAI(messages, settings, systemPrompt, []);
     return response.text;
   }
 

@@ -19,8 +19,23 @@
 #include <memory>
 #include <mutex>
 #include <deque>
+#include <cerrno>
+#include <cstdlib>
 
 namespace context_engine {
+
+/** Safe stod replacement using strtod — never throws (HarmonyOS NDK stod can SIGABRT) */
+inline double safe_stod(const std::string& s, double defVal = 0.0) {
+    if (s.empty()) return defVal;
+    const char* start = s.c_str();
+    while (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r') start++;
+    if (*start == '\0') return defVal;
+    char* end = nullptr;
+    errno = 0;
+    double val = strtod(start, &end);
+    if (end == start || errno == ERANGE) return defVal;
+    return val;
+}
 
 // ============================================================
 // Data types
