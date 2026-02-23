@@ -14,6 +14,7 @@ import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { LogService } from '../../common/LogService';
+import { I18n } from '../../common/I18n';
 import * as Dbscan from './Dbscan';
 import * as GeoUtils from './GeoUtils';
 
@@ -448,14 +449,13 @@ export class LocationDiscoveryService {
    * 生成名称
    */
   private generateName(cluster: LocationCluster): string {
-    let categoryNames: Record<string, string> = {
-      'home': '家',
-      'work': '公司',
-      'gym': '健身房',
-      'restaurant': '常去餐厅',
-      'other': '常去地点'
-    };
-    return categoryNames[cluster.suggestedCategory] || '常去地点';
+    let cat = cluster.suggestedCategory;
+    let label = I18n.t('place.category.' + cat);
+    // I18n 未找到时 key 原样返回，用通用标签
+    if (label === 'place.category.' + cat) {
+      label = I18n.t('place.category.custom');
+    }
+    return label;
   }
 
   /**

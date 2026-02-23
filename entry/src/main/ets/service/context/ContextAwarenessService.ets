@@ -1842,8 +1842,6 @@ export class ContextAwarenessService {
     let snapshot = this.tray.getSnapshot();
     this.log.info(TAG, `Geofence trigger evaluate: geofence=${snapshot.geofence ?? 'none'}`);
     await this.evaluateAndDeliver(snapshot);
-    
-    this.evaluateAndDeliver(snapshot);
 
     // 同时尝试旧的 BehaviorLogger 匹配（兼容过渡）
     let ctx = await this.getCurrentContext();
@@ -2018,6 +2016,11 @@ export class ContextAwarenessService {
       }
     }
     this.log.info(TAG, `Explore mode ${enabled ? 'enabled' : 'disabled'}, explored ${this.exploredFingerprints.size} fingerprints`);
+
+    // 开启时立即触发一次评估，让用户能即时看到效果
+    if (enabled && this.isRunning) {
+      this.periodicEvaluate();
+    }
   }
 
   /** 加载积极探索模式持久化状态 */
@@ -2031,6 +2034,7 @@ export class ContextAwarenessService {
       for (let i = 0; i < fpArr.length; i++) {
         this.exploredFingerprints.add(fpArr[i]);
       }
+      this.log.info(TAG, `Explore mode loaded: enabled=${this.exploreMode}, fingerprints=${this.exploredFingerprints.size}`);
     } catch (err) {
       this.log.warn(TAG, `Failed to load explore mode: ${(err as Error).message}`);
     }

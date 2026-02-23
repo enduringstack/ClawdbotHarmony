@@ -293,6 +293,10 @@ export class LLMFallbackService {
             : provider === 'siliconflow' ? Constants.DEFAULT_MODEL_SILICONFLOW
               : provider === 'custom' ? '' : 'llama3';
       let model = (await store.get(modelPref, defaultModel)) as string;
+      // 如果存储的 model 为空字符串，回退到默认模型
+      if (model.length === 0 && defaultModel.length > 0) {
+        model = defaultModel;
+      }
 
       // Use built-in keys as fallback
       if (apiKey.length === 0 && provider === 'openrouter' && Constants.OPENROUTER_DEFAULT_KEY.length > 0) {

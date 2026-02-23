@@ -9,6 +9,7 @@
  *   - "忽略" → 永不再建议此位置
  *   - "以后再说" → 7 天后可能再次建议
  */
+import { I18n } from '../common/I18n';
 
 @Component
 export struct GeofenceSuggestionCard {
@@ -34,9 +35,17 @@ export struct GeofenceSuggestionCard {
   @State dismissed: boolean = false;
 
   private catIds: string[] = ['home', 'work', 'gym', 'restaurant', 'shopping', 'custom'];
-  private catLabels: string[] = ['🏠 家', '🏢 公司', '💪 健身房', '🍜 餐厅', '🛒 购物', '📍 其他'];
+  @State catLabels: string[] = ['🏠 家', '🏢 公司', '💪 健身房', '🍜 餐厅', '🛒 购物', '📍 其他'];
+
+  private static readonly catIcons: string[] = ['🏠', '🏢', '💪', '🍜', '🛒', '📍'];
 
   aboutToAppear(): void {
+    // 用 I18n 初始化分类标签
+    let labels: string[] = [];
+    for (let i = 0; i < this.catIds.length; i++) {
+      labels.push(GeofenceSuggestionCard.catIcons[i] + ' ' + I18n.t('place.category.' + this.catIds[i]));
+    }
+    this.catLabels = labels;
     this.editName = this.name;
     let idx = this.catIds.indexOf(this.category);
     this.selectedCatIndex = idx >= 0 ? idx : 5;

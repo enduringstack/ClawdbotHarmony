@@ -144,10 +144,16 @@ struct ContextSettingsPage {
   };
 
   private catIds: string[] = ['home', 'work', 'transit', 'shopping', 'restaurant', 'gym', 'custom'];
-  private catLabels: string[] = ['🏠 家', '🏢 公司', '🚇 交通', '🛒 购物', '🍜 餐饮', '💪 健身', '📍 自定义'];
+  @State catLabels: string[] = ['🏠 家', '🏢 公司', '🚇 交通', '🛒 购物', '🍜 餐饮', '💪 健身', '📍 自定义'];
 
   aboutToAppear(): void {
     this.log.info('CtxSettings', 'Page opened');
+    // 用 I18n 初始化分类标签
+    let labels: string[] = [];
+    for (let i = 0; i < this.catIds.length; i++) {
+      labels.push(this.getCatIcon(this.catIds[i]) + ' ' + I18n.t('place.category.' + this.catIds[i]));
+    }
+    this.catLabels = labels;
     this.refresh();
     this.refreshTrayStatus();
     // Auto-refresh tray every 5 seconds
@@ -164,8 +170,18 @@ struct ContextSettingsPage {
   }
 
   private getCatLabel(cat: string): string {
-    let idx = this.catIds.indexOf(cat);
-    if (idx >= 0) return this.catLabels[idx];
+    let icon = this.getCatIcon(cat);
+    let label = I18n.t('place.category.' + cat);
+    return icon + ' ' + label;
+  }
+
+  private getCatIcon(cat: string): string {
+    if (cat === 'home') return '🏠';
+    if (cat === 'work') return '🏢';
+    if (cat === 'transit') return '🚇';
+    if (cat === 'gym') return '💪';
+    if (cat === 'restaurant') return '🍜';
+    if (cat === 'shopping') return '🛒';
     return '📍';
   }
 
@@ -1051,10 +1067,29 @@ struct ContextSettingsPage {
     let charging = trayMap['isCharging'] === 'true' ? ' \u26A1' : '';
     this.statusBattery = bat.length > 0 ? bat + '%' + charging : '';
 
-    // 位置
-    let geofence = trayMap['geofence'] ?? '';
-    let gfCn: Record<string, string> = { 'home': '家', 'work': '公司', 'transit': '交通', 'gym': '健身房' };
-    this.statusLocation = geofence.length > 0 ? (gfCn[geofence] ?? geofence) : '';
+    // 位置：根据围栏 ID 查找实际围栏，显示分类标签 + 名称
+    let geofenceId = trayMap['geofence'] ?? '';
+    if (geofenceId.length > 0) {
+      try {
+        let gfs = ContextAwarenessService.getInstance().getAllGeofences();
+        let matched = false;
+        for (let i = 0; i < gfs.length; i++) {
+          if (gfs[i].id === geofenceId) {
+            let catLabel = I18n.t('place.category.' + gfs[i].category);
+            this.statusLocation = this.getCatIcon(gfs[i].category) + ' ' + catLabel + ' ' + gfs[i].name;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          this.statusLocation = geofenceId;
+        }
+      } catch (_e) {
+        this.statusLocation = geofenceId;
+      }
+    } else {
+      this.statusLocation = '';
+    }
 
     // WiFi
     let wifi = trayMap['wifiSsid'] ?? '';
