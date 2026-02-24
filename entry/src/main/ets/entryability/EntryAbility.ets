@@ -226,8 +226,8 @@ export default class EntryAbility extends UIAbility {
         console.info('[ClawdBot] loadContent succeeded: ' + page);
       });
     }).catch(() => {
-      // Fallback to main page on error
-      windowStage.loadContent('pages/Index', (err) => {
+      // Fallback to HelloWorldPage on error
+      windowStage.loadContent('pages/HelloWorldPage', (err) => {
         if (err) {
           console.error('[ClawdBot] loadContent fallback failed: ' + JSON.stringify(err));
         }
@@ -236,8 +236,8 @@ export default class EntryAbility extends UIAbility {
   }
 
   private async getInitialPage(): Promise<string> {
-    console.info('[ClawdBot] Loading Index directly');
-    return 'pages/Index';
+    console.info('[ClawdBot] Loading HelloWorldPage directly');
+    return 'pages/HelloWorldPage';
   }
 
   onWindowStageDestroy(): void {

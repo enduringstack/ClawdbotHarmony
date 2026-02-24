@@ -1,5 +1,6 @@
 {
   "src": [
+    "pages/HelloWorldPage",
     "pages/Index",
     "pages/CanvasPage",
     "pages/LogViewerPage",
