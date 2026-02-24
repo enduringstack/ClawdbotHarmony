@@ -69,79 +69,52 @@ struct ContextSettingsPage {
   @State statusBattery: string = '';
   @State statusWifi: string = '';
 
-  // key → 中文标签映射
-  private static readonly KEY_LABELS: Record<string, string> = {
-    // ---- 物理世界（传感器 + 环境） ----
-    'hour': '小时',
-    'timeOfDay': '时段',
-    'dayOfWeek': '星期',
-    'isWeekend': '周末',
-    'batteryLevel': '电量',
-    'isCharging': '充电中',
-    'networkType': '网络类型',
-    'wifiSsid': 'WiFi名称',
-    'wifiLost': 'WiFi丢失',
-    'wifiLostCategory': 'WiFi丢失分类',
-    'wifiLostWork': '离开公司WiFi',
-    'latitude': '纬度',
-    'longitude': '经度',
-    'geofence': '围栏',
-    'stepCount': '步数(累计)',
-    'step_count_today': '今日步数',
-    'motionState': '运动状态',
-    'isPickup': '拿起手机',
-    'gpsSpeed': 'GPS速度',
-    'locationAccuracy': '定位精度(m)',
-    'cellId': '基站ID',
-    // 蓝牙
-    'bt_enabled': '蓝牙开启',
-    'bt_connected_count': '蓝牙连接数',
-    'bt_audio_connected': '蓝牙音频',
-    'bt_device_names': '蓝牙设备',
-    // 穿戴设备
-    'heart_rate': '心率',
-    'heart_rate_status': '心率状态',
-    'heart_rate_age_sec': '心率数据龄(秒)',
-    'wearing_state': '佩戴状态',
-    // 音频环境
-    'audio_scene': '音频场景',
-    'audio_device': '音频设备',
-    'audio_inCall': '通话中',
-    'audio_ringing': '响铃中',
-    'audio_headphones': '耳机连接',
-    'noise_level': '噪音等级',
-    'sound_scene': '声音场景',
-    'has_voice': '检测到人声',
-    'volume_db': '音量(dB)',
-    // 姿态
-    'phone_posture': '手机姿态',
-    'ambient_brightness': '环境亮度(lux)',
-    'proximity': '近距离感应',
-    // ---- 数字世界（应用 / 信息） ----
-    // 日历
-    'cal_eventCount': '日历事件数',
-    'cal_hasUpcoming': '有待办事件',
-    'cal_nextTitle': '下个日程',
-    'cal_nextMinutes': '下个日程(分钟)',
-    'cal_nextLocation': '日程地点',
-    'cal_inMeeting': '会议中',
-    'cal_currentTitle': '当前会议',
-    'cal_todayCount': '今日日程数',
-    // 应用使用
-    'app_isForeground': '应用在前台',
-    'app_sessionMinutes': '本次使用(分钟)',
-    'app_sessionsToday': '今日使用次数',
-    'app_canReadOthers': '可读取其他应用',
-    // 前台应用
-    'foreground_app': '前台应用',
-    'app_category': '应用类别',
-    'app_usage_min': '应用使用(分钟)',
-    // 通知
-    'notif_enabled': '通知已开启',
-    'notif_selfCount': '本应用通知数',
-    'notif_canReadOthers': '可读取其他通知',
-    'notif_lastSentMinutes': '上次通知(分钟)',
-  };
+  private getKeyLabel(key: string): string {
+    if (I18n.lang === 'en') {
+      let en: Record<string, string> = {
+        'hour': 'Hour', 'timeOfDay': 'Time of Day', 'dayOfWeek': 'Day of Week', 'isWeekend': 'Weekend',
+        'batteryLevel': 'Battery', 'isCharging': 'Charging', 'networkType': 'Network', 'wifiSsid': 'WiFi SSID',
+        'wifiLost': 'WiFi Lost', 'wifiLostCategory': 'WiFi Lost Type', 'wifiLostWork': 'Left Work WiFi',
+        'latitude': 'Latitude', 'longitude': 'Longitude', 'geofence': 'Geofence',
+        'stepCount': 'Steps (total)', 'step_count_today': 'Steps Today', 'motionState': 'Motion',
+        'isPickup': 'Picked Up', 'gpsSpeed': 'GPS Speed', 'locationAccuracy': 'GPS Accuracy(m)', 'cellId': 'Cell ID',
+        'bt_enabled': 'BT Enabled', 'bt_connected_count': 'BT Connections', 'bt_audio_connected': 'BT Audio', 'bt_device_names': 'BT Devices',
+        'heart_rate': 'Heart Rate', 'heart_rate_status': 'HR Status', 'heart_rate_age_sec': 'HR Age(s)', 'wearing_state': 'Wearing',
+        'audio_scene': 'Audio Scene', 'audio_device': 'Audio Device', 'audio_inCall': 'In Call', 'audio_ringing': 'Ringing',
+        'audio_headphones': 'Headphones', 'noise_level': 'Noise Level', 'sound_scene': 'Sound Scene',
+        'has_voice': 'Voice Detected', 'volume_db': 'Volume(dB)',
+        'phone_posture': 'Phone Posture', 'ambient_brightness': 'Brightness(lux)', 'proximity': 'Proximity',
+        'cal_eventCount': 'Calendar Events', 'cal_hasUpcoming': 'Has Upcoming', 'cal_nextTitle': 'Next Event',
+        'cal_nextMinutes': 'Next Event(min)', 'cal_nextLocation': 'Event Location', 'cal_inMeeting': 'In Meeting',
+        'cal_currentTitle': 'Current Meeting', 'cal_todayCount': 'Today Events',
+        'app_isForeground': 'App Foreground', 'app_sessionMinutes': 'Session(min)', 'app_sessionsToday': 'Sessions Today',
+        'app_canReadOthers': 'Can Read Apps', 'foreground_app': 'Foreground App', 'app_category': 'App Category', 'app_usage_min': 'App Usage(min)',
+        'notif_enabled': 'Notif Enabled', 'notif_selfCount': 'Self Notifs', 'notif_canReadOthers': 'Can Read Notifs', 'notif_lastSentMinutes': 'Last Notif(min)',
+      };
+      return en[key] ?? key;
+    }
+    let zh: Record<string, string> = {
+      'hour': '小时', 'timeOfDay': '时段', 'dayOfWeek': '星期', 'isWeekend': '周末',
+      'batteryLevel': '电量', 'isCharging': '充电中', 'networkType': '网络类型', 'wifiSsid': 'WiFi名称',
+      'wifiLost': 'WiFi丢失', 'wifiLostCategory': 'WiFi丢失分类', 'wifiLostWork': '离开公司WiFi',
+      'latitude': '纬度', 'longitude': '经度', 'geofence': '围栏',
+      'stepCount': '步数(累计)', 'step_count_today': '今日步数', 'motionState': '运动状态',
+      'isPickup': '拿起手机', 'gpsSpeed': 'GPS速度', 'locationAccuracy': '定位精度(m)', 'cellId': '基站ID',
+      'bt_enabled': '蓝牙开启', 'bt_connected_count': '蓝牙连接数', 'bt_audio_connected': '蓝牙音频', 'bt_device_names': '蓝牙设备',
+      'heart_rate': '心率', 'heart_rate_status': '心率状态', 'heart_rate_age_sec': '心率数据龄(秒)', 'wearing_state': '佩戴状态',
+      'audio_scene': '音频场景', 'audio_device': '音频设备', 'audio_inCall': '通话中', 'audio_ringing': '响铃中',
+      'audio_headphones': '耳机连接', 'noise_level': '噪音等级', 'sound_scene': '声音场景',
+      'has_voice': '检测到人声', 'volume_db': '音量(dB)',
+      'phone_posture': '手机姿态', 'ambient_brightness': '环境亮度(lux)', 'proximity': '近距离感应',
+      'cal_eventCount': '日历事件数', 'cal_hasUpcoming': '有待办事件', 'cal_nextTitle': '下个日程',
+      'cal_nextMinutes': '下个日程(分钟)', 'cal_nextLocation': '日程地点', 'cal_inMeeting': '会议中',
+      'cal_currentTitle': '当前会议', 'cal_todayCount': '今日日程数',
+      'app_isForeground': '应用在前台', 'app_sessionMinutes': '本次使用(分钟)', 'app_sessionsToday': '今日使用次数',
+      'app_canReadOthers': '可读取其他应用', 'foreground_app': '前台应用', 'app_category': '应用类别', 'app_usage_min': '应用使用(分钟)',
+      'notif_enabled': '通知已开启', 'notif_selfCount': '本应用通知数', 'notif_canReadOthers': '可读取其他通知', 'notif_lastSentMinutes': '上次通知(分钟)',
+    };
+    return zh[key] ?? key;
+  }
 
   private catIds: string[] = ['home', 'work', 'transit', 'shopping', 'restaurant', 'gym', 'custom'];
   @State catLabels: string[] = ['🏠 家', '🏢 公司', '🚇 交通', '🛒 购物', '🍜 餐饮', '💪 健身', '📍 自定义'];
@@ -207,10 +180,10 @@ struct ContextSettingsPage {
       this.suggestions = cas.getLocationSuggestions();
       this.suggestions = cas.getFilteredSuggestions();
       let stats = cas.getLocationDiscoveryStats();
-      this.discoveryStats = `历史点: ${stats.historyCount} | 聚类: ${stats.clusterCount} | 上次发现: ${stats.lastDiscovery}`;
+      this.discoveryStats = I18n.t('ctx.discovery.statsTemplate').replace('{0}', stats.historyCount.toString()).replace('{1}', stats.clusterCount.toString()).replace('{2}', stats.lastDiscovery);
     } catch (err) {
       this.log.warn('CtxSettings', 'refresh cas: ' + (err as Error).message);
-      this.engineStatus = '情景智能未初始化';
+      this.engineStatus = I18n.t('ctx.engine.notInit');
       this.discoveryStats = '';
       this.suggestions = [];
     }
@@ -259,7 +232,7 @@ struct ContextSettingsPage {
             .fontColor('#1A1A1A')
             .padding(8)
             .onClick(() => { router.back(); })
-          Text('情景智能设置')
+          Text(I18n.t('ctx.settings.title'))
             .fontSize(18)
             .fontWeight(FontWeight.Bold)
             .fontColor('#1A1A1A')
@@ -274,7 +247,7 @@ struct ContextSettingsPage {
           Column({ space: 16 }) {
             // ===== 当前状态概览 =====
             Column({ space: 6 }) {
-              Text('当前状态')
+              Text(I18n.t('ctx.status.current'))
                 .fontSize(16)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(Color.White)
@@ -315,7 +288,7 @@ struct ContextSettingsPage {
 
             // ===== 引擎状态 =====
             Column() {
-              Text('引擎状态')
+              Text(I18n.t('ctx.engine.title'))
                 .fontSize(16)
                 .fontWeight(FontWeight.Bold)
                 .fontColor('#1A1A1A')
@@ -324,11 +297,11 @@ struct ContextSettingsPage {
                 .fontSize(13)
                 .fontColor('#666666')
                 .width('100%')
-              Text('C++ 规则数: ' + this.ruleCount.toString())
+              Text(I18n.t('ctx.engine.ruleCount').replace('{0}', this.ruleCount.toString()))
                 .fontSize(13)
                 .fontColor('#666666')
                 .margin({ top: 4 })
-              Text('管理规则 \u2192')
+              Text(I18n.t('ctx.engine.manageRules') + ' \u2192')
                 .fontSize(14)
                 .fontColor('#007AFF')
                 .margin({ top: 10 })
@@ -374,12 +347,12 @@ struct ContextSettingsPage {
             // ===== 数据托盘 =====
             Column() {
               Row() {
-                Text('\u{1F4E1} 数据托盘 (' + (this.physKeys.length + this.digiKeys.length).toString() + ')')
+                Text('\u{1F4E1} ' + I18n.t('ctx.tray.title') + ' (' + (this.physKeys.length + this.digiKeys.length).toString() + ')')
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#1A1A1A')
                   .layoutWeight(1)
-                Text('刷新')
+                Text(I18n.t('ctx.tray.refresh'))
                   .fontSize(14)
                   .fontColor('#007AFF')
                   .onClick(() => { this.refreshTrayStatus(); })
@@ -387,14 +360,14 @@ struct ContextSettingsPage {
               .width('100%')
               .margin({ bottom: 4 })
 
-              Text('每 5 秒自动刷新')
+              Text(I18n.t('ctx.tray.autoRefresh'))
                 .fontSize(11)
                 .fontColor('#BBBBBB')
                 .width('100%')
                 .margin({ bottom: 8 })
 
               if (this.physKeys.length === 0 && this.digiKeys.length === 0) {
-                Text('托盘为空（传感器未开始写入）')
+                Text(I18n.t('ctx.tray.empty'))
                   .fontSize(13)
                   .fontColor('#999999')
                   .width('100%')
@@ -402,7 +375,7 @@ struct ContextSettingsPage {
                   .padding(16)
               } else {
                 // ── 物理世界 ──
-                Text('\u{1F30D} 物理世界 (' + this.physKeys.length.toString() + ')')
+                Text('\u{1F30D} ' + I18n.t('ctx.tray.physical') + ' (' + this.physKeys.length.toString() + ')')
                   .fontSize(13)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#2E7D32')
@@ -410,10 +383,10 @@ struct ContextSettingsPage {
                   .margin({ bottom: 4, top: 4 })
 
                 Row() {
-                  Text('名称').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(90)
-                  Text('数值').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).layoutWeight(1)
-                  Text('龄').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(40)
-                  Text('质').fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(32)
+                  Text(I18n.t('ctx.tray.colName')).fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(90)
+                  Text(I18n.t('ctx.tray.colValue')).fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).layoutWeight(1)
+                  Text(I18n.t('ctx.tray.colAge')).fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(40)
+                  Text(I18n.t('ctx.tray.colQuality')).fontSize(11).fontColor('#999999').fontWeight(FontWeight.Medium).width(32)
                   Text('').width(18)
                 }.width('100%').padding({ bottom: 2 })
 
@@ -435,7 +408,7 @@ struct ContextSettingsPage {
                 }, (key: string, idx: number) => 'p_' + key + '_' + idx.toString())
 
                 // ── 数字世界 ──
-                Text('\u{1F4F1} 数字世界 (' + this.digiKeys.length.toString() + ')')
+                Text('\u{1F4F1} ' + I18n.t('ctx.tray.digital') + ' (' + this.digiKeys.length.toString() + ')')
                   .fontSize(13)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#1565C0')
@@ -443,7 +416,7 @@ struct ContextSettingsPage {
                   .margin({ bottom: 4, top: 12 })
 
                 if (this.digiKeys.length === 0) {
-                  Text('暂无插件数据')
+                  Text(I18n.t('ctx.tray.noPlugin'))
                     .fontSize(12).fontColor('#999999').width('100%')
                     .textAlign(TextAlign.Center).padding(8)
                 } else {
@@ -482,12 +455,12 @@ struct ContextSettingsPage {
             // ===== 地理围栏 =====
             Column() {
               Row() {
-                Text('地理围栏 (' + this.geofenceNames.length.toString() + ')')
+                Text(I18n.t('ctx.geofence.title') + ' (' + this.geofenceNames.length.toString() + ')')
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#1A1A1A')
                   .layoutWeight(1)
-                Text('＋ 添加')
+                Text(I18n.t('ctx.geofence.add'))
                   .fontSize(14)
                   .fontColor('#007AFF')
                   .onClick(() => { this.showAddDialog = true; })
@@ -496,7 +469,7 @@ struct ContextSettingsPage {
               .margin({ bottom: 12 })
 
               if (this.geofenceNames.length === 0) {
-                Text('暂无围栏，点击右上角添加')
+                Text(I18n.t('ctx.geofence.empty'))
                   .fontSize(14)
                   .fontColor('#999999')
                   .width('100%')
@@ -517,7 +490,7 @@ struct ContextSettingsPage {
                       .layoutWeight(1)
                       .alignItems(HorizontalAlign.Start)
 
-                      Text('删除')
+                      Text(I18n.t('ctx.geofence.delete'))
                         .fontSize(13)
                         .fontColor('#FF3B30')
                         .padding(4)
@@ -538,12 +511,12 @@ struct ContextSettingsPage {
             // ===== 已学习的位置信号 =====
             Column() {
               Row() {
-                Text('位置信号学习')
+                Text(I18n.t('ctx.signal.title'))
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#1A1A1A')
                   .layoutWeight(1)
-                Text('清除全部')
+                Text(I18n.t('ctx.signal.clearAll'))
                   .fontSize(13)
                   .fontColor('#FF3B30')
                   .onClick(() => { this.clearAllSignals(); })
@@ -551,14 +524,14 @@ struct ContextSettingsPage {
               .width('100%')
               .margin({ bottom: 8 })
 
-              Text('GPS 高精度时自动学习 WiFi/蓝牙信号，用于室内定位增强')
+              Text(I18n.t('ctx.signal.desc'))
                 .fontSize(12)
                 .fontColor('#999999')
                 .width('100%')
                 .margin({ bottom: 8 })
 
               if (this.learnedSignals.length === 0) {
-                Text('暂无已学习信号，进入围栏区域后会自动学习')
+                Text(I18n.t('ctx.signal.empty'))
                   .fontSize(13)
                   .fontColor('#999999')
                   .width('100%')
@@ -583,14 +556,14 @@ struct ContextSettingsPage {
                             .fontSize(12)
                             .fontColor('#5856D6')
                         }
-                        Text('观测 ' + sig.totalObservations.toString() + ' 次')
+                        Text(I18n.t('ctx.signal.observations').replace('{0}', sig.totalObservations.toString()))
                           .fontSize(11)
                           .fontColor('#999999')
                       }
                       .layoutWeight(1)
                       .alignItems(HorizontalAlign.Start)
 
-                      Text('清除')
+                      Text(I18n.t('ctx.signal.clear'))
                         .fontSize(13)
                         .fontColor('#FF3B30')
                         .padding(4)
@@ -611,17 +584,17 @@ struct ContextSettingsPage {
             // ===== 反馈统计 =====
             Column() {
               Row() {
-                Text('反馈统计')
+                Text(I18n.t('ctx.feedback.title'))
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#1A1A1A')
                   .layoutWeight(1)
-                Text('刷新')
+                Text(I18n.t('ctx.tray.refresh'))
                   .fontSize(14)
                   .fontColor('#007AFF')
                   .onClick(() => {
                     this.refreshFeedbackStats();
-                    try { promptAction.showToast({ message: '反馈统计已刷新', duration: 1500 }); } catch {}
+                    try { promptAction.showToast({ message: I18n.t('ctx.feedback.refreshed'), duration: 1500 }); } catch {}
                   })
               }
               .width('100%')
@@ -634,7 +607,7 @@ struct ContextSettingsPage {
                     .fontSize(22)
                     .fontWeight(FontWeight.Bold)
                     .fontColor('#1A1A1A')
-                  Text('总反馈')
+                  Text(I18n.t('ctx.feedback.total'))
                     .fontSize(11)
                     .fontColor('#999999')
                     .margin({ top: 2 })
@@ -647,7 +620,7 @@ struct ContextSettingsPage {
                     .fontSize(22)
                     .fontWeight(FontWeight.Bold)
                     .fontColor('#4CAF50')
-                  Text('好评率')
+                  Text(I18n.t('ctx.feedback.positiveRate'))
                     .fontSize(11)
                     .fontColor('#999999')
                     .margin({ top: 2 })
@@ -674,7 +647,7 @@ struct ContextSettingsPage {
               // Top 规则
               if (this.fbTopRuleNames.length > 0) {
                 Divider().color('#F0F0F0').margin({ top: 8, bottom: 8 })
-                Text('最有效规则 Top ' + this.fbTopRuleNames.length.toString())
+                Text(I18n.t('ctx.feedback.topRules').replace('{0}', this.fbTopRuleNames.length.toString()))
                   .fontSize(13)
                   .fontWeight(FontWeight.Medium)
                   .fontColor('#666666')
@@ -710,12 +683,12 @@ struct ContextSettingsPage {
             // ===== MAB =====
             Column() {
               Row() {
-                Text('MAB 学习统计')
+                Text(I18n.t('ctx.mab.title'))
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#1A1A1A')
                   .layoutWeight(1)
-                Text('刷新')
+                Text(I18n.t('ctx.tray.refresh'))
                   .fontSize(14)
                   .fontColor('#007AFF')
                   .onClick(() => {
@@ -724,7 +697,7 @@ struct ContextSettingsPage {
               }
               .width('100%')
               .margin({ bottom: 8 })
-              Text(this.mabStats.length > 2 ? this.mabStats : '暂无数据')
+              Text(this.mabStats.length > 2 ? this.mabStats : I18n.t('ctx.mab.noData'))
                 .fontSize(12)
                 .fontColor('#999999')
                 .width('100%')
@@ -737,12 +710,12 @@ struct ContextSettingsPage {
             // ===== 位置自动发现 =====
             Column() {
               Row() {
-                Text('📍 位置自动发现')
+                Text('📍 ' + I18n.t('ctx.discovery.title'))
                   .fontSize(16)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#1A1A1A')
                   .layoutWeight(1)
-                Text('立即发现')
+                Text(I18n.t('ctx.discovery.runNow'))
                   .fontSize(14)
                   .fontColor('#007AFF')
                   .onClick(() => { this.triggerDiscovery(); })
@@ -750,14 +723,14 @@ struct ContextSettingsPage {
               .width('100%')
               .margin({ bottom: 8 })
 
-              Text(this.discoveryStats.length > 0 ? this.discoveryStats : '未启动')
+              Text(this.discoveryStats.length > 0 ? this.discoveryStats : I18n.t('ctx.discovery.notStarted'))
                 .fontSize(12)
                 .fontColor('#999999')
                 .width('100%')
                 .margin({ bottom: 8 })
 
               if (this.suggestions.length === 0) {
-                Text('暂无发现，GPS 历史积累后会自动发现常去地点')
+                Text(I18n.t('ctx.discovery.empty'))
                   .fontSize(13)
                   .fontColor('#999999')
                   .width('100%')
@@ -805,34 +778,34 @@ struct ContextSettingsPage {
       if (this.showAddDialog) {
         Column() {
           Column({ space: 12 }) {
-            Text('添加地理围栏')
+            Text(I18n.t('ctx.dialog.addGeofence'))
               .fontSize(18)
               .fontWeight(FontWeight.Bold)
               .fontColor('#1A1A1A')
 
-            TextInput({ placeholder: '名称（如：家、公司）' })
+            TextInput({ placeholder: I18n.t('ctx.dialog.namePlaceholder') })
               .onChange((val: string) => { this.newName = val; })
               .width('100%')
               .height(44)
 
             Row({ space: 8 }) {
-              TextInput({ placeholder: '纬度' })
+              TextInput({ placeholder: I18n.t('ctx.dialog.latitude') })
                 .onChange((val: string) => { this.newLat = val; })
                 .layoutWeight(1)
                 .height(44)
-              TextInput({ placeholder: '经度' })
+              TextInput({ placeholder: I18n.t('ctx.dialog.longitude') })
                 .onChange((val: string) => { this.newLon = val; })
                 .layoutWeight(1)
                 .height(44)
             }
             .width('100%')
 
-            TextInput({ placeholder: '半径（米），默认100' })
+            TextInput({ placeholder: I18n.t('ctx.dialog.radiusPlaceholder') })
               .onChange((val: string) => { this.newRadius = val; })
               .width('100%')
               .height(44)
 
-            Text('类别')
+            Text(I18n.t('ctx.dialog.category'))
               .fontSize(14)
               .fontColor('#666666')
 
@@ -851,13 +824,13 @@ struct ContextSettingsPage {
             .width('100%')
 
             Row({ space: 12 }) {
-              Button('取消')
+              Button(I18n.t('ctx.dialog.cancel'))
                 .fontSize(14)
                 .backgroundColor('#F0F0F0')
                 .fontColor('#1A1A1A')
                 .layoutWeight(1)
                 .onClick(() => { this.showAddDialog = false; })
-              Button('添加')
+              Button(I18n.t('ctx.dialog.add'))
                 .fontSize(14)
                 .backgroundColor('#007AFF')
                 .fontColor(Color.White)
@@ -1008,7 +981,7 @@ struct ContextSettingsPage {
 
       for (let i = 0; i < statuses.length; i++) {
         let s: TrayStatus = statuses[i];
-        let label = ContextSettingsPage.KEY_LABELS[s.key] ?? s.key;
+        let label = this.getKeyLabel(s.key);
         let val = s.value.length > 20 ? s.value.substring(0, 20) + '...' : s.value;
         let age = this.formatAge(s.ageMs);
         let ind = s.fresh ? '\u{1F7E2}' : (s.effectiveQuality > 0 ? '\u{1F7E1}' : '\u{1F534}');
@@ -1050,17 +1023,12 @@ struct ContextSettingsPage {
     let h = now.getHours().toString().padStart(2, '0');
     let m = now.getMinutes().toString().padStart(2, '0');
     let tod = trayMap['timeOfDay'] ?? '';
-    let todCn: Record<string, string> = { 'morning': '上午', 'afternoon': '下午', 'evening': '傍晚', 'night': '晚上' };
-    this.statusTime = h + ':' + m + ' ' + (todCn[tod] ?? tod);
+    let todLabel = tod.length > 0 ? I18n.t('ctx.status.' + tod) : '';
+    this.statusTime = h + ':' + m + ' ' + todLabel;
 
     // 运动状态
     let motion = trayMap['motionState'] ?? '';
-    let motionCn: Record<string, string> = {
-      'stationary': '静止', 'walking': '步行', 'running': '跑步',
-      'cycling': '骑行', 'driving': '驾车', 'transit': '交通',
-      'pickup': '拿起手机', 'putdown': '放下手机', 'unknown': '未知'
-    };
-    this.statusMotion = motionCn[motion] ?? motion;
+    this.statusMotion = motion.length > 0 ? I18n.t('ctx.status.' + motion) : '';
 
     // 电量
     let bat = trayMap['batteryLevel'] ?? '';

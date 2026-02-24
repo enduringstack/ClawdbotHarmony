@@ -413,7 +413,7 @@ export struct SessionDrawer {
           Text('🧠')
             .fontSize(16)
             .margin({ right: 8 })
-          Text('情景智能')
+          Text(t('context.notification.title'))
             .fontSize(14)
             .fontColor('#666666')
         }

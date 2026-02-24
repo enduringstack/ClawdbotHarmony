@@ -363,7 +363,7 @@ export struct ChatPage {
 
       // -- app title bar --
       Row() {
-        Text('OpenClaw 鸿蒙')
+        Text(I18n.t('app.title'))
           .fontSize(14)
           .fontColor('#FF6B00')
           .fontWeight(FontWeight.Bold)

@@ -1509,14 +1509,14 @@ export struct SettingsPage {
         .borderRadius(12)
 
         // =============== Context Awareness ===============
-        this.SectionTitle('情景智能')
+        this.SectionTitle(I18n.t('settings.contextAwareness'))
         Column() {
           Row() {
             Column({ space: 2 }) {
-              Text('情景智能')
+              Text(I18n.t('settings.contextAwareness'))
                 .fontSize(14)
                 .fontColor('#1A1A1A')
-              Text('传感器+定位持续采集，耗电较高')
+              Text(I18n.t('settings.contextAwarenessDesc'))
                 .fontSize(11)
                 .fontColor('#999999')
             }
@@ -1550,7 +1550,7 @@ export struct SettingsPage {
 
           // Check for updates button
           Row() {
-            Text('检查更新')
+            Text(I18n.t('settings.checkUpdate'))
               .fontSize(14)
               .fontColor('#1A1A1A')
               .layoutWeight(1)
@@ -1567,7 +1567,7 @@ export struct SettingsPage {
                   .fontColor('#999999')
               }
             } else if (this.updateAvailable) {
-              Text(`新版本 ${this.latestVersion}`)
+              Text(I18n.t('settings.newVersion').replace('{0}', this.latestVersion))
                 .fontSize(12)
                 .fontColor('#D2691E')
                 .padding({ left: 8, right: 8, top: 4, bottom: 4 })
@@ -1596,22 +1596,22 @@ export struct SettingsPage {
         .borderRadius(12)
 
         // =============== Experience Pack ===============
-        this.SectionTitle('经验包')
+        this.SectionTitle(I18n.t('settings.expPack'))
         Column() {
           // Summary: experience = skills + memory
-          this.InfoRow('经验', `${this.expCount} 条`)
+          this.InfoRow(I18n.t('settings.expCount'), I18n.t('settings.expItems').replace('{0}', this.expCount.toString()))
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
-          this.InfoRow('├ 技能', `${this.expSkillsCount} 个`)
+          this.InfoRow(I18n.t('settings.expSkills'), I18n.t('settings.expSkillItems').replace('{0}', this.expSkillsCount.toString()))
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
-          this.InfoRow('└ 记忆', `${this.expMemoryCount} 条`)
+          this.InfoRow(I18n.t('settings.expMemory'), I18n.t('settings.expItems').replace('{0}', this.expMemoryCount.toString()))
           Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
-          this.InfoRow('上次同步', this.expSyncedAt > 0 ? new Date(this.expSyncedAt).toLocaleString() : '从未同步')
+          this.InfoRow(I18n.t('settings.expLastSync'), this.expSyncedAt > 0 ? new Date(this.expSyncedAt).toLocaleString() : I18n.t('settings.expNeverSync'))
 
           Divider().margin({ top: 14, bottom: 14 }).color('#F0F0F0')
 
           // Export
           Row() {
-            Text('导出经验包')
+            Text(I18n.t('settings.expExport'))
               .fontSize(14)
               .fontColor('#1A1A1A')
               .layoutWeight(1)
@@ -1628,7 +1628,7 @@ export struct SettingsPage {
 
           // Import
           Row() {
-            Text('导入经验包')
+            Text(I18n.t('settings.expImport'))
               .fontSize(14)
               .fontColor('#1A1A1A')
               .layoutWeight(1)
@@ -1645,7 +1645,7 @@ export struct SettingsPage {
 
           // Sync to server
           Row() {
-            Text('同步到服务端')
+            Text(I18n.t('settings.expSyncUp'))
               .fontSize(14)
               .fontColor('#007AFF')
               .layoutWeight(1)
@@ -1662,7 +1662,7 @@ export struct SettingsPage {
 
           // Pull from server
           Row() {
-            Text('从服务端拉取')
+            Text(I18n.t('settings.expSyncDown'))
               .fontSize(14)
               .fontColor('#007AFF')
               .layoutWeight(1)
@@ -1679,7 +1679,7 @@ export struct SettingsPage {
 
           // Clear
           Row() {
-            Text('清除经验')
+            Text(I18n.t('settings.expClear'))
               .fontSize(14)
               .fontColor('#D32F2F')
               .layoutWeight(1)
@@ -1796,10 +1796,10 @@ export struct SettingsPage {
         .borderRadius(12)
 
         // =============== Module Monitor ===============
-        this.SectionTitle('模块监控')
+        this.SectionTitle(I18n.t('settings.moduleMonitor'))
         Column() {
           Row() {
-            Text('显示模块状态')
+            Text(I18n.t('settings.moduleStatus'))
               .fontSize(14)
               .fontColor('#1A1A1A')
               .layoutWeight(1)
@@ -1837,12 +1837,12 @@ export struct SettingsPage {
                 .alignItems(VerticalAlign.Center)
 
                 Row() {
-                  Text(`调用: ${stat.callCount}次`)
+                  Text(I18n.t('settings.moduleCalls').replace('{0}', stat.callCount.toString()))
                     .fontSize(11)
                     .fontColor('#999999')
                     .margin({ left: 16 })
                     .layoutWeight(1)
-                  Text(`最后活跃: ${Monitor.formatLastActive(stat.lastActiveTime)}`)
+                  Text(I18n.t('settings.moduleLastActive').replace('{0}', Monitor.formatLastActive(stat.lastActiveTime)))
                     .fontSize(11)
                     .fontColor('#999999')
                 }
@@ -1854,7 +1854,7 @@ export struct SettingsPage {
 
             Divider().margin({ top: 8, bottom: 8 }).color('#F0F0F0')
             Row() {
-              Text('🔄 刷新状态')
+              Text('🔄 ' + I18n.t('settings.moduleRefresh'))
                 .fontSize(14)
                 .fontColor('#007AFF')
             }
@@ -1864,7 +1864,7 @@ export struct SettingsPage {
             .justifyContent(FlexAlign.Center)
             .onClick(() => {
               this.loadModuleStats();
-              promptAction.showToast({ message: '已刷新', duration: 800 });
+              promptAction.showToast({ message: I18n.t('settings.moduleRefreshed'), duration: 800 });
             })
           }
         }
@@ -2779,6 +2779,17 @@ export struct SettingsPage {
     data['unreadNotification'] = this.unreadNotification;
     data['ttsAutoRead'] = this.ttsAutoRead;
     data['autoMemoryInject'] = this.autoMemoryInject;
+    // Per-provider models, keys, URLs
+    let providers = ['openrouter', 'anthropic', 'openai', 'siliconflow', 'local', 'custom'];
+    for (let p of providers) {
+      data['model_' + p] = this.savedModels[p] ?? '';
+      data['key_' + p] = this.savedKeys[p] ?? '';
+      data['url_' + p] = this.savedUrls[p] ?? '';
+    }
+    // AI Engine settings
+    data['aiEngineEnabled'] = this.aiEngineEnabled;
+    data['embeddingMode'] = this.embeddingMode;
+    data['intentMode'] = this.intentMode;
 
     let mode = 'all';
 
@@ -2819,6 +2830,17 @@ export struct SettingsPage {
       this.savedModels[this.provider] = this.model;
       this.savedKeys[this.provider] = this.apiKey;
       this.savedUrls[this.provider] = this.baseUrl;
+      // Load per-provider maps
+      let providerIds = ['openrouter', 'anthropic', 'openai', 'siliconflow', 'local', 'custom'];
+      for (let p of providerIds) {
+        if (data['model_' + p] !== undefined) this.savedModels[p] = data['model_' + p] as string;
+        if (data['key_' + p] !== undefined) this.savedKeys[p] = data['key_' + p] as string;
+        if (data['url_' + p] !== undefined) this.savedUrls[p] = data['url_' + p] as string;
+      }
+      // AI Engine settings
+      if (data['aiEngineEnabled'] !== undefined) this.aiEngineEnabled = data['aiEngineEnabled'] as boolean;
+      if (data['embeddingMode'] !== undefined) this.embeddingMode = data['embeddingMode'] as string;
+      if (data['intentMode'] !== undefined) this.intentMode = data['intentMode'] as string;
       // Gateway/Node settings
       if (data['gwEnabled'] !== undefined) this.gwEnabled = data['gwEnabled'] as boolean;
       if (data['operatorEnabled'] !== undefined) this.operatorEnabled = data['operatorEnabled'] as boolean;
@@ -3074,7 +3096,7 @@ export struct SettingsPage {
       let storage = ExperienceStorage.getInstance();
       let json = storage.exportToJson();
       if (json === '{}') {
-        promptAction.showToast({ message: '没有经验数据可导出', duration: 1500 });
+        promptAction.showToast({ message: I18n.t('settings.expNoData'), duration: 1500 });
         return;
       }
       let ctx = getContext(this) as common.UIAbilityContext;
@@ -3082,7 +3104,7 @@ export struct SettingsPage {
       let fd = fileIo.openSync(filePath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
       fileIo.writeSync(fd.fd, json);
       fileIo.closeSync(fd.fd);
-      promptAction.showToast({ message: `已导出到: experience_pack.json`, duration: 2000 });
+      promptAction.showToast({ message: I18n.t('settings.expExported'), duration: 2000 });
     } catch (e) {
       promptAction.showToast({ message: `导出失败: ${(e as Error).message ?? ''}`, duration: 2000 });
     }
@@ -3108,10 +3130,10 @@ export struct SettingsPage {
       let storage = ExperienceStorage.getInstance();
       let success = await storage.importFromJson(ctx, json);
       if (success) {
-        promptAction.showToast({ message: '经验包导入成功', duration: 1500 });
+        promptAction.showToast({ message: I18n.t('settings.expImported'), duration: 1500 });
         await this.loadExperienceSummary();
       } else {
-        promptAction.showToast({ message: '导入失败: 数据格式无效', duration: 2000 });
+        promptAction.showToast({ message: I18n.t('settings.expImportFail'), duration: 2000 });
       }
     } catch (e) {
       promptAction.showToast({ message: `导入失败: ${(e as Error).message ?? ''}`, duration: 2000 });
@@ -3120,14 +3142,14 @@ export struct SettingsPage {
 
   private async clearExperience(): Promise<void> {
     AlertDialog.show({
-      title: '确认清除',
-      message: '清除所有经验数据？此操作不可恢复。',
+      title: I18n.t('settings.expClearTitle'),
+      message: I18n.t('settings.expClearConfirm'),
       primaryButton: {
-        value: '取消',
+        value: I18n.t('ctx.dialog.cancel'),
         action: () => {}
       },
       secondaryButton: {
-        value: '清除',
+        value: I18n.t('ctx.signal.clear'),
         fontColor: '#D32F2F',
         action: async () => {
           try {
@@ -3139,7 +3161,7 @@ export struct SettingsPage {
             this.expMemoryCount = 0;
             this.expSyncedAt = 0;
             this.expLoaded = false;
-            promptAction.showToast({ message: '经验已清除', duration: 1500 });
+            promptAction.showToast({ message: I18n.t('settings.expCleared'), duration: 1500 });
           } catch (e) {
             promptAction.showToast({ message: `清除失败: ${(e as Error).message ?? ''}`, duration: 2000 });
           }
@@ -3151,14 +3173,14 @@ export struct SettingsPage {
   private async syncExperienceToServer(): Promise<void> {
     let nr = NodeRuntime.getInstance();
     if (nr.connectionState !== ConnectionState.Connected) {
-      promptAction.showToast({ message: '未连接 Gateway，无法同步', duration: 2000 });
+      promptAction.showToast({ message: I18n.t('settings.expNoGateway'), duration: 2000 });
       return;
     }
-    promptAction.showToast({ message: '正在同步到服务端...', duration: 1500 });
+    promptAction.showToast({ message: I18n.t('settings.expSyncing'), duration: 1500 });
     try {
       await nr.syncExperiencePack();
       await this.loadExperienceSummary();
-      promptAction.showToast({ message: '✅ 经验包已推送到服务端', duration: 2000 });
+      promptAction.showToast({ message: I18n.t('settings.expPushed'), duration: 2000 });
     } catch (e) {
       promptAction.showToast({ message: `同步失败: ${(e as Error).message ?? ''}`, duration: 2000 });
     }
@@ -3167,19 +3189,19 @@ export struct SettingsPage {
   private async pullExperienceFromServer(): Promise<void> {
     let nr = NodeRuntime.getInstance();
     if (nr.connectionState !== ConnectionState.Connected) {
-      promptAction.showToast({ message: '未连接 Gateway，无法拉取', duration: 2000 });
+      promptAction.showToast({ message: I18n.t('settings.expNoGateway'), duration: 2000 });
       return;
     }
-    promptAction.showToast({ message: '正在从服务端拉取...', duration: 1500 });
+    promptAction.showToast({ message: I18n.t('settings.expPulling'), duration: 1500 });
     try {
       let result = await nr.pullServerExperienceWithCallback();
       let success = result[0] > 0;
       let count = result[1];
       if (success) {
         await this.loadExperienceSummary();
-        promptAction.showToast({ message: `✅ 已拉取 ${count} 条经验`, duration: 2000 });
+        promptAction.showToast({ message: I18n.t('settings.expPulled').replace('{0}', count.toString()), duration: 2000 });
       } else {
-        promptAction.showToast({ message: '拉取超时或失败', duration: 2000 });
+        promptAction.showToast({ message: I18n.t('settings.expPullTimeout'), duration: 2000 });
       }
     } catch (e) {
       promptAction.showToast({ message: `拉取失败: ${(e as Error).message ?? ''}`, duration: 2000 });

@@ -4,6 +4,7 @@
  */
 import { router } from '@kit.ArkUI';
 import { LogService } from '../common/LogService';
+import { I18n } from '../common/I18n';
 import { ContextEngineService, ContextRule, ContextCondition, ContextAction } from '../service/context/ContextEngine';
 
 interface CooldownOption {
@@ -30,21 +31,26 @@ struct RuleManagementPage {
   @State selectedCooldown: number = 3;  // index in cooldownOptions
 
   private contextKeyIds: string[] = ['timeOfDay', 'hour', 'dayOfWeek', 'isWeekend', 'motionState', 'batteryLevel', 'isCharging', 'networkType', 'geofence'];
-  private contextKeyLabels: string[] = ['时段', '小时(0-23)', '星期(0-6)', '是否周末', '运动状态', '电量(0-100)', '是否充电', '网络类型', '位置围栏'];
+  @State contextKeyLabels: string[] = [];
   private opIds: string[] = ['eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'in'];
-  private opLabels: string[] = ['=', '\u2260', '>', '<', '\u2265', '\u2264', '\u2208(包含)'];
-  private actionTypes: string[] = ['建议', '通知'];
-  private cooldownOptions: CooldownOption[] = [
-    { label: '30分钟', value: 1800000 },
-    { label: '1小时', value: 3600000 },
-    { label: '2小时', value: 7200000 },
-    { label: '4小时', value: 14400000 },
-    { label: '8小时', value: 28800000 },
-    { label: '24小时', value: 86400000 }
-  ];
+  @State opLabels: string[] = [];
+  @State actionTypes: string[] = [];
+  @State cooldownOptions: CooldownOption[] = [];
 
   aboutToAppear(): void {
     this.log.info('RuleMgmt', 'Page opened');
+    // Initialize i18n labels
+    this.contextKeyLabels = this.contextKeyIds.map((id: string) => I18n.t('rules.key.' + id));
+    this.opLabels = ['=', '\u2260', '>', '<', '\u2265', '\u2264', I18n.t('rules.opContains')];
+    this.actionTypes = [I18n.t('rules.suggestion'), I18n.t('rules.notification')];
+    this.cooldownOptions = [
+      { label: I18n.t('rules.cooldown30m'), value: 1800000 },
+      { label: I18n.t('rules.cooldown1h'), value: 3600000 },
+      { label: I18n.t('rules.cooldown2h'), value: 7200000 },
+      { label: I18n.t('rules.cooldown4h'), value: 14400000 },
+      { label: I18n.t('rules.cooldown8h'), value: 28800000 },
+      { label: I18n.t('rules.cooldown24h'), value: 86400000 },
+    ];
     this.refreshRules();
   }
 
@@ -58,22 +64,24 @@ struct RuleManagementPage {
   }
 
   private getConditionSummary(conditions: ContextCondition[]): string {
-    let keyLabels: Record<string, string> = {
-      'timeOfDay': '时段', 'hour': '小时', 'dayOfWeek': '星期',
-      'isWeekend': '周末', 'motionState': '运动', 'batteryLevel': '电量',
-      'isCharging': '充电', 'networkType': '网络', 'geofence': '位置'
-    };
-    let opLabels: Record<string, string> = {
+    let opSymbols: Record<string, string> = {
       'eq': '=', 'neq': '\u2260', 'gt': '>', 'lt': '<', 'gte': '\u2265', 'lte': '\u2264', 'in': '\u2208'
     };
     let parts: string[] = [];
     for (let i = 0; i < conditions.length; i++) {
       let c = conditions[i];
-      let kl = keyLabels[c.key] || c.key;
-      let ol = opLabels[c.op] || c.op;
+      let kl = I18n.t('rules.key.' + c.key + '.short');
+      if (kl.startsWith('rules.key.')) kl = c.key;
+      let ol = opSymbols[c.op] || c.op;
       parts.push(kl + ol + c.value);
     }
     return parts.join(' & ');
+  }
+
+  private getRuleName(rule: ContextRule): string {
+    let key = 'rule.name.' + rule.id;
+    let localized = I18n.t(key);
+    return localized !== key ? localized : rule.name;
   }
 
   private async handleToggle(ruleId: string, enabled: boolean): Promise<void> {
@@ -172,12 +180,12 @@ struct RuleManagementPage {
             .fontColor('#1A1A1A')
             .padding(8)
             .onClick(() => { router.back(); })
-          Text('规则管理')
+          Text(I18n.t('rules.title'))
             .fontSize(18)
             .fontWeight(FontWeight.Bold)
             .fontColor('#1A1A1A')
             .layoutWeight(1)
-          Text('+ 添加规则')
+          Text(I18n.t('rules.addRule'))
             .fontSize(14)
             .fontColor('#007AFF')
             .padding(8)
@@ -196,7 +204,7 @@ struct RuleManagementPage {
         Scroll() {
           Column({ space: 12 }) {
             if (this.rules.length === 0) {
-              Text('暂无规则')
+              Text(I18n.t('rules.empty'))
                 .fontSize(14)
                 .fontColor('#999999')
                 .width('100%')
@@ -208,14 +216,14 @@ struct RuleManagementPage {
                   Row() {
                     Column({ space: 4 }) {
                       Row({ space: 6 }) {
-                        Text(rule.name)
+                        Text(this.getRuleName(rule))
                           .fontSize(15)
                           .fontWeight(FontWeight.Medium)
                           .fontColor('#1A1A1A')
                           .layoutWeight(1)
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        Text(this.engine.isUserRule(rule.id) ? '自定义' : '内置')
+                        Text(this.engine.isUserRule(rule.id) ? I18n.t('rules.custom') : I18n.t('rules.builtin'))
                           .fontSize(11)
                           .fontColor(this.engine.isUserRule(rule.id) ? '#007AFF' : '#999999')
                           .backgroundColor(this.engine.isUserRule(rule.id) ? '#E6F0FF' : '#F0F0F0')
@@ -230,7 +238,7 @@ struct RuleManagementPage {
                         .maxLines(2)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-                      Text((rule.action.type === 'notification' ? '通知' : '建议') + ': ' + rule.action.payload)
+                      Text((rule.action.type === 'notification' ? I18n.t('rules.notification') : I18n.t('rules.suggestion')) + ': ' + rule.action.payload)
                         .fontSize(12)
                         .fontColor('#999999')
                         .maxLines(1)
@@ -247,7 +255,7 @@ struct RuleManagementPage {
                         })
 
                       if (this.engine.isUserRule(rule.id)) {
-                        Text('删除')
+                        Text(I18n.t('rules.delete'))
                           .fontSize(12)
                           .fontColor('#FF3B30')
                           .onClick(() => { this.handleDelete(rule.id); })
@@ -278,19 +286,19 @@ struct RuleManagementPage {
         Column() {
           Scroll() {
             Column({ space: 12 }) {
-              Text('添加自定义规则')
+              Text(I18n.t('rules.addCustom'))
                 .fontSize(18)
                 .fontWeight(FontWeight.Bold)
                 .fontColor('#1A1A1A')
 
               // Rule name
-              TextInput({ placeholder: '规则名称' })
+              TextInput({ placeholder: I18n.t('rules.namePlaceholder') })
                 .onChange((val: string) => { this.newName = val; })
                 .width('100%')
                 .height(44)
 
               // Conditions section
-              Text('触发条件')
+              Text(I18n.t('rules.conditions'))
                 .fontSize(14)
                 .fontWeight(FontWeight.Medium)
                 .fontColor('#1A1A1A')
@@ -304,7 +312,7 @@ struct RuleManagementPage {
                     return item;
                   }))
                     .selected(this.contextKeyIds.indexOf(key))
-                    .value(this.contextKeyLabels[this.contextKeyIds.indexOf(key)] || '时段')
+                    .value(this.contextKeyLabels[this.contextKeyIds.indexOf(key)] || I18n.t('rules.key.timeOfDay'))
                     .font({ size: 13 })
                     .onSelect((index: number) => {
                       let newKeys = this.conditionKeys.slice();
@@ -331,7 +339,7 @@ struct RuleManagementPage {
                     .height(36)
 
                   // Value input
-                  TextInput({ placeholder: '值', text: idx < this.conditionValues.length ? this.conditionValues[idx] : '' })
+                  TextInput({ placeholder: I18n.t('rules.value'), text: idx < this.conditionValues.length ? this.conditionValues[idx] : '' })
                     .onChange((val: string) => {
                       let newVals = this.conditionValues.slice();
                       newVals[idx] = val;
@@ -351,13 +359,13 @@ struct RuleManagementPage {
                 .width('100%')
               }, (key: string, idx: number) => 'cond_' + idx.toString())
 
-              Text('+ 添加条件')
+              Text(I18n.t('rules.addCondition'))
                 .fontSize(13)
                 .fontColor('#007AFF')
                 .onClick(() => { this.addConditionRow(); })
 
               // Action type
-              Text('动作类型')
+              Text(I18n.t('rules.actionType'))
                 .fontSize(14)
                 .fontWeight(FontWeight.Medium)
                 .fontColor('#1A1A1A')
@@ -376,13 +384,13 @@ struct RuleManagementPage {
               }
 
               // Action payload
-              TextInput({ placeholder: '提示文字（如：该喝水了）' })
+              TextInput({ placeholder: I18n.t('rules.payloadPlaceholder') })
                 .onChange((val: string) => { this.actionPayload = val; })
                 .width('100%')
                 .height(44)
 
               // Cooldown
-              Text('冷却时间')
+              Text(I18n.t('rules.cooldown'))
                 .fontSize(14)
                 .fontWeight(FontWeight.Medium)
                 .fontColor('#1A1A1A')
@@ -404,13 +412,13 @@ struct RuleManagementPage {
 
               // Buttons
               Row({ space: 12 }) {
-                Button('取消')
+                Button(I18n.t('rules.cancel'))
                   .fontSize(14)
                   .backgroundColor('#F0F0F0')
                   .fontColor('#1A1A1A')
                   .layoutWeight(1)
                   .onClick(() => { this.showAddDialog = false; })
-                Button('保存')
+                Button(I18n.t('rules.save'))
                   .fontSize(14)
                   .backgroundColor('#007AFF')
                   .fontColor(Color.White)
