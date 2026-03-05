@@ -4,6 +4,11 @@ import { loadmodel, isInitialized, getLastError, answerget, modelinfer, deinitmo
 
 export { CANNConfig } from 'libcann_llm.so';
 
+export interface CANNMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export class CANNLocalService {
   private static instance: CANNLocalService | undefined = undefined;
   private log: LogService = LogService.getInstance();
@@ -78,7 +83,7 @@ export class CANNLocalService {
       throw new Error('CANN LLM not initialized');
     }
 
-    this.log.info(this.TAG, `infer: START prompt="${prompt.substring(0, 100)}..."`);
+    this.log.info(this.TAG, `infer: START prompt length=${prompt.length}`);
     
     this.accumulatedText = '';
     this.tokenCallback = onToken || null;
@@ -89,7 +94,6 @@ export class CANNLocalService {
         this.log.info(this.TAG, 'infer: calling answerget...');
         answerget((token: string) => {
           this.accumulatedText += token;
-          this.log.info(this.TAG, `infer: received token="${token}"`);
           if (this.tokenCallback) {
             this.tokenCallback(token);
           }
@@ -117,35 +121,6 @@ export class CANNLocalService {
     });
   }
 
-  async inferSync(prompt: string): Promise<string> {
-    if (!this.initialized) {
-      throw new Error('CANN LLM not initialized');
-    }
-
-    this.log.info(this.TAG, `inferSync: prompt="${prompt.substring(0, 100)}..."`);
-
-    return new Promise((resolve, reject) => {
-      try {
-        this.accumulatedText = '';
-
-        answerget((token: string) => {
-          this.accumulatedText += token;
-        });
-
-        modelinfer(prompt);
-
-        setTimeout(() => {
-          resolve(this.accumulatedText);
-        }, 1000);
-
-      } catch (e) {
-        const err = e as Error;
-        this.log.error(this.TAG, `inferSync error: ${err.message}`);
-        reject(e);
-      }
-    });
-  }
-
   deinit(): void {
     if (!this.initialized) {
       return;
@@ -164,6 +139,94 @@ export class CANNLocalService {
     this.accumulatedText = '';
     this.tokenCallback = null;
     this.doneCallback = null;
+  }
+
+  buildCANNSystemPrompt(originalSystemPrompt: string): string {
+    const d = new Date();
+    const tz = -(d.getTimezoneOffset() / 60);
+    const tzStr = `UTC${tz >= 0 ? '+' : ''}${tz}`;
+    const now = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} ${tzStr}`;
+
+    let soulText = this.extractSoulText(originalSystemPrompt);
+
+    let base = `你是 ClawdBot，运行在 HarmonyOS 上的个人 AI 助手。
+
+## 角色设定
+${soulText}
+
+## 回复风格
+- 极简回复，1-2句话
+- 直接给答案，不说废话
+- 不要用 markdown 格式，用纯文本回复
+
+## 当前信息
+时间：${now}
+平台：HarmonyOS
+模式：本地推理
+
+## 记忆系统
+你有持久记忆能力，可以跨对话保存信息。
+
+### 何时保存记忆：
+- 用户分享个人信息：名字、生日、工作、爱好、住址
+- 用户表达偏好：语言、沟通风格、喜好
+- 用户给出指令："以后都要..."、"永远不要..."
+
+### 何时回忆记忆：
+- 回答可能与过去信息相关的问题时
+- 用户提到以前说过的事情时
+- 需要用户偏好或事实时
+
+### 记忆规则：
+- 主动保存：用户说"我叫小明"时自动保存
+- 不保存临时信息：天气查询、一次性计算
+- 保存时在回复中说明：[已记住: ...]
+`;
+
+    let memoryBlock = this.extractMemoryBlock(originalSystemPrompt);
+    if (memoryBlock.length > 0) {
+      base += `\n## 已保存的记忆\n${memoryBlock}\n`;
+    }
+
+    let relevantMemories = this.extractRelevantMemories(originalSystemPrompt);
+    if (relevantMemories.length > 0) {
+      base += `\n## 当前相关记忆\n${relevantMemories}\n`;
+    }
+
+    return base;
+  }
+
+  private extractSoulText(systemPrompt: string): string {
+    const soulMatch = systemPrompt.match(/## Soul\s*\n([\s\S]*?)(?=\n##|$)/);
+    return soulMatch ? soulMatch[1].trim() : '我是一个乐于助人的 AI 助手。';
+  }
+
+  private extractMemoryBlock(systemPrompt: string): string {
+    const memMatch = systemPrompt.match(/<memory>([\s\S]*?)<\/memory>/);
+    return memMatch ? memMatch[1].trim() : '';
+  }
+
+  private extractRelevantMemories(systemPrompt: string): string {
+    const relMatch = systemPrompt.match(/<relevant-memories>([\s\S]*?)<\/relevant-memories>/);
+    return relMatch ? relMatch[1].trim() : '';
+  }
+
+  formatMultiTurnPrompt(messages: CANNMessage[], systemPrompt: string): string {
+    let prompt = systemPrompt + '\n\n';
+    
+    prompt += '<s>';
+    
+    for (const msg of messages) {
+      if (msg.role === 'user') {
+        prompt += `[unused9]用户：${msg.content}[unused10]`;
+      } else if (msg.role === 'assistant') {
+        prompt += `[unused9]助手：${msg.content}`;
+      }
+    }
+    
+    prompt += '[unused9]助手：';
+    
+    return prompt;
   }
 
   formatPrompt(userMessage: string): string {

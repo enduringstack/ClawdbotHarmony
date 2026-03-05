@@ -20,7 +20,7 @@ import { EmailCapability } from './gateway/EmailCapability';
 import { CameraCapability } from './gateway/CameraCapability';
 import { CustomSkillService, CreateSkillInput, UpdateSkillInput } from './CustomSkillService';
 import { CustomSkillDef } from '../model/Models';
-import { CANNLocalService, CANNConfig } from './CANNLocalService';
+import { CANNLocalService, CANNConfig, CANNMessage } from './CANNLocalService';
 
 /**
  * AI interaction service.
@@ -802,7 +802,7 @@ export class AIService {
     onDelta?: (text: string) => void
   ): Promise<RawResponse> {
     let raw = new RawResponse();
-    this.log.info(this.TAG, `callCANNLocal: START, context=${context ? 'yes' : 'no'}`);
+    this.log.info(this.TAG, `callCANNLocal: START, messages=${messages.length}, context=${context ? 'yes' : 'no'}`);
     
     if (!context) {
       this.log.error(this.TAG, 'callCANNLocal: No context available');
@@ -816,8 +816,6 @@ export class AIService {
     if (!cannSvc.isInitialized()) {
       this.log.info(this.TAG, 'CANN Local not initialized, initializing now...');
       let config = cannSvc.getDefaultConfig(context);
-      this.log.info(this.TAG, `callCANNLocal: config modelPath=${config.modelPath}`);
-      this.log.info(this.TAG, `callCANNLocal: config specModelPath=${config.specModelPath}`);
       let initSuccess = await cannSvc.init(config);
       this.log.info(this.TAG, `callCANNLocal: init result=${initSuccess}`);
       if (!initSuccess) {
@@ -827,24 +825,29 @@ export class AIService {
       }
     }
 
-    let lastUserMsg = '';
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') {
-        lastUserMsg = messages[i].content;
-        break;
+    let cannMessages: CANNMessage[] = [];
+    for (const msg of messages) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        cannMessages.push({
+          role: msg.role,
+          content: msg.content
+        });
       }
     }
 
-    this.log.info(this.TAG, `callCANNLocal: lastUserMsg="${lastUserMsg.substring(0, 100)}..."`);
-    
-    if (lastUserMsg.length === 0) {
-      this.log.error(this.TAG, 'callCANNLocal: No user message found');
-      raw.text = 'Error: No user message found';
+    this.log.info(this.TAG, `callCANNLocal: cannMessages count=${cannMessages.length}`);
+
+    if (cannMessages.length === 0) {
+      this.log.error(this.TAG, 'callCANNLocal: No valid messages');
+      raw.text = 'Error: No valid messages';
       return raw;
     }
 
-    let prompt = cannSvc.formatPrompt(lastUserMsg);
-    this.log.info(this.TAG, `callCANNLocal: formatted prompt="${prompt.substring(0, 100)}..."`);
+    let cannSystemPrompt = cannSvc.buildCANNSystemPrompt(systemPrompt);
+    this.log.info(this.TAG, `callCANNLocal: CANN system prompt length=${cannSystemPrompt.length}`);
+
+    let prompt = cannSvc.formatMultiTurnPrompt(cannMessages, cannSystemPrompt);
+    this.log.info(this.TAG, `callCANNLocal: final prompt length=${prompt.length}`);
 
     try {
       this.log.info(this.TAG, 'callCANNLocal: calling cannSvc.infer...');
@@ -852,7 +855,8 @@ export class AIService {
       raw.text = response;
       this.log.info(this.TAG, `callCANNLocal: response length=${response.length}`);
     } catch (e) {
-      raw.text = `CANN Local error: ${(e as Error).message}`;
+      const err = e as Error;
+      raw.text = `CANN Local error: ${err.message}`;
       this.log.error(this.TAG, `callCANNLocal: ${raw.text}`);
     }
 
