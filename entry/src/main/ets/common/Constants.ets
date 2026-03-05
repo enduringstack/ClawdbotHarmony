@@ -130,4 +130,12 @@ export class Constants {
   static readonly CANN_TOP_K: number = 16;
   static readonly CANN_TOP_P: number = 0.8;
   static readonly CANN_SPECULATIVE_GAMMA: number = 3;
+  
+  // CANN Local Tools - add tool names here to enable them for on-device model
+  static readonly CANN_ENABLED_TOOLS: string[] = [
+    'capture_photo',
+    'screen_capture',
+    'get_location',
+    'record_audio',
+  ];
 }

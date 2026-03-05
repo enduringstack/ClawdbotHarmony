@@ -827,11 +827,41 @@ export class AIService {
 
     let cannMessages: CANNMessage[] = [];
     for (const msg of messages) {
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        this.log.info(this.TAG, `callCANNLocal: message role=${msg.role}, content="${msg.content.substring(0, 50)}..."`);
+      if (msg.role === 'user') {
+        this.log.info(this.TAG, `callCANNLocal: message role=user, content="${msg.content.substring(0, 50)}..."`);
         cannMessages.push({
-          role: msg.role,
+          role: 'user',
           content: msg.content
+        });
+      } else if (msg.role === 'assistant') {
+        // Handle assistant message with possible tool calls
+        let content = msg.content;
+        if (msg.toolCalls && msg.toolCalls.length > 0) {
+          // Convert tool calls to text description
+          try {
+            let tcArray = JSON.parse(msg.toolCalls) as Record<string, Object>[];
+            for (const tc of tcArray) {
+              let funcObj = tc['function'] as Record<string, Object> | undefined;
+              let toolName = funcObj ? (funcObj['name'] as string) : (tc['name'] as string) || 'unknown';
+              let toolArgs = funcObj ? (funcObj['arguments'] as string) : (tc['input'] as string) || '{}';
+              content += `\n[调用工具: ${toolName}, 参数: ${toolArgs}]`;
+            }
+          } catch {
+            content += `\n[调用工具]`;
+          }
+        }
+        this.log.info(this.TAG, `callCANNLocal: message role=assistant, content="${content.substring(0, 50)}..."`);
+        cannMessages.push({
+          role: 'assistant',
+          content: content
+        });
+      } else if (msg.role === 'tool') {
+        // Convert tool result to user message (CANN model doesn't have tool role)
+        let toolResult = msg.content;
+        this.log.info(this.TAG, `callCANNLocal: message role=tool -> user, content="${toolResult.substring(0, 50)}..."`);
+        cannMessages.push({
+          role: 'user',
+          content: `工具执行结果: ${toolResult}`
         });
       }
     }
@@ -855,6 +885,12 @@ export class AIService {
       let response = await cannSvc.infer(prompt, onDelta);
       raw.text = response;
       this.log.info(this.TAG, `callCANNLocal: response length=${response.length}`);
+      
+      // Try to extract tool calls from response (same as cloud models)
+      this.extractToolCallsFromText(raw);
+      if (raw.toolCalls.length > 0) {
+        this.log.info(this.TAG, `callCANNLocal: extracted ${raw.toolCalls.length} tool call(s)`);
+      }
     } catch (e) {
       const err = e as Error;
       raw.text = `CANN Local error: ${err.message}`;
@@ -908,33 +944,26 @@ export class AIService {
   // --------- Fallback: extract tool calls from text ---------
   private extractToolCallsFromText(raw: RawResponse): void {
     let text = raw.text;
-    // Pattern 1: {"name": "tool_name", "arguments": {...}}
-    // Pattern 2: {"name": "tool_name", "parameters": {...}}
-    let patterns: RegExp[] = [
-      /\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[\s\S]*?\})\s*\}/g,
-      /\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"parameters"\s*:\s*(\{[\s\S]*?\})\s*\}/g,
-    ];
-    for (let re of patterns) {
-      let match: RegExpExecArray | null = re.exec(text);
-      while (match !== null) {
-        let name = match[1];
-        let args = match[2];
-        try {
-          JSON.parse(args); // validate JSON
-          let rtc = new RawToolCall();
-          rtc.id = `fallback_${Date.now()}_${raw.toolCalls.length}`;
-          rtc.name = name;
-          rtc.input = args;
-          raw.toolCalls.push(rtc);
-          this.log.info(this.TAG, `Extracted tool call from text: ${name}`);
-          // Remove the tool call JSON from displayed text
-          raw.text = text.substring(0, match.index).trim() +
-            (match.index + match[0].length < text.length ? '\n' + text.substring(match.index + match[0].length).trim() : '');
-          raw.text = raw.text.trim();
-        } catch { /* invalid JSON, skip */ }
-        match = re.exec(text);
-      }
-      if (raw.toolCalls.length > 0) break;
+    
+    // Simple regex pattern for tool calls: {"name": "...", "arguments": {...}}
+    // Match the most common pattern first
+    let pattern = /\{"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}/;
+    let match = text.match(pattern);
+    
+    if (match) {
+      let name = match[1];
+      let args = match[2];
+      try {
+        JSON.parse(args); // validate JSON
+        let rtc = new RawToolCall();
+        rtc.id = `fallback_${Date.now()}`;
+        rtc.name = name;
+        rtc.input = args;
+        raw.toolCalls.push(rtc);
+        this.log.info(this.TAG, `Extracted tool call from text: ${name}`);
+        // Remove the tool call JSON from displayed text
+        raw.text = text.replace(match[0], '').trim();
+      } catch { /* invalid JSON, skip */ }
     }
   }
 
@@ -1362,8 +1391,13 @@ export class AIService {
           }
         }
         case 'screen_capture': {
+          if (!context) {
+            let r: ToolResultObj = { error: 'No UI context available for screenshot' };
+            return JSON.stringify(r);
+          }
           try {
             let screenCap = ScreenCapability.getInstance();
+            screenCap.setContext(context);
             let result = await screenCap.execute(Command.SCREEN_CAPTURE, undefined);
             return result;
           } catch (e) {

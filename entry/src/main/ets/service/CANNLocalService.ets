@@ -2,6 +2,8 @@ import { LogService } from '../common/LogService';
 import { common } from '@kit.AbilityKit';
 import { Constants } from '../common/Constants';
 import { loadmodel, isInitialized, getLastError, answerget, modelinfer, deinitmodel, CANNConfig, isAvailable } from 'libcann_llm.so';
+import { getToolSchemaByName } from './SkillData';
+import { ToolSchema } from '../model/Models';
 
 export { CANNConfig } from 'libcann_llm.so';
 
@@ -9,6 +11,22 @@ export interface CANNMessage {
   role: 'user' | 'assistant';
   content: string;
 }
+
+// Tool examples data: [toolName, userText, argKey, argValue]
+const CANN_TOOL_EXTRAS_DATA: string[][] = [
+  ['capture_photo', '拍照', 'camera', 'back'],
+  ['capture_photo', '自拍', 'camera', 'front'],
+  ['capture_photo', '后置拍照', 'camera', 'back'],
+  ['screen_capture', '截屏', '', ''],
+  ['screen_capture', '截图', '', ''],
+  ['screen_capture', '截个屏', '', ''],
+  ['get_location', '我在哪', '', ''],
+  ['get_location', '我的位置', '', ''],
+  ['get_location', '定位', '', ''],
+  ['record_audio', '录音', 'seconds', '5'],
+  ['record_audio', '录10秒', 'seconds', '10'],
+  ['record_audio', '帮我录个音', 'seconds', '5'],
+];
 
 export function isCANNAvailable(): boolean {
   try {
@@ -192,6 +210,72 @@ export class CANNLocalService {
     this.doneCallback = null;
   }
 
+  private buildToolsPrompt(): string {
+    let enabledTools = Constants.CANN_ENABLED_TOOLS;
+    
+    let prompt = `## 工具调用（重要）
+你有权限调用设备功能。当用户请求时，你**必须**输出 JSON 格式的工具调用，不要说"无法执行"或"抱歉"。
+
+### 输出格式
+{"name": "工具名", "arguments": {参数}}
+
+### 可用工具
+`;
+    
+    for (let toolName of enabledTools) {
+      let schema = getToolSchemaByName(toolName);
+      if (!schema) {
+        this.log.warn(this.TAG, `buildToolsPrompt: tool not found: ${toolName}`);
+        continue;
+      }
+      
+      prompt += `\n**${schema.name}** - ${schema.description}\n`;
+      
+      let inputSchema = schema.input_schema as Record<string, Object>;
+      let props = inputSchema['properties'] as Record<string, Record<string, string>> | undefined;
+      if (props && Object.keys(props).length > 0) {
+        prompt += `参数:\n`;
+        let entries = Object.entries(props);
+        for (let i = 0; i < entries.length; i++) {
+          let key = entries[i][0];
+          let prop = entries[i][1];
+          let desc = prop['description'] || '';
+          prompt += `  - ${key}: ${desc}\n`;
+        }
+      }
+    }
+    
+    prompt += `\n### 示例\n`;
+    for (let i = 0; i < CANN_TOOL_EXTRAS_DATA.length; i++) {
+      let row = CANN_TOOL_EXTRAS_DATA[i];
+      let toolName = row[0];
+      let userText = row[1];
+      let argKey = row[2];
+      let argValue = row[3];
+      
+      if (enabledTools.indexOf(toolName) === -1) continue;
+      
+      let argsJson = '{}';
+      if (argKey.length > 0) {
+        argsJson = `{"${argKey}": "${argValue}"}`;
+      }
+      
+      prompt += `用户: ${userText}\n`;
+      prompt += `助手: {"name": "${toolName}", "arguments": ${argsJson}}\n\n`;
+    }
+    
+    prompt += `### 禁止行为
+- 禁止输出"无法执行"、"抱歉"等拒绝文字
+- 禁止在 JSON 前后输出其他文字
+- 禁止输出格式错误的 JSON
+
+### 工具结果处理
+当你看到"工具执行结果:"时，说明工具已执行完成，用简洁的一句话总结结果。
+`;
+    
+    return prompt;
+  }
+
   buildCANNSystemPrompt(originalSystemPrompt: string): string {
     const d = new Date();
     const tz = -(d.getTimezoneOffset() / 60);
@@ -233,6 +317,8 @@ ${soulText}
 - 主动保存：用户说"我叫小明"时自动保存
 - 不保存临时信息：天气查询、一次性计算
 - 保存时在回复中说明：[已记住: ...]
+
+${this.buildToolsPrompt()}
 `;
 
     let memoryBlock = this.extractMemoryBlock(originalSystemPrompt);
