@@ -94,6 +94,7 @@ export class CANNLocalService {
         this.log.info(this.TAG, 'infer: calling answerget...');
         answerget((token: string) => {
           this.accumulatedText += token;
+          this.log.info(this.TAG, `infer: received token="${token}", total=${this.accumulatedText.length}`);
           if (this.tokenCallback) {
             this.tokenCallback(token);
           }
@@ -102,16 +103,34 @@ export class CANNLocalService {
         this.log.info(this.TAG, 'infer: calling modelinfer...');
         modelinfer(prompt);
 
-        const checkDone = () => {
-          setTimeout(() => {
-            this.log.info(this.TAG, `infer: DONE, total length=${this.accumulatedText.length}`);
+        let checkCount = 0;
+        const maxChecks = 120;
+        const checkInterval = () => {
+          checkCount++;
+          if (this.accumulatedText.length > 0) {
+            let lastLen = this.accumulatedText.length;
+            setTimeout(() => {
+              if (this.accumulatedText.length === lastLen || checkCount >= maxChecks) {
+                this.log.info(this.TAG, `infer: DONE, total length=${this.accumulatedText.length}`);
+                if (this.doneCallback) {
+                  this.doneCallback();
+                }
+                resolve(this.accumulatedText);
+              } else {
+                checkInterval();
+              }
+            }, 1000);
+          } else if (checkCount < maxChecks) {
+            setTimeout(checkInterval, 500);
+          } else {
+            this.log.warn(this.TAG, `infer: TIMEOUT after ${checkCount} checks, no output`);
             if (this.doneCallback) {
               this.doneCallback();
             }
             resolve(this.accumulatedText);
-          }, 500);
+          }
         };
-        checkDone();
+        checkInterval();
 
       } catch (e) {
         const err = e as Error;
@@ -216,7 +235,10 @@ ${soulText}
     
     prompt += '<s>';
     
-    for (const msg of messages) {
+    this.log.info(this.TAG, `formatMultiTurnPrompt: ${messages.length} messages`);
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      this.log.info(this.TAG, `formatMultiTurnPrompt: [${i}] ${msg.role}: "${msg.content.substring(0, 30)}..."`);
       if (msg.role === 'user') {
         prompt += `[unused9]用户：${msg.content}[unused10]`;
       } else if (msg.role === 'assistant') {
@@ -225,6 +247,8 @@ ${soulText}
     }
     
     prompt += '[unused9]助手：';
+    
+    this.log.info(this.TAG, `formatMultiTurnPrompt: final prompt length=${prompt.length}`);
     
     return prompt;
   }

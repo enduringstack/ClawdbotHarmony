@@ -828,6 +828,7 @@ export class AIService {
     let cannMessages: CANNMessage[] = [];
     for (const msg of messages) {
       if (msg.role === 'user' || msg.role === 'assistant') {
+        this.log.info(this.TAG, `callCANNLocal: message role=${msg.role}, content="${msg.content.substring(0, 50)}..."`);
         cannMessages.push({
           role: msg.role,
           content: msg.content

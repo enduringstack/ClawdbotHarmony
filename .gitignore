@@ -59,3 +59,6 @@ nul
 
 # Claude Code local settings
 /.claude/settings.local.json
+
+# CANN LLM so files
+entry/src/main/cpp/lib64/*.so

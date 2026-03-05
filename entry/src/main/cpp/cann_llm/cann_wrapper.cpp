@@ -20,28 +20,23 @@ struct CallbackData {
 
 static LLMCore_Config g_config;
 
-static void InitConfig() {
-    g_config.inferType = 1;  // HIAI_LLMENGINE_TREESPEC_INFERTYPE
-    
+static void InitDefaultConfig() {
+    g_config.inferType = 1;
     g_config.modelPath = "/data/storage/el2/base/haps/entry/files/chs_7b_target_model/chs_7b_target_model.omc";
     g_config.weightDir = "/data/storage/el2/base/haps/entry/files/chs_7b_target_model";
     g_config.tokenizerPath = "/data/storage/el2/base/haps/entry/files/chs_7b_target_model/tokenizer.model";
-    
     g_config.specModelPath = "/data/storage/el2/base/haps/entry/files/chs_7b_draft_model/chs_7b_draft_model.omc";
     g_config.specWeightDir = "/data/storage/el2/base/haps/entry/files/chs_7b_draft_model";
-    
     g_config.loraCfgPath = "/data/storage/el2/base/haps/entry/files/chs_7b_target_model/chs_7b_target_model.omc.loraconf";
     g_config.specLoraCfgPath = "";
-    
     g_config.isAsync = true;
-    g_config.maxGenTokens = 64;
+    g_config.maxGenTokens = 512;
     g_config.seed = 99;
     g_config.topK = 16;
     g_config.topP = 0.8f;
     g_config.temperature = 0.7f;
     g_config.repetitionPenalty = 1.0f;
     g_config.doSample = false;
-    
     g_config.gamma = 3;
     g_config.topHeadStr = "1,2,2";
     g_config.topKSpecStr = "6,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1;2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1;1,1,1,1,1,1,1,1,1,1,1,1,1,1,1";
@@ -49,6 +44,13 @@ static void InitConfig() {
     g_config.typicalScaling = 1.0f;
     g_config.stopSeqStr = "[unused10]";
 }
+
+static std::string g_strModelPath;
+static std::string g_strWeightDir;
+static std::string g_strTokenizerPath;
+static std::string g_strSpecModelPath;
+static std::string g_strSpecWeightDir;
+static std::string g_strLoraCfgPath;
 
 static void CallJsCallback(napi_env env, napi_value jsCb, void *context, void *data) {
     if (env == nullptr || jsCb == nullptr || data == nullptr) {
@@ -81,8 +83,67 @@ static void onDoneCallback(void* userData) {
 static napi_value LoadModel(napi_env env, napi_callback_info info) {
     OH_LOG_INFO(LOG_APP, "========== LoadModel START ==========");
     
-    InitConfig();
+    InitDefaultConfig();
     
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    
+    if (argc >= 1) {
+        napi_value configObj = args[0];
+        napi_value tmp;
+        size_t len;
+        
+        auto getStringProp = [&](const char* name, std::string& out) {
+            napi_value prop;
+            if (napi_get_named_property(env, configObj, name, &prop) == napi_ok) {
+                size_t strLen;
+                napi_get_value_string_utf8(env, prop, nullptr, 0, &strLen);
+                out.resize(strLen);
+                napi_get_value_string_utf8(env, prop, &out[0], strLen + 1, &strLen);
+                return true;
+            }
+            return false;
+        };
+        
+        if (getStringProp("modelPath", g_strModelPath)) {
+            g_config.modelPath = g_strModelPath.c_str();
+            OH_LOG_INFO(LOG_APP, "LoadModel: modelPath=%{public}s", g_config.modelPath);
+        }
+        if (getStringProp("weightDir", g_strWeightDir)) {
+            g_config.weightDir = g_strWeightDir.c_str();
+        }
+        if (getStringProp("tokenizerPath", g_strTokenizerPath)) {
+            g_config.tokenizerPath = g_strTokenizerPath.c_str();
+        }
+        if (getStringProp("specModelPath", g_strSpecModelPath)) {
+            g_config.specModelPath = g_strSpecModelPath.c_str();
+        }
+        if (getStringProp("specWeightDir", g_strSpecWeightDir)) {
+            g_config.specWeightDir = g_strSpecWeightDir.c_str();
+        }
+        if (getStringProp("loraCfgPath", g_strLoraCfgPath)) {
+            g_config.loraCfgPath = g_strLoraCfgPath.c_str();
+        }
+        
+        napi_value intVal;
+        if (napi_get_named_property(env, configObj, "maxGenTokens", &intVal) == napi_ok) {
+            int32_t maxTokens;
+            if (napi_get_value_int32(env, intVal, &maxTokens) == napi_ok) {
+                g_config.maxGenTokens = maxTokens;
+            }
+        }
+        
+        napi_value floatVal;
+        if (napi_get_named_property(env, configObj, "temperature", &floatVal) == napi_ok) {
+            double temp;
+            if (napi_get_value_double(env, floatVal, &temp) == napi_ok) {
+                g_config.temperature = (float)temp;
+            }
+        }
+    }
+    
+    OH_LOG_INFO(LOG_APP, "LoadModel: calling LLMCore_Init...");
     int ret = LLMCore_Init(&g_config);
     
     std::string result;
