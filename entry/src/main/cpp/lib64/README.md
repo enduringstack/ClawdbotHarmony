@@ -8,10 +8,28 @@
 
 ## 获取方式
 
-这些文件需要从以下渠道获取：
+### 方式 1：从源码编译（推荐）
 
-1. **内部渠道**：联系项目维护者获取预编译 so 文件
-2. **自行编译**：从源码编译 libllm_core.so
+源码仓库：https://codehub-y.huawei.com/x00897182/cann_llm_deploy/files
+
+```bash
+# 克隆源码
+git clone ssh://git@szv-y.codehub.huawei.com:2222/x00897182/cann_llm_deploy.git
+
+# 切换到 external-release 分支（外网版本）
+git checkout external-release
+
+# 在 DevEco Studio 中编译
+# 生成的 so 文件在：entry/build/default/intermediates/cmake/default/obj/arm64-v8a/
+
+# 复制到本项目
+cp build/output/libllm_core.so path/to/ClawdbotHarmony/entry/src/main/cpp/lib64/
+cp build/output/libhiai_llm_engine.so path/to/ClawdbotHarmony/entry/src/main/cpp/lib64/
+```
+
+### 方式 2：从预编译包获取
+
+联系项目维护者获取预编译 so 文件。
 
 ## 放置位置
 
@@ -29,8 +47,9 @@ CANN LLM libraries found, enabling cann_llm module
 CANN LLM libraries not found, cann_llm module will be disabled
 ```
 
-## 注意
+## 注意事项
 
 - so 文件未包含在 Git 仓库中（体积过大）
-- 编译需要这些文件，否则 cann-local 功能不可用
+- 编译需要这些文件才能启用 cann-local 功能
 - 其他功能不受影响
+- TypeScript 层面的模块导入在编译时检查，没有 so 文件会报错
