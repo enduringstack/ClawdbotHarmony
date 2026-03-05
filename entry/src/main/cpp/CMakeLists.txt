@@ -4,21 +4,32 @@ project(native_modules)
 
 set(NATIVERENDER_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Import prebuilt libraries for CANN LLM
-add_library(llm_core SHARED IMPORTED GLOBAL)
-set_target_properties(llm_core PROPERTIES IMPORTED_LOCATION
-    ${NATIVERENDER_ROOT_PATH}/lib64/libllm_core.so)
+# Check if CANN LLM so files exist
+set(CANN_LLM_ENABLED OFF)
+if(EXISTS "${NATIVERENDER_ROOT_PATH}/lib64/libllm_core.so" AND EXISTS "${NATIVERENDER_ROOT_PATH}/lib64/libhiai_llm_engine.so")
+    set(CANN_LLM_ENABLED ON)
+    message(STATUS "CANN LLM libraries found, enabling cann_llm module")
+    
+    add_library(llm_core SHARED IMPORTED GLOBAL)
+    set_target_properties(llm_core PROPERTIES IMPORTED_LOCATION
+        ${NATIVERENDER_ROOT_PATH}/lib64/libllm_core.so)
 
-add_library(hiai_llm_engine SHARED IMPORTED GLOBAL)
-set_target_properties(hiai_llm_engine PROPERTIES IMPORTED_LOCATION
-    ${NATIVERENDER_ROOT_PATH}/lib64/libhiai_llm_engine.so)
+    add_library(hiai_llm_engine SHARED IMPORTED GLOBAL)
+    set_target_properties(hiai_llm_engine PROPERTIES IMPORTED_LOCATION
+        ${NATIVERENDER_ROOT_PATH}/lib64/libhiai_llm_engine.so)
+else()
+    message(STATUS "CANN LLM libraries not found, cann_llm module will be disabled")
+    message(STATUS "To enable: place libllm_core.so and libhiai_llm_engine.so in entry/src/main/cpp/lib64/")
+endif()
 
 # exec module - shell command execution
 add_library(exec SHARED napi_exec.cpp)
 target_link_libraries(exec PUBLIC libace_napi.z.so)
 
-# cann_llm module - on-device LLM inference
-add_subdirectory(cann_llm)
+# cann_llm module - on-device LLM inference (optional)
+if(CANN_LLM_ENABLED)
+    add_subdirectory(cann_llm)
+endif()
 
 # context_engine module - rule engine + MAB + LinUCB
 add_subdirectory(context_engine)
