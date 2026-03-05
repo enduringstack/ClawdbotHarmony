@@ -16,6 +16,13 @@ export interface CANNConfig {
 }
 
 /**
+ * Check if CANN LLM is available (so files exist).
+ * Returns false if using stub module.
+ * @returns true if full functionality is available
+ */
+export const isAvailable: () => boolean;
+
+/**
  * Load and initialize the LLM model.
  * @param config - Configuration object with model paths
  * @returns Status message string

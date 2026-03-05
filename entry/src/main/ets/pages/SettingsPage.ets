@@ -18,6 +18,7 @@ import { ExperienceStorage } from '../service/ExperienceStorage';
 import socket from '@ohos.net.socket';
 import { util } from '@kit.ArkTS';
 import { Monitor, ModuleStat } from '../service/ModuleMonitor';
+import { isCANNAvailable } from '../service/CANNLocalService';
 
 interface BmExecResult {
   exitCode: number;
@@ -669,7 +670,7 @@ export struct SettingsPage {
               .width('100%')
             Scroll() {
               Row({ space: 8 }) {
-              ForEach(['cann-local', 'openrouter', 'anthropic', 'openai', 'siliconflow', 'local', 'custom'] as string[], (p: string) => {
+              ForEach(this.getAvailableProviders(), (p: string) => {
                 Text(this.providerLabel(p))
                   .fontSize(13)
                   .fontColor(this.provider === p ? Color.White : '#666666')
@@ -1963,6 +1964,14 @@ export struct SettingsPage {
     if (p === 'siliconflow') return 'SiliconFlow';
     if (p === 'custom') return I18n.t('settings.customProvider');
     return 'Ollama';
+  }
+
+  private getAvailableProviders(): string[] {
+    let providers: string[] = ['openrouter', 'anthropic', 'openai', 'siliconflow', 'local', 'custom'];
+    if (isCANNAvailable()) {
+      providers.unshift('cann-local');
+    }
+    return providers;
   }
 
   private showTabs(): boolean {

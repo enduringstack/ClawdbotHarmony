@@ -1,12 +1,20 @@
 import { LogService } from '../common/LogService';
 import { common } from '@kit.AbilityKit';
-import { loadmodel, isInitialized, getLastError, answerget, modelinfer, deinitmodel, CANNConfig } from 'libcann_llm.so';
+import { loadmodel, isInitialized, getLastError, answerget, modelinfer, deinitmodel, CANNConfig, isAvailable } from 'libcann_llm.so';
 
 export { CANNConfig } from 'libcann_llm.so';
 
 export interface CANNMessage {
   role: 'user' | 'assistant';
   content: string;
+}
+
+export function isCANNAvailable(): boolean {
+  try {
+    return isAvailable();
+  } catch (e) {
+    return false;
+  }
 }
 
 export class CANNLocalService {
