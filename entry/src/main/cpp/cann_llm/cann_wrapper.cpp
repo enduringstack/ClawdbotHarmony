@@ -21,13 +21,15 @@ struct CallbackData {
 static LLMCore_Config g_config;
 
 static void InitDefaultConfig() {
+    // Only set non-path defaults
+    // All paths are provided from TypeScript
     g_config.inferType = 1;
-    g_config.modelPath = "/data/storage/el2/base/haps/entry/files/chs_7b_target_model/chs_7b_target_model.omc";
-    g_config.weightDir = "/data/storage/el2/base/haps/entry/files/chs_7b_target_model";
-    g_config.tokenizerPath = "/data/storage/el2/base/haps/entry/files/chs_7b_target_model/tokenizer.model";
-    g_config.specModelPath = "/data/storage/el2/base/haps/entry/files/chs_7b_draft_model/chs_7b_draft_model.omc";
-    g_config.specWeightDir = "/data/storage/el2/base/haps/entry/files/chs_7b_draft_model";
-    g_config.loraCfgPath = "/data/storage/el2/base/haps/entry/files/chs_7b_target_model/chs_7b_target_model.omc.loraconf";
+    g_config.modelPath = "";
+    g_config.weightDir = "";
+    g_config.tokenizerPath = "";
+    g_config.specModelPath = "";
+    g_config.specWeightDir = "";
+    g_config.loraCfgPath = "";
     g_config.specLoraCfgPath = "";
     g_config.isAsync = true;
     g_config.maxGenTokens = 512;
@@ -148,7 +150,7 @@ static napi_value LoadModel(napi_env env, napi_callback_info info) {
     
     std::string result;
     if (ret == 0) {
-        result = "模型加载完毕，可以提问了。(Pangu 7B + Speculative Inference + LoRA)";
+        result = "模型加载完毕，可以提问了。(端侧 LLM + 推测推理 + LoRA)";
     } else {
         result = std::string("模型加载失败: ") + LLMCore_GetLastError();
     }
@@ -223,6 +225,13 @@ static napi_value GetLastError(napi_env env, napi_callback_info info) {
     return result;
 }
 
+static napi_value IsAvailable(napi_env env, napi_callback_info info) {
+    napi_value result;
+    napi_get_boolean(env, true, &result);
+    OH_LOG_INFO(LOG_APP, "[CANN_LLM] isAvailable: true (so files found)");
+    return result;
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports) {
     napi_property_descriptor desc[] = {
@@ -232,6 +241,7 @@ static napi_value Init(napi_env env, napi_value exports) {
         { "deinitmodel", nullptr, DeinitModel, nullptr, nullptr, nullptr, napi_default, nullptr},
         { "isInitialized", nullptr, IsInitialized, nullptr, nullptr, nullptr, napi_default, nullptr},
         { "getLastError", nullptr, GetLastError, nullptr, nullptr, nullptr, napi_default, nullptr},
+        { "isAvailable", nullptr, IsAvailable, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

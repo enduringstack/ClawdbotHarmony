@@ -819,8 +819,8 @@ export class AIService {
       let initSuccess = await cannSvc.init(config);
       this.log.info(this.TAG, `callCANNLocal: init result=${initSuccess}`);
       if (!initSuccess) {
-        raw.text = `CANN Local init failed: ${cannSvc.getLastError()}`;
-        this.log.error(this.TAG, `callCANNLocal: ${raw.text}`);
+        raw.text = cannSvc.getLastError();
+        this.log.error(this.TAG, `callCANNLocal: init failed: ${raw.text}`);
         return raw;
       }
     }

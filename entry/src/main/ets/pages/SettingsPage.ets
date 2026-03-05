@@ -1947,7 +1947,7 @@ export struct SettingsPage {
   // ============ logic ============
 
   private defaultModelFor(p: string): string {
-    if (p === 'cann-local') return 'pangu-7b';
+    if (p === 'cann-local') return Constants.CANN_TARGET_MODEL_NAME;
     if (p === 'openrouter') return Constants.DEFAULT_MODEL_OPENROUTER;
     if (p === 'anthropic') return Constants.DEFAULT_MODEL_ANTHROPIC;
     if (p === 'openai') return Constants.DEFAULT_MODEL_OPENAI;

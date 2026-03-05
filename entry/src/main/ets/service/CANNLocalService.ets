@@ -1,5 +1,6 @@
 import { LogService } from '../common/LogService';
 import { common } from '@kit.AbilityKit';
+import { Constants } from '../common/Constants';
 import { loadmodel, isInitialized, getLastError, answerget, modelinfer, deinitmodel, CANNConfig, isAvailable } from 'libcann_llm.so';
 
 export { CANNConfig } from 'libcann_llm.so';
@@ -43,6 +44,28 @@ export class CANNLocalService {
     return this.lastError;
   }
 
+  private translateError(error: string): string {
+    const errorLower = error.toLowerCase();
+    
+    if (errorLower.includes('executor_init') || errorLower.includes('failed: 1')) {
+      return '模型初始化失败。可能原因：\n1. 模型文件未上传到设备\n2. 模型文件损坏或不完整\n3. 设备内存不足\n\n请运行 deploy_cann_model.bat 部署模型文件';
+    }
+    
+    if (errorLower.includes('no such file') || errorLower.includes('not found')) {
+      return '模型文件未找到。请运行 deploy_cann_model.bat 部署模型文件';
+    }
+    
+    if (errorLower.includes('permission denied') || errorLower.includes('access denied')) {
+      return '权限不足，无法访问模型文件';
+    }
+    
+    if (errorLower.includes('out of memory') || errorLower.includes('memory')) {
+      return '设备内存不足，无法加载模型';
+    }
+    
+    return `初始化失败: ${error}`;
+  }
+
   async init(config: CANNConfig): Promise<boolean> {
     if (this.initialized) {
       this.log.info(this.TAG, 'Already initialized');
@@ -68,8 +91,9 @@ export class CANNLocalService {
       this.log.info(this.TAG, `init: isInitialized=${this.initialized}`);
       
       if (!this.initialized) {
-        this.lastError = getLastError() || result;
-        this.log.error(this.TAG, `init: failed: ${this.lastError}`);
+        const rawError: string = getLastError() || result;
+        this.lastError = this.translateError(rawError);
+        this.log.error(this.TAG, `init: failed: ${rawError} -> ${this.lastError}`);
       } else {
         this.log.info(this.TAG, 'init: SUCCESS');
       }
@@ -78,8 +102,8 @@ export class CANNLocalService {
       return this.initialized;
     } catch (e) {
       const err = e as Error;
-      this.lastError = `Init error: ${err.message}`;
-      this.log.error(this.TAG, `init: exception: ${this.lastError}`);
+      this.lastError = this.translateError(err.message);
+      this.log.error(this.TAG, `init: exception: ${err.message} -> ${this.lastError}`);
       this.initializing = false;
       return false;
     }
@@ -175,6 +199,7 @@ export class CANNLocalService {
     const now = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} ${tzStr}`;
 
     let soulText = this.extractSoulText(originalSystemPrompt);
+    this.log.info(this.TAG, `buildCANNSystemPrompt: soulText length=${soulText.length}`);
 
     let base = `你是 ClawdBot，运行在 HarmonyOS 上的个人 AI 助手。
 
@@ -213,12 +238,17 @@ ${soulText}
     let memoryBlock = this.extractMemoryBlock(originalSystemPrompt);
     if (memoryBlock.length > 0) {
       base += `\n## 已保存的记忆\n${memoryBlock}\n`;
+      this.log.info(this.TAG, `buildCANNSystemPrompt: memoryBlock length=${memoryBlock.length}`);
     }
 
     let relevantMemories = this.extractRelevantMemories(originalSystemPrompt);
     if (relevantMemories.length > 0) {
       base += `\n## 当前相关记忆\n${relevantMemories}\n`;
+      this.log.info(this.TAG, `buildCANNSystemPrompt: relevantMemories length=${relevantMemories.length}`);
     }
+
+    this.log.info(this.TAG, `buildCANNSystemPrompt: final length=${base.length} chars`);
+    this.log.info(this.TAG, `buildCANNSystemPrompt: content=\n${base}`);
 
     return base;
   }
@@ -267,16 +297,18 @@ ${soulText}
 
   getDefaultConfig(context: common.UIAbilityContext): CANNConfig {
     const sandboxPath = context.filesDir;
+    const targetDir = `${sandboxPath}/${Constants.CANN_TARGET_MODEL_NAME}`;
+    const draftDir = `${sandboxPath}/${Constants.CANN_DRAFT_MODEL_NAME}`;
     
     return {
-      modelPath: `${sandboxPath}/chs_7b_target_model/chs_7b_target_model.omc`,
-      weightDir: `${sandboxPath}/chs_7b_target_model`,
-      tokenizerPath: `${sandboxPath}/chs_7b_target_model/tokenizer.model`,
-      specModelPath: `${sandboxPath}/chs_7b_draft_model/chs_7b_draft_model.omc`,
-      specWeightDir: `${sandboxPath}/chs_7b_draft_model`,
-      loraCfgPath: `${sandboxPath}/chs_7b_target_model/chs_7b_target_model.omc.loraconf`,
-      maxGenTokens: 512,
-      temperature: 0.7
+      modelPath: `${targetDir}/${Constants.CANN_TARGET_MODEL_FILE}`,
+      weightDir: targetDir,
+      tokenizerPath: `${targetDir}/${Constants.CANN_TOKENIZER_FILE}`,
+      specModelPath: `${draftDir}/${Constants.CANN_DRAFT_MODEL_FILE}`,
+      specWeightDir: draftDir,
+      loraCfgPath: `${targetDir}/${Constants.CANN_LORA_CONFIG_FILE}`,
+      maxGenTokens: Constants.CANN_MAX_GEN_TOKENS,
+      temperature: Constants.CANN_TEMPERATURE
     };
   }
 }
