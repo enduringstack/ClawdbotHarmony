@@ -3,7 +3,6 @@ import { preferences } from '@kit.ArkData';
 import { fileIo, picker } from '@kit.CoreFileKit';
 import { util, buffer } from '@kit.ArkTS';
 import { common, abilityAccessCtrl } from '@kit.AbilityKit';
-// camera, cameraPicker no longer used — auto-capture is in CameraCapability
 import { media } from '@kit.MediaKit';
 import { geoLocationManager } from '@kit.LocationKit';
 import { ChatMessage, ApiMessage, ToolSchema, SettingsData, CronTask, CronParseResult } from '../model/Models';
@@ -21,6 +20,7 @@ import { EmailCapability } from './gateway/EmailCapability';
 import { CameraCapability } from './gateway/CameraCapability';
 import { CustomSkillService, CreateSkillInput, UpdateSkillInput } from './CustomSkillService';
 import { CustomSkillDef } from '../model/Models';
+import { CANNLocalService, CANNConfig } from './CANNLocalService';
 
 /**
  * AI interaction service.
@@ -163,7 +163,10 @@ export class AIService {
     onDelta?: (text: string) => void
   ): Promise<AIResult> {
     let result = new AIResult();
-    if (!settings.apiKey && settings.provider !== 'local') {
+    this.log.info(this.TAG, `chat: provider=${settings.provider} apiKeyLen=${settings.apiKey?.length ?? 0}`);
+    
+    if (!settings.apiKey && settings.provider !== 'local' && settings.provider !== 'cann-local') {
+      this.log.warn(this.TAG, `chat: API key required for provider ${settings.provider}`);
       result.error = 'Please set your API Key in Settings.';
       return result;
     }
@@ -176,16 +179,15 @@ export class AIService {
       loopCount++;
       let response: RawResponse;
       try {
-        if (settings.provider === 'anthropic') {
+        if (settings.provider === 'cann-local') {
+          response = await this.callCANNLocal(allMessages, settings, systemPrompt, context, onDelta);
+        } else if (settings.provider === 'anthropic') {
           response = await this.callAnthropic(allMessages, settings, systemPrompt, tools);
         } else if (settings.provider === 'local' && (!settings.apiKey || settings.apiKey.length === 0)) {
-          // Truly local model (Ollama) — no tool support
           response = await this.callLocal(allMessages, settings, systemPrompt);
         } else if (onDelta && loopCount === 1) {
-          // First iteration with streaming — use SSE streaming for responsive output
           response = await this.callOpenAIStream(allMessages, settings, systemPrompt, tools, onDelta);
         } else {
-          // OpenAI-compatible providers (openai, openrouter, siliconflow, etc.) — full tool support
           response = await this.callOpenAI(allMessages, settings, systemPrompt, tools);
         }
       } catch (e) {
@@ -791,6 +793,70 @@ export class AIService {
         }
       });
     });
+  }
+
+  // --------- CANN Local (on-device) ---------
+  private async callCANNLocal(
+    messages: ApiMessage[], settings: SettingsData,
+    systemPrompt: string, context: common.UIAbilityContext | undefined,
+    onDelta?: (text: string) => void
+  ): Promise<RawResponse> {
+    let raw = new RawResponse();
+    this.log.info(this.TAG, `callCANNLocal: START, context=${context ? 'yes' : 'no'}`);
+    
+    if (!context) {
+      this.log.error(this.TAG, 'callCANNLocal: No context available');
+      raw.text = 'Error: No context available for CANN Local';
+      return raw;
+    }
+
+    let cannSvc = CANNLocalService.getInstance();
+    this.log.info(this.TAG, `callCANNLocal: isInitialized=${cannSvc.isInitialized()}`);
+    
+    if (!cannSvc.isInitialized()) {
+      this.log.info(this.TAG, 'CANN Local not initialized, initializing now...');
+      let config = cannSvc.getDefaultConfig(context);
+      this.log.info(this.TAG, `callCANNLocal: config modelPath=${config.modelPath}`);
+      this.log.info(this.TAG, `callCANNLocal: config specModelPath=${config.specModelPath}`);
+      let initSuccess = await cannSvc.init(config);
+      this.log.info(this.TAG, `callCANNLocal: init result=${initSuccess}`);
+      if (!initSuccess) {
+        raw.text = `CANN Local init failed: ${cannSvc.getLastError()}`;
+        this.log.error(this.TAG, `callCANNLocal: ${raw.text}`);
+        return raw;
+      }
+    }
+
+    let lastUserMsg = '';
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserMsg = messages[i].content;
+        break;
+      }
+    }
+
+    this.log.info(this.TAG, `callCANNLocal: lastUserMsg="${lastUserMsg.substring(0, 100)}..."`);
+    
+    if (lastUserMsg.length === 0) {
+      this.log.error(this.TAG, 'callCANNLocal: No user message found');
+      raw.text = 'Error: No user message found';
+      return raw;
+    }
+
+    let prompt = cannSvc.formatPrompt(lastUserMsg);
+    this.log.info(this.TAG, `callCANNLocal: formatted prompt="${prompt.substring(0, 100)}..."`);
+
+    try {
+      this.log.info(this.TAG, 'callCANNLocal: calling cannSvc.infer...');
+      let response = await cannSvc.infer(prompt, onDelta);
+      raw.text = response;
+      this.log.info(this.TAG, `callCANNLocal: response length=${response.length}`);
+    } catch (e) {
+      raw.text = `CANN Local error: ${(e as Error).message}`;
+      this.log.error(this.TAG, `callCANNLocal: ${raw.text}`);
+    }
+
+    return raw;
   }
 
   // --------- Local / Ollama ---------

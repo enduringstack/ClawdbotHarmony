@@ -4,9 +4,21 @@ project(native_modules)
 
 set(NATIVERENDER_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Import prebuilt libraries for CANN LLM
+add_library(llm_core SHARED IMPORTED GLOBAL)
+set_target_properties(llm_core PROPERTIES IMPORTED_LOCATION
+    ${NATIVERENDER_ROOT_PATH}/lib64/libllm_core.so)
+
+add_library(hiai_llm_engine SHARED IMPORTED GLOBAL)
+set_target_properties(hiai_llm_engine PROPERTIES IMPORTED_LOCATION
+    ${NATIVERENDER_ROOT_PATH}/lib64/libhiai_llm_engine.so)
+
 # exec module - shell command execution
 add_library(exec SHARED napi_exec.cpp)
 target_link_libraries(exec PUBLIC libace_napi.z.so)
+
+# cann_llm module - on-device LLM inference
+add_subdirectory(cann_llm)
 
 # context_engine module - rule engine + MAB + LinUCB
 add_subdirectory(context_engine)

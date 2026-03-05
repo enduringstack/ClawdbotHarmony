@@ -669,7 +669,7 @@ export struct SettingsPage {
               .width('100%')
             Scroll() {
               Row({ space: 8 }) {
-              ForEach(['openrouter', 'anthropic', 'openai', 'siliconflow', 'local', 'custom'] as string[], (p: string) => {
+              ForEach(['cann-local', 'openrouter', 'anthropic', 'openai', 'siliconflow', 'local', 'custom'] as string[], (p: string) => {
                 Text(this.providerLabel(p))
                   .fontSize(13)
                   .fontColor(this.provider === p ? Color.White : '#666666')
@@ -701,7 +701,7 @@ export struct SettingsPage {
             Row() {
               TextInput({
                 text: this.apiKey,
-                placeholder: this.provider === 'local' ? I18n.t('settings.apiKeyNotRequired') : I18n.t('settings.apiKeyPlaceholder')
+                placeholder: (this.provider === 'local' || this.provider === 'cann-local') ? I18n.t('settings.apiKeyNotRequired') : I18n.t('settings.apiKeyPlaceholder')
               })
                 .layoutWeight(1)
                 .height(40)
@@ -1946,6 +1946,7 @@ export struct SettingsPage {
   // ============ logic ============
 
   private defaultModelFor(p: string): string {
+    if (p === 'cann-local') return 'pangu-7b';
     if (p === 'openrouter') return Constants.DEFAULT_MODEL_OPENROUTER;
     if (p === 'anthropic') return Constants.DEFAULT_MODEL_ANTHROPIC;
     if (p === 'openai') return Constants.DEFAULT_MODEL_OPENAI;
@@ -1955,6 +1956,7 @@ export struct SettingsPage {
   }
 
   private providerLabel(p: string): string {
+    if (p === 'cann-local') return 'CANN Local';
     if (p === 'openrouter') return 'OpenRouter';
     if (p === 'anthropic') return 'Anthropic';
     if (p === 'openai') return 'OpenAI';
