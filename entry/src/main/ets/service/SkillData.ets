@@ -416,3 +416,16 @@ const TOOL_SCHEMAS: Map<string, ToolSchema[]> = new Map([
   ['skill_email', buildEmailToolSchemas()],
   ['skill_management', buildSkillManagementToolSchemas()],
 ]);
+
+export function getToolSchemaByName(name: string): ToolSchema | undefined {
+  let entries = Array.from(TOOL_SCHEMAS.entries());
+  for (let i = 0; i < entries.length; i++) {
+    let schemas = entries[i][1];
+    for (let j = 0; j < schemas.length; j++) {
+      if (schemas[j].name === name) {
+        return schemas[j];
+      }
+    }
+  }
+  return undefined;
+}

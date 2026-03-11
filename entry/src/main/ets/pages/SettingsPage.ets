@@ -18,6 +18,7 @@ import { ExperienceStorage } from '../service/ExperienceStorage';
 import socket from '@ohos.net.socket';
 import { util } from '@kit.ArkTS';
 import { Monitor, ModuleStat } from '../service/ModuleMonitor';
+import { isCANNAvailable } from '../service/CANNLocalService';
 
 interface BmExecResult {
   exitCode: number;
@@ -669,7 +670,7 @@ export struct SettingsPage {
               .width('100%')
             Scroll() {
               Row({ space: 8 }) {
-              ForEach(['openrouter', 'anthropic', 'openai', 'siliconflow', 'local', 'custom'] as string[], (p: string) => {
+              ForEach(this.getAvailableProviders(), (p: string) => {
                 Text(this.providerLabel(p))
                   .fontSize(13)
                   .fontColor(this.provider === p ? Color.White : '#666666')
@@ -701,7 +702,7 @@ export struct SettingsPage {
             Row() {
               TextInput({
                 text: this.apiKey,
-                placeholder: this.provider === 'local' ? I18n.t('settings.apiKeyNotRequired') : I18n.t('settings.apiKeyPlaceholder')
+                placeholder: (this.provider === 'local' || this.provider === 'cann-local') ? I18n.t('settings.apiKeyNotRequired') : I18n.t('settings.apiKeyPlaceholder')
               })
                 .layoutWeight(1)
                 .height(40)
@@ -1946,6 +1947,7 @@ export struct SettingsPage {
   // ============ logic ============
 
   private defaultModelFor(p: string): string {
+    if (p === 'cann-local') return Constants.CANN_TARGET_MODEL_NAME;
     if (p === 'openrouter') return Constants.DEFAULT_MODEL_OPENROUTER;
     if (p === 'anthropic') return Constants.DEFAULT_MODEL_ANTHROPIC;
     if (p === 'openai') return Constants.DEFAULT_MODEL_OPENAI;
@@ -1955,12 +1957,21 @@ export struct SettingsPage {
   }
 
   private providerLabel(p: string): string {
+    if (p === 'cann-local') return 'CANN Local';
     if (p === 'openrouter') return 'OpenRouter';
     if (p === 'anthropic') return 'Anthropic';
     if (p === 'openai') return 'OpenAI';
     if (p === 'siliconflow') return 'SiliconFlow';
     if (p === 'custom') return I18n.t('settings.customProvider');
     return 'Ollama';
+  }
+
+  private getAvailableProviders(): string[] {
+    let providers: string[] = ['openrouter', 'anthropic', 'openai', 'siliconflow', 'local', 'custom'];
+    if (isCANNAvailable()) {
+      providers.unshift('cann-local');
+    }
+    return providers;
   }
 
   private showTabs(): boolean {

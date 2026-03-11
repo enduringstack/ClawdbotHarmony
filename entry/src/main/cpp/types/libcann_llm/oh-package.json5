@@ -1,0 +1,6 @@
+{
+  "name": "libcann_llm",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "Native CANN LLM module for on-device inference"
+}

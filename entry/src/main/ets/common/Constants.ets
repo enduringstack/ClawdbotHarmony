@@ -112,4 +112,30 @@ export class Constants {
   static readonly SILENT_MODE_SILENCE_END_MS: number = 1500;
   static readonly SILENT_MODE_CONVERSATION_END_MS: number = 60000;
   static readonly SILENT_MODE_MIN_SEGMENT_MS: number = 500;
+
+  // CANN Local LLM Configuration
+  // Model files should be deployed to device sandbox via scripts/deploy_cann_model.bat
+  static readonly CANN_TARGET_MODEL_NAME: string = 'chs_7b_target_model';
+  static readonly CANN_DRAFT_MODEL_NAME: string = 'chs_7b_draft_model';
+  
+  // Model file names (relative to model directory)
+  static readonly CANN_TARGET_MODEL_FILE: string = 'chs_7b_target_model.omc';
+  static readonly CANN_DRAFT_MODEL_FILE: string = 'chs_7b_draft_model.omc';
+  static readonly CANN_TOKENIZER_FILE: string = 'tokenizer.model';
+  static readonly CANN_LORA_CONFIG_FILE: string = 'chs_7b_target_model.omc.loraconf';
+  
+  // Inference parameters
+  static readonly CANN_MAX_GEN_TOKENS: number = 512;
+  static readonly CANN_TEMPERATURE: number = 0.7;
+  static readonly CANN_TOP_K: number = 16;
+  static readonly CANN_TOP_P: number = 0.8;
+  static readonly CANN_SPECULATIVE_GAMMA: number = 3;
+  
+  // CANN Local Tools - add tool names here to enable them for on-device model
+  static readonly CANN_ENABLED_TOOLS: string[] = [
+    'capture_photo',
+    'screen_capture',
+    'get_location',
+    'record_audio',
+  ];
 }
